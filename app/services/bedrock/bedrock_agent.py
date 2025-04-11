@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, List, Optional
 import boto3
 
 from app.services.bedrock.bedrock_types import BedrockError, BedrockErrorType
-from app.types.chat_agent import AgentFinalResponse, FileInfo, HistoricalMessage
+from app.my_types.chat_agent import AgentFinalResponse, FileInfo, HistoricalMessage
 
 logger = logging.getLogger()
 
