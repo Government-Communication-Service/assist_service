@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 
-from app.app_types import DocumentAccessError
+from my_types import DocumentAccessError
 from app.config import IS_DEV, URL_HOSTNAME, load_environment_variables
 from app.database.database_exception import (
     DatabaseError,

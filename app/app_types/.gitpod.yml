@@ -1,0 +1,12 @@
+image: gitpod/workspace-full
+
+tasks:
+  - name: Install Dependencies
+    init: |
+      python3 -m venv venv
+      . venv/bin/activate
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    command: |
+      . venv/bin/activate
+      # Replace this with the command to run your app if needed, e.g., uvicorn app.main:app
