@@ -1,0 +1,8 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+When interacting with the database, do not try to add a new method to the DbOperations class. This is because the DbOperations class is deprectaed.
+
+Instead, the functions / methods in the service layer should perform database requests directly.

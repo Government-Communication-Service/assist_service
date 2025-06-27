@@ -1,0 +1,57 @@
+name: Update Assist Service
+
+on:
+  push:
+    branches:
+      - dev-main
+
+jobs:
+  update-open-source-repo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source repository (dev-main)
+        uses: actions/checkout@v4
+        with:
+          path: source
+          ref: dev-main
+          fetch-depth: 0
+          lfs: true
+
+
+      - name: Checkout target repository (assist_service main)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/assist_service
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          path: target
+          ref: main
+          fetch-depth: 0
+          lfs: true
+
+      - name: Copy contents from source to target
+        run: |
+          # Remove all files from target except .git directory and README.md
+          find target -mindepth 1 -maxdepth 1 ! -name '.git' ! -name 'README.md' -exec rm -rf {} +
+
+          # Copy all files from source to target except .git directory and README.md
+          find source -mindepth 1 -maxdepth 1 ! -name '.git' ! -name 'README.md' -exec cp -r {} target/ \;
+
+      - name: Commit and push changes to assist_service
+        run: |
+          cd target
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Install and configure Git LFS
+          git lfs install
+
+          # Add all changes
+          git add .
+
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update from ${{ github.repository }}@${{ github.sha }}"
+            git push origin main
+          fi

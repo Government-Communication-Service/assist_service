@@ -1,0 +1,12 @@
+---
+description:
+globs: app/*
+alwaysApply: false
+---
+When creating a new endpoint, think carefully about which authentication method is required.
+
+If the endpoint is meant to be used by users of Assist, then the full authentication is required (i.e. provide `**endpoint_defaults` in the endpoint decorator).
+
+If instead, the endpoint is not meant to be used by users, and should only be used for administrative reasons (e.g. synchronising the Central Guidance, or cleaning up old chats) then instead the only authentication required should be the auth token, rather than any user-based authentication (user-based authentication requires a valid session and a User UUID). E.g. `dependencies=[Depends(auth_token_validator_no_user)]`.
+
+The reason for this rule is to make it easy to use the administrative functions, without needing a user session and user UUID.

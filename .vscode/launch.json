@@ -1,0 +1,39 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "FastAPI",
+        "type": "debugpy",
+        "request": "launch",
+        "module": "debugpy",
+        "args": [
+          "-m",
+          "uvicorn",
+          "app.main:app",
+          "--reload",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "5312"
+        ],
+        "jinja": true,
+        "justMyCode": true
+      },
+      {
+        "name": "Remote: Attach to Docker",
+        "type": "debugpy",
+        "request": "attach",
+        "connect": {
+          "host": "localhost",
+          "port": 5678
+        },
+        "pathMappings": [
+          {
+            "localRoot": "${workspaceFolder}",
+            "remoteRoot": "/app"
+          }
+        ],
+        "justMyCode": true
+      }
+    ]
+  }

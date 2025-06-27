@@ -1,5 +1,4 @@
 import asyncio
-import os
 from asyncio import exceptions
 from contextlib import asynccontextmanager
 
@@ -8,31 +7,29 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 
-from app.app_types import DocumentAccessError
+import app.chat.routes as chat
+import app.feedback.routes as feedback
+import app.user.user as user
+from app.api import healthcheck
+from app.auth import session
+from app.bedrock.bedrock_types import BedrockError
+from app.central_guidance import routes
+from app.central_guidance.service_index import sync_central_index
+from app.chat.schemas import DocumentAccessError
+from app.chat.service import schedule_expired_messages_deletion
 from app.config import IS_DEV, URL_HOSTNAME, load_environment_variables
 from app.database.database_exception import (
     DatabaseError,
     DatabaseExceptionErrorCode,
 )
-from app.database.table import AsyncEngineProvider, async_db_session
-from app.lib.document_management import schedule_expired_files_deletion
-from app.lib.logs_handler import logger, session_id_var
-from app.routers import (
-    analytics,
-    chat,
-    chat_stream,
-    dev_endpoints,
-    feedback,
-    healthcheck,
-    opensearch,
-    session,
-    themes_use_cases,
-    user,
-    user_prompt,
-)
-from app.services.bedrock.bedrock_types import BedrockError
-from app.services.bugsnag import BUGSNAG_ENABLED, BugsnagLogger
-from app.services.opensearch import sync_central_index, sync_labour_index, verify_connection_to_opensearch
+from app.database.db_session import async_db_session
+from app.database.table import AsyncEngineProvider
+from app.document_upload.document_management import schedule_expired_files_deletion
+from app.logs import BUGSNAG_ENABLED, BugsnagLogger
+from app.logs.logs_handler import logger, session_id_var
+from app.opensearch.service import verify_connection_to_opensearch
+from app.personal_prompts import user_prompt
+from app.themes_use_cases import themes_use_cases
 
 
 @asynccontextmanager
@@ -54,8 +51,9 @@ async def lifespan(app: FastAPI):
     verify_connection_to_opensearch()
     async with async_db_session() as s:
         await sync_central_index(s)
-    async with async_db_session() as s:
-        await sync_labour_index(s)
+
+        # schedule deleting expired messages
+        asyncio.create_task(schedule_expired_messages_deletion(s))
 
     # schedule deleting expired documents
     asyncio.create_task(schedule_expired_files_deletion())
@@ -134,17 +132,11 @@ def root():
 app.include_router(healthcheck.router, prefix="/healthcheck", tags=["Health Check"])
 app.include_router(session.router, prefix="/v1", tags=["Auth Sessions"])
 app.include_router(chat.router, prefix="/v1", tags=["Chat Sessions"])
-app.include_router(chat_stream.router, prefix="/v1", tags=["Chat Streaming"])
 app.include_router(feedback.router, prefix="/v1", tags=["Message Feedback"])
 app.include_router(user.router, prefix="/v1", tags=["User Data"])
 app.include_router(user_prompt.router, prefix="/v1", tags=["User Prompts"])
 app.include_router(themes_use_cases.router, prefix="/v1", tags=["Themes / Use Cases"])
-app.include_router(opensearch.router, prefix="/v1", tags=["Central RAG"])
-app.include_router(analytics.router, prefix="/v1", tags=["Analytics"])
-
-if IS_DEV:
-    if os.getenv("SHOW_DEVELOPER_ENDPOINTS_IN_DOCS", False):
-        app.include_router(dev_endpoints.router, prefix="/dev", tags=["Developer Test Endpoints"])
+app.include_router(routes.router, prefix="/v1", tags=["Central RAG"])
 
 
 # exception handlers

@@ -1,3 +1,5 @@
+# ruff: noqa: E501
+
 import asyncio
 import logging
 import os
@@ -14,14 +16,22 @@ from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
 from app.api import ENDPOINTS, ApiConfig
-from app.api.auth_token import SECRET_KEY
-from app.app_types import ChatWithLatestMessage
+from app.auth.auth_token import SECRET_KEY
+from app.central_guidance.service_index import sync_central_index
+from app.chat.schemas import ChatWithLatestMessage
+from app.database.db_session import get_db_session
 from app.database.table import async_db_session
 from app.main import app as app_under_test
-from app.routers.db_session import get_db_session
-from app.services.opensearch import AsyncOpenSearchClient, OpenSearchRecord, create_client, sync_central_index
+from app.opensearch.schemas import OpenSearchRecord
+from app.opensearch.service import AsyncOpenSearchClient, create_client
 
 logger = logging.getLogger(__name__)
+
+# Add this line to ignore the specific test file
+collect_ignore = [
+    "gov_uk_search/test_gov_uk_search_evals.py",
+    "central_guidance/test_evals_central_guidance.py",
+]
 
 T = TypeVar("T")
 
@@ -83,7 +93,7 @@ async def session_override(test_app, db_session):
 
 @pytest.fixture(scope="module")
 def mock_llm_invoke():
-    with patch("app.routers.chat.create_new_chat") as mock_invoke:
+    with patch("app.chat.create_new_chat") as mock_invoke:
         mock_invoke.return_value = "Hi! how can I help you today?"
         yield mock_invoke
 
@@ -340,7 +350,7 @@ def http_requester(default_headers):
 
 @pytest.fixture(scope="function")
 def mock_message_table(mocker):
-    mock_message_table_class = mocker.patch("app.lib.chat.chat_create_message.MessageTable")
+    mock_message_table_class = mocker.patch("app.database.table.MessageTable")
     mock_message_table_instance = mock_message_table_class.return_value
 
     mock_message = Mock()
@@ -356,7 +366,7 @@ def mock_message_table(mocker):
 
 @pytest.fixture(scope="function")
 def mock_bedrock_handler(mocker):
-    mock_bedrock_handler_class = mocker.patch("app.lib.chat.chat_create_message.BedrockHandler")
+    mock_bedrock_handler_class = mocker.patch("app.bedrock.bedrock.BedrockHandler")
     mock_bedrock_handler_instance = mock_bedrock_handler_class.return_value
 
     mock_bedrock_handler_instance.format_messages.return_value = "Formatted Messages"

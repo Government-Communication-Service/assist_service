@@ -1,6 +1,6 @@
 import pytest
 
-from app.services.bedrock.american_word_swap import replace_american_words
+from app.bedrock.american_word_swap import replace_american_words
 
 
 @pytest.mark.parametrize(

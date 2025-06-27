@@ -1,0 +1,10 @@
+---
+description:
+globs: app/*
+alwaysApply: false
+---
+When creating a new function in the service layer, try to return simple data structures, rather than Pydantic models.
+
+When creating a new API endpoint, the endpoint should receive simple data structures from the service layer, and then perform the tasks required to put the simple data into a Pydantic model for the response.
+
+The reason for this is to keep the service layer functions simple, and to make it the sole responsibility of the API layer to make sure API responses are formatted correctly.

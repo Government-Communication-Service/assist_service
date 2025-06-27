@@ -1,6 +1,6 @@
 import pytest
 
-from app.lib.logs_handler import logger
+from app.logs.logs_handler import logger
 
 
 def fail_test(message, exception=None):

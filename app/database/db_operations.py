@@ -9,12 +9,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
 
-from app.app_types.themes_use_cases import (
-    ThemeInput,
-    UseCaseInputPost,
-    UseCaseInputPut,
-)
-from app.app_types.user import UserCreationInput, UserCreationResponse, UserInput
 from app.database.models import (
     LLM,
     AuthSession,
@@ -37,8 +31,14 @@ from app.database.models import (
     UserPrompt,
 )
 from app.database.table import DatabaseError, DatabaseExceptionErrorCode, Table
-from app.lib import LogsHandler
-from app.lib.logs_handler import Action
+from app.logs import LogsHandler
+from app.logs.logs_handler import Action
+from app.themes_use_cases.schemas import (
+    ThemeInput,
+    UseCaseInputPost,
+    UseCaseInputPut,
+)
+from app.user.schemas import UserCreationInput, UserCreationResponse, UserInput
 
 T = TypeVar("T")
 
@@ -188,16 +188,16 @@ class DbOperations:
     @staticmethod
     async def get_chats_by_user(db_session: AsyncSession, user_id: int) -> List[Chat]:
         """
-        Fetches Chats owned by the User with the given  ID.
+        Fetches Chats owned by the User with the given  ID, excluding deleted chats.
 
         Args:
             db_session(AsyncSession): The database connection session.
             user_id (int): The ID of the user owning chats.
 
         Returns:
-            List[Chat]: List of user Chats.
+            List[Chat]: List of user Chats that are not deleted.
         """
-        stmt = select(Chat).where(Chat.user_id == user_id).order_by(desc(Chat.updated_at))
+        stmt = select(Chat).where(Chat.user_id == user_id, Chat.deleted_at.is_(None)).order_by(desc(Chat.updated_at))
         chats_result = await LogsHandler.with_logging(Action.DB_RETRIEVE_CHATS, db_session.execute(stmt))
         chats = chats_result.scalars().all()
         return chats
@@ -1309,7 +1309,7 @@ class DbOperations:
         tokens_in: int,
         tokens_out: int,
         completion_cost: int,
-    ):
+    ) -> LlmInternalResponse:
         # Log the raw LLM response to the database to allow:
         # - tracking the cost of the query and the raw response
         # - debugging issues with the query
@@ -1333,11 +1333,12 @@ class DbOperations:
     async def insert_gov_uk_search_query(
         db_session: AsyncSession,
         llm_internal_response_id: int,
+        message_id: int,
         query: str,
     ):
         stmt = (
             insert(GovUkSearchQuery)
-            .values(llm_internal_response_id=llm_internal_response_id, content=query)
+            .values(llm_internal_response_id=llm_internal_response_id, message_id=message_id, content=query)
             .returning(GovUkSearchQuery)
         )
         response = await db_session.execute(stmt)

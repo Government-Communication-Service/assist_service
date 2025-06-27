@@ -1,7 +1,7 @@
 # This workflow will install Python dependencies, run tests and lint with a single version of Python
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
 
-name: Tests and Lint
+name: Tests
 
 on:
   pull_request:
@@ -50,6 +50,8 @@ jobs:
     steps:
       - name: Clone repository
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -136,12 +138,6 @@ jobs:
           OPENSEARCH_PASSWORD: ${{ secrets.OPENSEARCH_PASSWORD }}
           OPENSEARCH_HOST: localhost
           OPENSEARCH_PORT: ${{ secrets.OPENSEARCH_PORT }}
-          RAG_LLM_MODEL_INDEX_ROUTER: ${{ secrets.RAG_LLM_MODEL_INDEX_ROUTER }}
-          RAG_SYSTEM_PROMPT_INDEX_ROUTER: ${{ secrets.RAG_SYSTEM_PROMPT_INDEX_ROUTER }}
-          RAG_LLM_MODEL_QUERY_REWRITER: ${{ secrets.RAG_LLM_MODEL_QUERY_REWRITER }}
-          RAG_SYSTEM_PROMPT_QUERY_REWRITER: ${{ secrets.RAG_SYSTEM_PROMPT_QUERY_REWRITER }}
-          RAG_LLM_MODEL_CHUNK_REVIEWER: ${{ secrets.RAG_LLM_MODEL_CHUNK_REVIEWER }}
-          RAG_SYSTEM_PROMPT_CHUNK_REVIEWER: ${{ secrets.RAG_SYSTEM_PROMPT_CHUNK_REVIEWER }}
 
       - name: Persist test reports
         uses: actions/upload-artifact@v4

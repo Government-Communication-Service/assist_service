@@ -15,7 +15,6 @@ from app.database.database_exception import (
 )
 from app.database.models import (
     LLM,
-    ActionType,
     AuthSession,
     Chat,
     Feedback,
@@ -29,7 +28,6 @@ from app.database.models import (
     Theme,
     UseCase,
     User,
-    UserAction,
     UserGroup,
     UserPrompt,
 )
@@ -564,7 +562,7 @@ class MessageTable(Table):
     def __init__(self):
         super().__init__(model=Message, table_name="Message")
 
-    def get_by_chat(self, chat_id: str):
+    def get_by_chat(self, chat_id: str) -> list[Message]:
         try:
             with get_session() as session:
                 messages = session.query(Message).filter_by(chat_id=chat_id)
@@ -703,36 +701,9 @@ class FeedbackLabelTable(Table):
         super().__init__(model=FeedbackLabel, table_name="FeedbackLabel")
 
 
-class UserActionTable(Table):
-    def __init__(self):
-        super().__init__(model=UserAction, table_name="UserAction")
-
-    def upsert_by_name(self, item_uuid: uuid.UUID, data: Any | None = None) -> T | None:
-        if data is None:
-            data = {}
-        try:
-            with get_session() as session:
-                obj = session.query(self.model).filter(self.model.uuid == item_uuid).first()
-                if not obj:
-                    obj = self.create({"uuid": item_uuid, **data})
-                return obj
-        except Exception as e:
-            raise DatabaseError(
-                code=DatabaseExceptionErrorCode.UPSERT_BY_UUID_ERROR,
-                message=f"An error occurred when upserting user action by name in the table {self.table_name}"
-                + ": Original error: "
-                + f"Original error: {e}",
-            ) from e
-
-
 class LLMInternalResponseTable(Table):
     def __init__(self):
         super().__init__(model=LlmInternalResponse, table_name="LlmInternalResponse")
-
-
-class ActionTypeTable(Table):
-    def __init__(self):
-        super().__init__(model=ActionType, table_name="ActionType")
 
 
 class MessageSearchIndexMappingTable(Table):

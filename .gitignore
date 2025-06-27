@@ -17,3 +17,5 @@ gcs-llm-02.pem
 tests_local
 venv/*
 app/copilot_api.egg-info/*
+.pre-commit-trivy-cache/*
+psql

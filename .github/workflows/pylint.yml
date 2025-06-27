@@ -1,4 +1,4 @@
-name: Security and Lint Checks
+name: Security (bandit) + Linting (Ruff) + Secrets scanning (Trufflehog)
 
 on: [push]
 

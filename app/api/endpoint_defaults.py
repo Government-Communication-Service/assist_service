@@ -4,15 +4,15 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.api_config import ApiConfig
-from app.api.auth_token import auth_token_validator
-from app.api.session_user import session_user
+from app.api.config import ApiConfig
+from app.auth.auth_token import auth_token_validator
+from app.auth.session_request import SessionRequest
+from app.auth.session_user import session_user
 from app.config import BYPASS_SESSION_VALIDATOR
 from app.database.table import AuthSessionTable
-from app.lib import LogsHandler, verify_uuid
-from app.lib.error_messages import ErrorMessages
-
-from .session_request import SessionRequest
+from app.error_messages import ErrorMessages
+from app.logs import LogsHandler
+from app.verify_uuid import verify_uuid
 
 router = APIRouter()
 

@@ -1,0 +1,6 @@
+---
+description:
+globs: *test*
+alwaysApply: false
+---
+When running tests, use 'make' commands. Look at [Makefile](mdc:Makefile) for relevant test commands. When writing tests for a new section of code, it is best to create a new 'make' command for those tests only, so that it is easy to iterate quickly.

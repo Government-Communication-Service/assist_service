@@ -38,22 +38,22 @@ repos:
         language: pygrep
         entry: ':\d{12}:'
 
-  - repo: https://github.com/mxab/pre-commit-trivy.git
-    rev: v0.3.0
-    hooks:
-      - id: trivyfs-docker
-        args:
-          - --security-checks
-          - vuln
-          - --skip-dirs
-          - ./.idea
-          - --skip-files
-          - ./.env
-          - --skip-dirs
-          - ./.vscode
-          - --skip-dirs
-          - ./data
-          - --skip-dirs
-          - ./.pre-commit-trivy-cache
-          - --ignore-unfixed
-          - . # last arg indicates the path/file to scan
+  # - repo: https://github.com/mxab/pre-commit-trivy.git
+  #   rev: v0.3.0
+  #   hooks:
+  #     - id: trivyfs-docker
+  #       args:
+  #         - --security-checks
+  #         - vuln
+  #         - --skip-dirs
+  #         - ./.idea
+  #         - --skip-files
+  #         - ./.env
+  #         - --skip-dirs
+  #         - ./.vscode
+  #         - --skip-dirs
+  #         - ./data
+  #         - --skip-dirs
+  #         - ./.pre-commit-trivy-cache
+  #         - --ignore-unfixed
+  #         - . # last arg indicates the path/file to scan

@@ -1,6 +1,6 @@
 # this is needed to install torch cpu flavor so that huge nvidia gpu libs are not installed
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.4.1
+torch==2.6.0
 
 # API / General
 starlette==0.45.3

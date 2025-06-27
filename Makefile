@@ -61,6 +61,12 @@ test:
 os-indexes:
 	$(docker-cmd) "curl -X GET "http://host.docker.internal:9200/_cat/indices?v""
 
+test-evals:
+	$(docker-cmd) "${test-cmd} tests/evals"
+
+test-stream:
+	$(docker-cmd) "${test-cmd} tests/streaming/test_stream_v1.py::test_stream_response_valid_json"
+
 test-system-prompt:
 	$(docker-cmd) "${test-cmd} tests/unit/test_system_prompt.py"
 
@@ -77,20 +83,57 @@ test-prompts-bulk-up:
 test-prompts-bulk-get:
 	$(docker-cmd) "${test-cmd} tests/prompts/test_prompts_v1_e2e.py::TestThemes::test_get_prompts_bulk"
 
-test-chat-feedback:
-	$(docker-cmd) "${test-cmd} tests/end_to_end/test_chat_v1.py::test_remove_negative_feedback_then_update_as_positive_feedback"
+test-feedback:
+	$(docker-cmd) "${test-cmd} tests/feedback"
 
 test-opensearch:
 	$(MAKE) sync-central-rag
-	$(docker-cmd) "${test-cmd} -m opensearch"
+	$(docker-cmd) "${test-cmd} tests/opensearch"
 
-test-central-rag-endpoints:
+test-central-guidance:
 	$(MAKE) sync-central-rag
-	$(docker-cmd) "${test-cmd} tests/end_to_end/test_rag_central_document.py"
+	$(docker-cmd) "${test-cmd} tests/central_guidance"
 
-test-rag:
+test-central-guidance-rag:
 	$(MAKE) sync-central-rag
-	$(docker-cmd) "${test-cmd} -m rag"
+	$(docker-cmd) "${test-cmd} tests/central_guidance/test_integration_central_guidance.py::test_search_central_guidance_with_mcom_query"
+
+test-document-upload:
+	$(docker-cmd) "${test-cmd} tests/document_upload tests/opensearch"
+
+test-document-rag-integration:
+	$(docker-cmd) "${test-cmd} tests/document_upload/rag/test_document_upload_rag_integration.py -v"
+
+test-document-rag-unit:
+	$(docker-cmd) "${test-cmd} tests/document_upload/rag/test_document_upload_rag_unit.py -v"
+
+test-gov-uk-search:
+	$(docker-cmd) "${test-cmd} tests/gov_uk_search"
+
+test-gov-uk-search-regression:
+	$(docker-cmd) "${test-cmd} tests/gov_uk_search/test_gov_uk_search_regression.py"
+
+test-personal-prompts:
+	$(docker-cmd) "${test-cmd} tests/personal_prompts"
+
+
+test-bedrock:
+	$(docker-cmd) "${test-cmd} tests/bedrock"
+
+test-bedrock-cost-calculation:
+	$(docker-cmd) "${test-cmd} tests/bedrock/test_bedrock.py::test_completion_cost_calculation"
+
+test-chat:
+	$(docker-cmd) "${test-cmd} tests/chat"
+
+test-chat-cleanup:
+	$(docker-cmd) "${test-cmd} tests/chat/test_message_cleanup.py"
+
+test-user:
+	$(docker-cmd) "${test-cmd} tests/user"
+
+test-chat-create-message:
+	$(docker-cmd) "${test-cmd} tests/chat/test_chat_create_message.py"
 
 api-stop:
 	docker stop ${container-name}

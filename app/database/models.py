@@ -337,6 +337,9 @@ class DocumentChunk(Base):
         nullable=False,
     )  # This is not an ID anywhere in the PostgreSQL database, but it is the id in the opensearch index.
 
+    def __str__(self):
+        return f"name=('{self.name}'), content_truncated=('{self.content[0:20]}...{self.content[-20]}')"
+
 
 # A document is the original document that was chunked
 class Document(Base):
@@ -471,7 +474,16 @@ class GovUkSearchQuery(Base):
     __tablename__ = "gov_uk_search_query"
 
     llm_internal_response_id = Column(Integer, ForeignKey("llm_internal_response.id"), nullable=False)
+    message_id = Column(Integer, ForeignKey("message.id"))
     content = Column(Text, nullable=False)
+
+
+class UseGovUkSearchDecision(Base):
+    __tablename__ = "use_gov_uk_search_decision"
+
+    llm_internal_response_id = Column(Integer, ForeignKey("llm_internal_response.id"), nullable=False)
+    message_id = Column(Integer, ForeignKey("message.id"))
+    decision = Column(Boolean, nullable=False)
 
 
 engine = create_engine(database_url())
