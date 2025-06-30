@@ -9,6 +9,8 @@ In addition to being able to reference specific GCS documents, responsible use h
 ![image](https://github.com/user-attachments/assets/04e93ecc-d537-47a0-975f-7c779e54b6f5)
 
 ## Assist API quickstart
+Requires `make`, `docker` and `docker-compose`.
+
 - Run `make start` from the root directory. This will cause the Docker images to build and launch.
 - Visit `localhost:5312/docs` from your browser.
 
