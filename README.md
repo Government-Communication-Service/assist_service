@@ -9,9 +9,26 @@ In addition to being able to reference specific GCS documents, responsible use h
 ![image](https://github.com/user-attachments/assets/04e93ecc-d537-47a0-975f-7c779e54b6f5)
 
 ## Assist API quickstart
-Requires `make`, `docker` and `docker-compose`.
+### Requirements
+- Install `make`
+- Install `docker` and `docker-compose`
+- Procure an AWS account with Amazon Bedrock.
+  - Secure access to Claude 3.7 Sonnet from the region `us-west-2` (Assist's current default configuration)
+  - Create an IAM user with access to Bedrock, and generate a key for the new user
+- Procure an account for 'Insights manager' (previously bugsnag) for logging.
 
+### App startup
+
+- Create a `.env` file from `.env.example`
+  - Populate `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION_NAME`, and `AWS_DEFAULT_REGION` with your Bedrock user's IAM credentials. This will allow your application to access an LLM via Amazon Bedrock.
+  - Set the variable `IS_DEV=True`.
+  - Populate `AUTH_SECRET_KEY` with a secure variable; you send this value with every request to the API for authentication.
+  - Populate both `OPENSEARCH_INITIAL_ADMIN_PASSWORD` and `OPENSEARCH_PASSWORD` with the same password.
 - Run `make start` from the root directory. This will cause the Docker images to build and launch.
-- Visit `localhost:5312/docs` from your browser.
+- Visit `localhost:5312/docs` from your browser to view the available endpoints.
 
 The API is designed to work with the Connect frontend (another service created by Government Communications) though it can be used with other clients.
+
+### Generating a response
+- Generate an `auth-session` token by sending a get request to the auth session endpoint with a UUID4 for the user in the header. You can use any valid UUID4 as the user UUID header.
+- Generate a new chat with a message by sending a get request to `/v1/chats/users/{user_uuid}`. The response will contain your completed messaged.
