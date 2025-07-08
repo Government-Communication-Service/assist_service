@@ -21,13 +21,13 @@ from app.bedrock.tools_use import (
     SEARCH_API_SEARCH_TERMS,
     USE_GOV_UK_SEARCH_ASSESSMENT,
 )
-from app.chat.exceptions import ChatNotFoundError, LLMNotFoundError
+from app.chat.exceptions import ChatNotFoundError
 from app.chat.schemas import ChatCreateMessageInput, RoleEnum
 from app.config import (
     GOV_UK_SEARCH_MAX_COUNT,
-    LLM_DEFAULT_MODEL,
     LLM_DOCUMENT_RELEVANCY_MODEL,
     LLM_GOV_UK_SEARCH_FOLLOWUP_ASSESMENT,
+    LLM_GOVUK_QUERY_GENERATOR,
 )
 from app.database.db_operations import DbOperations
 from app.database.models import Chat, GovUkSearchResult, Message, UseGovUkSearchDecision
@@ -181,7 +181,7 @@ class GovUKSearch:
 
 
 async def get_search_documents(
-    llm: BedrockHandler, query: str, m_user_id: int, db_session: AsyncSession
+    query: str, m_user_id: int, db_session: AsyncSession
 ) -> Tuple[List[Any], List[Dict[str, str]], Dict[str, Any]]:
     """
     Get documents using GOV UK Search API.
@@ -196,7 +196,7 @@ async def get_search_documents(
     """
     # Get relevant documents using the new streamlined function
     documents, citations, search_cost = await get_relevant_documents_from_gov_uk_search(
-        llm=llm, role=RoleEnum.user, query=query, m_user_id=m_user_id, db_session=db_session
+        role=RoleEnum.user, query=query, m_user_id=m_user_id, db_session=db_session
     )
 
     # Process documents and filter blacklisted ones
@@ -307,15 +307,6 @@ async def enhance_user_prompt(
     if not chat:
         raise ChatNotFoundError("Chat not found")
 
-    # Get LLM models
-    llm_obj = LLMTable().get_by_model(LLM_DEFAULT_MODEL)
-
-    if not llm_obj:
-        raise LLMNotFoundError(f"LLM not found with name: {LLM_DEFAULT_MODEL}")
-
-    # Initialize LLM handler
-    llm = BedrockHandler(llm=llm_obj, mode=RunMode.ASYNC)
-
     # Initialize result containers
     all_documents = []
     all_citations = []
@@ -324,7 +315,7 @@ async def enhance_user_prompt(
     # Run document retrieval tasks
     if input_data.use_gov_uk_search_api:
         documents, citations, cost_info = await get_search_documents(
-            llm=llm, query=input_data.query, m_user_id=m_user_id, db_session=db_session
+            query=input_data.query, m_user_id=m_user_id, db_session=db_session
         )
         all_documents.extend(documents)
         all_citations.extend(citations)
@@ -520,7 +511,7 @@ async def is_document_relevant(
 
 
 async def get_relevant_documents_from_gov_uk_search(
-    llm: BedrockHandler, role: str, query: str, m_user_id: int, db_session: AsyncSession
+    role: str, query: str, m_user_id: int, db_session: AsyncSession
 ) -> Tuple[List[NonRagDocument], List[Dict[str, str]], SearchCost]:
     """
     Main entry point for the GOV UK Search feature.
@@ -529,7 +520,7 @@ async def get_relevant_documents_from_gov_uk_search(
     search_cost = SearchCost()
 
     # Step 1: Get search terms and parameters from LLM
-    search_terms, llm_response_id, search_params, llm_cost = await get_search_queries(llm, role, query, db_session)
+    search_terms, llm_response_id, search_params, llm_cost = await get_search_queries(role, query, db_session)
     search_cost.search_tool_cost = llm_cost
     search_cost.total_cost += llm_cost
 
@@ -576,7 +567,7 @@ async def get_relevant_documents_from_gov_uk_search(
 
 
 async def get_search_queries(
-    llm: BedrockHandler, role: str, query: str, db_session: AsyncSession
+    role: str, query: str, db_session: AsyncSession
 ) -> Tuple[List[str], int, Dict[str, Any], Decimal]:
     """
     Get search terms and parameters from LLM for GOV UK Search API.
@@ -595,13 +586,15 @@ async def get_search_queries(
                 "For example, when asked about recent announcements "
                 "you can use an empty query to get results ordered by popularity. "
                 "Do not create search terms like 'government announcements' or 'recent announcements'. "
-                "\n\nOnly use the call_gov_uk_search_api tool. "
+                "\n\nOnly use the tool for searching the GOV.UK Search API. "
                 f"\n\nTodays date is {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}. "
             )
-            + "\n\n"
-            + query,
+            + f"\n\n<user-query>\n{query}\n\n</user-query>",
         }
     ]
+
+    llm_obj = LLMTable().get_by_model(model=LLM_GOVUK_QUERY_GENERATOR)
+    llm = BedrockHandler(llm=llm_obj, mode=RunMode.ASYNC)
 
     # Ask the LLM to return a call_gov_uk_search_api function call object
     llm_response = await llm.invoke_async(message, tools=SEARCH_API_SEARCH_TERMS["tools"])

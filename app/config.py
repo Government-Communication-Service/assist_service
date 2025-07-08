@@ -40,7 +40,16 @@ AWS_BEDROCK_REGION2 = "us-east-1"
 # E.g. if the region is 'us', a 'us.' prefix is added to the model name.
 # This is necessary to handle cross-region inference, which we use as a failover mechanism
 # anthropic.claude-sonnet-4-20250514-v1:0
-LLM_DEFAULT_MODEL = "anthropic.claude-3-7-sonnet-20250219-v1:0"
+LLM_DEFAULT_MODEL = "anthropic.claude-sonnet-4-20250514-v1:0"
+
+### --- Chat Configuration --- ###
+
+# This LLM generates the final response to the user's query.
+# This model shuole ideally be of thie highest quality.
+LLM_CHAT_RESPONSE_MODEL = "anthropic.claude-sonnet-4-20250514-v1:0"
+
+# This LLM generates the title of the user's chat.
+LLM_CHAT_TITLE_MODEL = "anthropic.claude-3-7-sonnet-20250219-v1:0"
 
 ### --- Central Guidance Configuration --- ###
 
@@ -58,6 +67,7 @@ LLM_CHUNK_REVIEWER = "anthropic.claude-3-5-haiku-20241022-v1:0"
 
 ### --- GOV.UK Configuration --- ###
 
+LLM_GOVUK_QUERY_GENERATOR = "anthropic.claude-3-7-sonnet-20250219-v1:0"
 LLM_DOCUMENT_RELEVANCY_MODEL = "anthropic.claude-3-5-haiku-20241022-v1:0"
 LLM_GOV_UK_SEARCH_FOLLOWUP_ASSESMENT = "anthropic.claude-3-5-haiku-20241022-v1:0"
 

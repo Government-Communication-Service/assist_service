@@ -40,11 +40,7 @@ async def test_is_document_relevant(mock: MagicMock):
 
 @pytest.mark.asyncio
 async def test_get_relevant_documents_from_gov_uk_search(db_session):
-    llm_obj = LLMTable().get_by_model(LLM_DEFAULT_MODEL)
-    web_browsing_llm = BedrockHandler(llm=llm_obj, mode=RunMode.ASYNC)
-
     relevant_documents, citations, search_cost = await get_relevant_documents_from_gov_uk_search(
-        llm=web_browsing_llm,
         role="user",
         query="What is the current guidance on contempt of court?",
         m_user_id=1,
@@ -59,11 +55,7 @@ async def test_get_relevant_documents_from_gov_uk_search(db_session):
 
 @pytest.mark.asyncio
 async def test_get_search_terms_matching_user_query(db_session):
-    llm_obj = LLMTable().get_by_model(LLM_DEFAULT_MODEL)
-    web_browsing_llm = BedrockHandler(llm=llm_obj, mode=RunMode.ASYNC)
-
     search_terms, llm_internal_response_id_query, search_params, cost = await get_search_queries(
-        llm=web_browsing_llm,
         role="user",
         query="What are current UK Personal Income Tax rates?",
         db_session=db_session,

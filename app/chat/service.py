@@ -39,7 +39,10 @@ from app.chat.schemas import (
     RoleEnum,
     UserChatsResponse,
 )
-from app.config import LLM_DEFAULT_MODEL
+from app.config import (
+    LLM_CHAT_RESPONSE_MODEL,
+    LLM_CHAT_TITLE_MODEL,
+)
 from app.database.db_operations import DbOperations
 from app.database.models import (
     LLM,
@@ -607,7 +610,8 @@ The next message received is the human's query.
     """
 
         logger.debug(f"Constructed title_system: {system_prompt_title}")
-        chat = BedrockHandler(system=system_prompt_title, mode=RunMode.ASYNC)
+        llm_obj = LLMTable().get_by_model(LLM_CHAT_TITLE_MODEL)
+        chat = BedrockHandler(system=system_prompt_title, mode=RunMode.ASYNC, llm=llm_obj)
 
         user_query_for_title_generation = (
             data.query if len(data.query) < 200 else data.query[0:100] + data.query[-100:-1]
@@ -648,10 +652,10 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         raise Exception("Chat not found")
 
     chat_id = chat.id
-    llm_obj = LLMTable().get_by_model(LLM_DEFAULT_MODEL)
+    llm_obj = LLMTable().get_by_model(LLM_CHAT_RESPONSE_MODEL)
 
     if not llm_obj:
-        raise Exception("LLM not found with name: " + LLM_DEFAULT_MODEL)
+        raise Exception("LLM not found with name: " + LLM_CHAT_RESPONSE_MODEL)
 
     message_defaults = {
         "chat_id": chat_id,
