@@ -261,7 +261,7 @@ async def test_completion_cost_calculation():
         provider="bedrock",
         input_cost_per_token=3e-06,
         output_cost_per_token=1.5e-05,
-        max_tokens=8000,
+        max_tokens=4000,
     )
     input_tokens = 1000
     output_tokens = 100

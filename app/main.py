@@ -30,6 +30,7 @@ from app.logs.logs_handler import logger, session_id_var
 from app.opensearch.service import verify_connection_to_opensearch
 from app.personal_prompts import user_prompt
 from app.themes_use_cases import themes_use_cases
+from app.themes_use_cases.sync_service import sync_themes_use_cases
 
 
 @asynccontextmanager
@@ -47,9 +48,14 @@ async def lifespan(app: FastAPI):
         None: Yields control to the main API code
     """
     # Startup code is written here
-    logger.info("Verifying OpenSearch connection...")
+
+    # Sync with OpenSearch
     verify_connection_to_opensearch()
     async with async_db_session() as s:
+        # Sync themes and use cases
+        await sync_themes_use_cases(s)
+
+        # Sync the central RAG documents (OpenSearch)
         await sync_central_index(s)
 
         # schedule deleting expired messages

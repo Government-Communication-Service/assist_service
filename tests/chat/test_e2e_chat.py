@@ -428,7 +428,7 @@ class TestUserChatsV1:
         # The LiteLLM max_token has been manually set to counteract this.
         # On gpt-4-turbo-2024-04-09 the response to this prompt has 3914 characters (accessed on 2024-05-07).
         prompt_for_long_response = """Give me 10 ideas for using Large Language Models in GCS.
-        For each idea identify a risk. Make sure the response is at least 2500 tokens long."""
+        For each idea identify a risk. Make sure the response is at least 2500 characters long."""
         logger.debug("Testing that a long response can be generated in full.")
         url = api.chats(user_uuid=user_id)
         response_data = await async_http_requester(

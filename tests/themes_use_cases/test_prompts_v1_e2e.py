@@ -1,6 +1,13 @@
 import logging
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.api import ENDPOINTS
+from app.database.models import Theme, UseCase
+from app.themes_use_cases.config import DEFAULT_THEMES_USE_CASES
+from app.themes_use_cases.sync_service import sync_themes_use_cases
+from app.themes_use_cases.themes_use_cases import upload_prompts_in_bulk
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -1056,3 +1063,148 @@ class TestThemes:
             "Failed to get chat with the soft-deleted use case:"
             + f"{chat_get_response.status_code=} {chat_get_response.json()=}"
         )
+
+    async def test_prompts_sync(self, db_session: AsyncSession):
+        """Test that themes and use cases are synced correctly (this function runs on startup)."""
+
+        # Begin by dropping all existing prompts
+        await upload_prompts_in_bulk(db_session, prompts=[])
+
+        # Verify there are no prompts currently in the database
+        stmt = select(UseCase).where(UseCase.deleted_at.is_(None))
+        result = await db_session.execute(stmt)
+        use_cases = result.scalars().all()
+        assert len(use_cases) == 0, (
+            f"Found {len(use_cases)} prompts when setting up the test, but there were meant to be no prompts"
+        )
+
+        # Run the sync function
+        await sync_themes_use_cases(db_session)
+
+        # Verify themes are as expected
+        stmt = select(Theme).where(Theme.deleted_at.is_(None))
+        result = await db_session.execute(stmt)
+        themes = result.scalars().all()
+
+        # Get unique themes from config
+        unique_themes = {}
+        for prompt in DEFAULT_THEMES_USE_CASES:
+            theme_key = (prompt["theme_title"], prompt["theme_subtitle"], prompt["theme_position"])
+            if theme_key not in unique_themes:
+                unique_themes[theme_key] = prompt
+
+        # Verify all themes match the configured themes
+        theme_titles_tally = {}
+        theme_subtitles_tally = {}
+        theme_positions_tally = {}
+
+        for theme in themes:
+            # Get the corresponding theme in the configured prompts
+            configured_theme = next(
+                (
+                    prompt
+                    for prompt in DEFAULT_THEMES_USE_CASES
+                    if prompt["theme_title"] == theme.title
+                    and prompt["theme_subtitle"] == theme.subtitle
+                    and prompt["theme_position"] == theme.position
+                ),
+                None,
+            )
+            assert configured_theme, "Unexpected theme found in database after synchronisation"
+
+            # Check title is valid
+            assert theme.title == configured_theme["theme_title"], (
+                "theme.title in the database does not match configured theme_title after synchronisation"
+            )
+            if theme.title not in theme_titles_tally:
+                theme_titles_tally[theme.title] = 1
+            else:
+                raise AssertionError("theme.title appears twice in the database after synchronisation")
+
+            # Check subtitle is valid
+            assert theme.subtitle == configured_theme["theme_subtitle"], (
+                "theme.subtitle in the database does not match configured theme_subtitle after synchronisation"
+            )
+            if theme.subtitle not in theme_subtitles_tally:
+                theme_subtitles_tally[theme.subtitle] = 1
+            else:
+                raise AssertionError("theme.subtitle appears twice in the database after synchronisation")
+
+            # Check position is valid
+            assert theme.position == configured_theme["theme_position"], (
+                "theme.position in the database does not match configured theme_position after synchronisation"
+            )
+            if theme.position not in theme_positions_tally:
+                theme_positions_tally[theme.position] = 1
+            else:
+                raise AssertionError("theme.position appears twice in the database after synchronisation")
+
+        # Verify the database is as expected for use cases
+        stmt = select(UseCase).where(UseCase.deleted_at.is_(None))
+        result = await db_session.execute(stmt)
+        use_cases = result.scalars().all()
+
+        # Verify all use cases match the configured use cases
+        use_case_titles_tally = {}
+        use_case_instructions_tally = {}
+        use_case_forms_tally = {}
+
+        # Group use cases by theme to check position uniqueness within each theme
+        use_cases_by_theme = {}
+        for use_case in use_cases:
+            if use_case.theme_id not in use_cases_by_theme:
+                use_cases_by_theme[use_case.theme_id] = []
+            use_cases_by_theme[use_case.theme_id].append(use_case)
+
+        # Check position uniqueness within each theme
+        for theme_id, theme_use_cases in use_cases_by_theme.items():
+            use_case_positions_in_theme = {}
+            for use_case in theme_use_cases:
+                if use_case.position not in use_case_positions_in_theme:
+                    use_case_positions_in_theme[use_case.position] = 1
+                else:
+                    raise AssertionError(
+                        f"use_case.position {use_case.position} appears twice "
+                        f"within theme {theme_id} after synchronisation"
+                    )
+
+        for use_case in use_cases:
+            # Get the corresponding use case in the configured prompts
+            configured_use_case = next(
+                prompt for prompt in DEFAULT_THEMES_USE_CASES if prompt["use_case_title"] == use_case.title
+            )
+            assert configured_use_case, "Unexpected prompt found in database after synchronisation"
+
+            # Check title is valid
+            assert use_case.title == configured_use_case["use_case_title"], (
+                "use_case.title in the database does not match configured use_case_title after synchronisation"
+            )
+            if use_case.title not in use_case_titles_tally:
+                use_case_titles_tally[use_case.title] = 1
+            else:
+                raise AssertionError("use_case.title appears twice in the database after synchronisation")
+
+            # Check instruction is valid
+            assert use_case.instruction == configured_use_case["use_case_instruction"], (
+                "use_case.instruction in the database does not match "
+                "configured use_case_instruction after synchronisation"
+            )
+            if use_case.instruction not in use_case_instructions_tally:
+                use_case_instructions_tally[use_case.instruction] = 1
+            else:
+                raise AssertionError("use_case.instruction appears twice in the database after synchronisation")
+
+            # Check use_case.user_input_form is valid
+            assert use_case.user_input_form == configured_use_case["use_case_user_input_form"], (
+                "use_case.user_input_form in the database does not match "
+                "configured use_case_user_input_form after synchronisation"
+            )
+            if use_case.user_input_form not in use_case_forms_tally:
+                use_case_forms_tally[use_case.user_input_form] = 1
+            else:
+                raise AssertionError("use_case.user_input_form appears twice in the database after synchronisation")
+
+            # Check use_case.position is valid
+            assert use_case.position == configured_use_case["use_case_position"], (
+                "use_case.position in the database does not match configured use_case_position after synchronisation"
+            )

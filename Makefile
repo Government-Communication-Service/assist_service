@@ -74,14 +74,11 @@ test-table:
 	$(MAKE) db
 	$(docker-cmd) "${test-cmd} tests/unit/test_table.py"
 
-test-prompts:
-	$(docker-cmd) "${test-cmd} tests/prompts"
+test-themes-use-cases:
+	$(docker-cmd) "${test-cmd} tests/themes_use_cases"
 
-test-prompts-bulk-up:
-	$(docker-cmd) "${test-cmd} tests/prompts/test_prompts_v1_e2e.py::TestThemes::test_bulk_upload_happy_path"
-
-test-prompts-bulk-get:
-	$(docker-cmd) "${test-cmd} tests/prompts/test_prompts_v1_e2e.py::TestThemes::test_get_prompts_bulk"
+test-themes-use-cases-sync:
+	$(docker-cmd) "${test-cmd} tests/themes_use_cases/test_prompts_v1_e2e.py::TestThemes::test_prompts_sync"
 
 test-feedback:
 	$(docker-cmd) "${test-cmd} tests/feedback"
