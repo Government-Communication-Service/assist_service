@@ -1081,6 +1081,9 @@ class TestThemes:
         # Run the sync function
         await sync_themes_use_cases(db_session)
 
+        # Collect all validation errors instead of failing immediately
+        errors = []
+
         # Verify themes are as expected
         stmt = select(Theme).where(Theme.deleted_at.is_(None))
         result = await db_session.execute(stmt)
@@ -1110,34 +1113,48 @@ class TestThemes:
                 ),
                 None,
             )
-            assert configured_theme, "Unexpected theme found in database after synchronisation"
+            if not configured_theme:
+                errors.append(f"Theme: Unexpected theme found in database after synchronisation - {theme.title}")
 
-            # Check title is valid
-            assert theme.title == configured_theme["theme_title"], (
-                "theme.title in the database does not match configured theme_title after synchronisation"
-            )
-            if theme.title not in theme_titles_tally:
+            if configured_theme:
+                # Check title is valid
+                if theme.title != configured_theme["theme_title"]:
+                    errors.append(
+                        f"Theme {theme.id}: title in database ({theme.title}) does not match "
+                        f"configured theme_title ({configured_theme['theme_title']}) after synchronisation"
+                    )
+
+                # Check subtitle is valid
+                if theme.subtitle != configured_theme["theme_subtitle"]:
+                    errors.append(
+                        f"Theme {theme.id}: subtitle in database ({theme.subtitle}) does not match "
+                        f"configured theme_subtitle ({configured_theme['theme_subtitle']}) after synchronisation"
+                    )
+
+                # Check position is valid
+                if theme.position != configured_theme["theme_position"]:
+                    errors.append(
+                        f"Theme {theme.id}: position in database ({theme.position}) does not match "
+                        f"configured theme_position ({configured_theme['theme_position']}) after synchronisation"
+                    )
+
+            # Check for duplicate titles
+            if theme.title in theme_titles_tally:
+                errors.append(f"Theme: title '{theme.title}' appears twice in the database after synchronisation")
+            else:
                 theme_titles_tally[theme.title] = 1
-            else:
-                raise AssertionError("theme.title appears twice in the database after synchronisation")
 
-            # Check subtitle is valid
-            assert theme.subtitle == configured_theme["theme_subtitle"], (
-                "theme.subtitle in the database does not match configured theme_subtitle after synchronisation"
-            )
-            if theme.subtitle not in theme_subtitles_tally:
+            # Check for duplicate subtitles
+            if theme.subtitle in theme_subtitles_tally:
+                errors.append(f"Theme: subtitle '{theme.subtitle}' appears twice in the database after synchronisation")
+            else:
                 theme_subtitles_tally[theme.subtitle] = 1
-            else:
-                raise AssertionError("theme.subtitle appears twice in the database after synchronisation")
 
-            # Check position is valid
-            assert theme.position == configured_theme["theme_position"], (
-                "theme.position in the database does not match configured theme_position after synchronisation"
-            )
-            if theme.position not in theme_positions_tally:
-                theme_positions_tally[theme.position] = 1
+            # Check for duplicate positions
+            if theme.position in theme_positions_tally:
+                errors.append(f"Theme: position '{theme.position}' appears twice in the database after synchronisation")
             else:
-                raise AssertionError("theme.position appears twice in the database after synchronisation")
+                theme_positions_tally[theme.position] = 1
 
         # Verify the database is as expected for use cases
         stmt = select(UseCase).where(UseCase.deleted_at.is_(None))
@@ -1147,7 +1164,6 @@ class TestThemes:
         # Verify all use cases match the configured use cases
         use_case_titles_tally = {}
         use_case_instructions_tally = {}
-        use_case_forms_tally = {}
 
         # Group use cases by theme to check position uniqueness within each theme
         use_cases_by_theme = {}
@@ -1160,51 +1176,78 @@ class TestThemes:
         for theme_id, theme_use_cases in use_cases_by_theme.items():
             use_case_positions_in_theme = {}
             for use_case in theme_use_cases:
-                if use_case.position not in use_case_positions_in_theme:
-                    use_case_positions_in_theme[use_case.position] = 1
-                else:
-                    raise AssertionError(
-                        f"use_case.position {use_case.position} appears twice "
+                if use_case.position in use_case_positions_in_theme:
+                    errors.append(
+                        f"UseCase: position {use_case.position} appears twice "
                         f"within theme {theme_id} after synchronisation"
                     )
+                else:
+                    use_case_positions_in_theme[use_case.position] = 1
 
         for use_case in use_cases:
             # Get the corresponding use case in the configured prompts
             configured_use_case = next(
-                prompt for prompt in DEFAULT_THEMES_USE_CASES if prompt["use_case_title"] == use_case.title
+                (prompt for prompt in DEFAULT_THEMES_USE_CASES if prompt["use_case_title"] == use_case.title),
+                None,
             )
-            assert configured_use_case, "Unexpected prompt found in database after synchronisation"
+            if not configured_use_case:
+                errors.append(
+                    f"UseCase: Unexpected use case found in database after synchronisation - {use_case.title}"
+                )
 
-            # Check title is valid
-            assert use_case.title == configured_use_case["use_case_title"], (
-                "use_case.title in the database does not match configured use_case_title after synchronisation"
-            )
-            if use_case.title not in use_case_titles_tally:
+            if configured_use_case:
+                # Check title is valid
+                if use_case.title != configured_use_case["use_case_title"]:
+                    errors.append(
+                        f"UseCase {use_case.id}: title in database ({use_case.title}) does not match "
+                        f"configured use_case_title ({configured_use_case['use_case_title']}) after synchronisation"
+                    )
+
+                # Check instruction is valid
+                if use_case.instruction != configured_use_case["use_case_instruction"]:
+                    errors.append(
+                        f"UseCase {use_case.id}: instruction in database ({use_case.instruction}) does not match "
+                        f"configured use_case_instruction ({configured_use_case['use_case_instruction']}) "
+                        "after synchronisation"
+                    )
+
+                # Check use_case.user_input_form is valid
+                if use_case.user_input_form != configured_use_case["use_case_user_input_form"]:
+                    errors.append(
+                        f"UseCase {use_case.id}: user_input_form in database ({use_case.user_input_form}) "
+                        "does not match "
+                        f"configured use_case_user_input_form ({configured_use_case['use_case_user_input_form']}) "
+                        "after synchronisation"
+                    )
+
+                # Check use_case.position is valid
+                if use_case.position != configured_use_case["use_case_position"]:
+                    errors.append(
+                        f"UseCase {use_case.id}: position in database ({use_case.position}) does not match "
+                        f"configured use_case_position ({configured_use_case['use_case_position']}) "
+                        "after synchronisation"
+                    )
+
+            # Check for duplicate titles
+            if use_case.title in use_case_titles_tally:
+                errors.append(f"UseCase: title '{use_case.title}' appears twice in the database after synchronisation")
+            else:
                 use_case_titles_tally[use_case.title] = 1
-            else:
-                raise AssertionError("use_case.title appears twice in the database after synchronisation")
 
-            # Check instruction is valid
-            assert use_case.instruction == configured_use_case["use_case_instruction"], (
-                "use_case.instruction in the database does not match "
-                "configured use_case_instruction after synchronisation"
-            )
-            if use_case.instruction not in use_case_instructions_tally:
+            # Check for duplicate instructions
+            if use_case.instruction in use_case_instructions_tally:
+                errors.append(
+                    f"UseCase: instruction '{use_case.instruction}' appears twice in the database after synchronisation"
+                )
+            else:
                 use_case_instructions_tally[use_case.instruction] = 1
-            else:
-                raise AssertionError("use_case.instruction appears twice in the database after synchronisation")
 
-            # Check use_case.user_input_form is valid
-            assert use_case.user_input_form == configured_use_case["use_case_user_input_form"], (
-                "use_case.user_input_form in the database does not match "
-                "configured use_case_user_input_form after synchronisation"
-            )
-            if use_case.user_input_form not in use_case_forms_tally:
-                use_case_forms_tally[use_case.user_input_form] = 1
-            else:
-                raise AssertionError("use_case.user_input_form appears twice in the database after synchronisation")
+            # We do not check for duplicate user_input_form, because this can reasonably be the
+            # same across different prompts.
 
-            # Check use_case.position is valid
-            assert use_case.position == configured_use_case["use_case_position"], (
-                "use_case.position in the database does not match configured use_case_position after synchronisation"
-            )
+        # If there are any errors, raise them all at once
+        if errors:
+            error_message = "Synchronisation validation failed with the following errors:\n"
+            for i, error in enumerate(errors, 1):
+                error_message += f"{i}. {error}\n"
+            raise AssertionError(error_message)
