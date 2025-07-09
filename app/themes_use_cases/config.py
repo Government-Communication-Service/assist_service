@@ -2,7 +2,7 @@
 
 DEFAULT_THEMES_USE_CASES = [
   {
-    "theme_title": "Planning Campaigns and Communications",
+    "theme_title": "Planning campaigns and communications",
     "theme_subtitle": "Create OASIS plans, design narratives, conduct COM-B analysis",
     "theme_position": 1,
     "use_case_title": "I want to create an OASIS Plan",
@@ -11,7 +11,7 @@ DEFAULT_THEMES_USE_CASES = [
     "use_case_position": 1
   },
   {
-    "theme_title": "Planning Campaigns and Communications",
+    "theme_title": "Planning campaigns and communications",
     "theme_subtitle": "Create OASIS plans, design narratives, conduct COM-B analysis",
     "theme_position": 1,
     "use_case_title": "I want feedback on my OASIS plan",
@@ -20,7 +20,7 @@ DEFAULT_THEMES_USE_CASES = [
     "use_case_position": 2
   },
   {
-    "theme_title": "Planning Campaigns and Communications",
+    "theme_title": "Planning campaigns and communications",
     "theme_subtitle": "Create OASIS plans, design narratives, conduct COM-B analysis",
     "theme_position": 1,
     "use_case_title": "I want to create some audience personas",
@@ -29,7 +29,7 @@ DEFAULT_THEMES_USE_CASES = [
     "use_case_position": 3
   },
   {
-    "theme_title": "Planning Campaigns and Communications",
+    "theme_title": "Planning campaigns and communications",
     "theme_subtitle": "Create OASIS plans, design narratives, conduct COM-B analysis",
     "theme_position": 1,
     "use_case_title": "I want to conduct COM-B analysis",
@@ -38,7 +38,7 @@ DEFAULT_THEMES_USE_CASES = [
     "use_case_position": 4
   },
   {
-    "theme_title": "Planning Campaigns and Communications",
+    "theme_title": "Planning campaigns and communications",
     "theme_subtitle": "Create OASIS plans, design narratives, conduct COM-B analysis",
     "theme_position": 1,
     "use_case_title": "I want to design a narrative for a campaign",
@@ -191,7 +191,7 @@ DEFAULT_THEMES_USE_CASES = [
     "use_case_position": 2
   },
   {
-    "theme_title": "Crisis Communications",
+    "theme_title": "Crisis communications",
     "theme_subtitle": "Develop response strategies, draft crisis messages",
     "theme_position": 6,
     "use_case_title": "I want to create a STOP crisis communications plan",
@@ -200,7 +200,7 @@ DEFAULT_THEMES_USE_CASES = [
     "use_case_position": 1
   },
   {
-    "theme_title": "Crisis Communications",
+    "theme_title": "Crisis communications",
     "theme_subtitle": "Develop response strategies, draft crisis messages",
     "theme_position": 6,
     "use_case_title": "I want to draft messages for a crisis",
@@ -209,7 +209,7 @@ DEFAULT_THEMES_USE_CASES = [
     "use_case_position": 2
   },
   {
-    "theme_title": "Crisis Communications",
+    "theme_title": "Crisis communications",
     "theme_subtitle": "Develop response strategies, draft crisis messages",
     "theme_position": 6,
     "use_case_title": "I want to develop a response strategy in a crisis",
@@ -299,7 +299,7 @@ DEFAULT_THEMES_USE_CASES = [
     "use_case_position": 4
   },
   {
-    "theme_title": "inclusive and accessible communications",
+    "theme_title": "Inclusive and accessible communications",
     "theme_subtitle": "Considerations, test material for accessibility",
     "theme_position": 10,
     "use_case_title": "I want to account for cultural considerations in my communications",
@@ -308,7 +308,7 @@ DEFAULT_THEMES_USE_CASES = [
     "use_case_position": 1
   },
   {
-    "theme_title": "inclusive and accessible communications",
+    "theme_title": "Inclusive and accessible communications",
     "theme_subtitle": "Considerations, test material for accessibility",
     "theme_position": 10,
     "use_case_title": "I want to test communications material for accessibility",
@@ -317,7 +317,7 @@ DEFAULT_THEMES_USE_CASES = [
     "use_case_position": 2
   },
   {
-    "theme_title": "inclusive and accessible communications",
+    "theme_title": "Inclusive and accessible communications",
     "theme_subtitle": "Considerations, test material for accessibility",
     "theme_position": 10,
     "use_case_title": "I want to apply alt-text in my digital communications",
@@ -326,16 +326,16 @@ DEFAULT_THEMES_USE_CASES = [
     "use_case_position": 3
   },
   {
-    "theme_title": "inclusive and accessible communications",
+    "theme_title": "Inclusive and accessible communications",
     "theme_subtitle": "Considerations, test material for accessibility",
     "theme_position": 10,
-    "use_case_title": "I want to improve my provision for British Sign Language translations",
+    "use_case_title": "I want to improve my provision for British Sign Language (BSL) translations",
     "use_case_instruction": "I would like comprehensive guidance on implementing British Sign Language (BSL) in my government communications to meet current accessibility standards and legal requirements. Please provide information on:\nThe legal requirements under the British Sign Language Act 2022\nWhen BSL translations are mandatory versus recommended\nBest practices for creating effective BSL content\nProcurement guidance for BSL services\nTechnical specifications for BSL video production\n\nI'm particularly interested in understanding which types of communications should prioritise BSL translations, cost considerations, timeline planning, and quality control measures to ensure our communications are fully accessible to the Deaf community.",
     "use_case_user_input_form": "Campaign digital implementation plan [User Input]",
     "use_case_position": 4
   },
   {
-    "theme_title": "inclusive and accessible communications",
+    "theme_title": "Inclusive and accessible communications",
     "theme_subtitle": "Considerations, test material for accessibility",
     "theme_position": 10,
     "use_case_title": "I want to consider the colour contrast of my digital communications content",
@@ -344,7 +344,7 @@ DEFAULT_THEMES_USE_CASES = [
     "use_case_position": 5
   },
   {
-    "theme_title": "inclusive and accessible communications",
+    "theme_title": "Inclusive and accessible communications",
     "theme_subtitle": "Considerations, test material for accessibility",
     "theme_position": 10,
     "use_case_title": "I want to use emojis and hashtags on social media in an accessible way",
