@@ -173,7 +173,7 @@ DEFAULT_THEMES_USE_CASES = [
     "use_case_position": 3
   },
   {
-    "theme_title": "Exploring stategy risks",
+    "theme_title": "Exploring strategy risks",
     "theme_subtitle": "Analyse risks, explore consequences, test adversarial strategies",
     "theme_position": 5,
     "use_case_title": "I want to analyse possible risks and consequences",
@@ -182,7 +182,7 @@ DEFAULT_THEMES_USE_CASES = [
     "use_case_position": 1
   },
   {
-    "theme_title": "Exploring stategy risks",
+    "theme_title": "Exploring strategy risks",
     "theme_subtitle": "Analyse risks, explore consequences, test adversarial strategies",
     "theme_position": 5,
     "use_case_title": "I want to test strategies from an adversarial perspective",
@@ -230,7 +230,7 @@ DEFAULT_THEMES_USE_CASES = [
     "theme_title": "Internal communications",
     "theme_subtitle": "Brainstorm ideas, develop strategies, produce materials",
     "theme_position": 8,
-    "use_case_title": "I want to develop a stategy for internal communications",
+    "use_case_title": "I want to develop a strategy for internal communications",
     "use_case_instruction": "Please develop a comprehensive internal communications plan using the Government Communications Service OASIS framework. This plan should drive meaningful behaviour change while addressing the specific challenges in our organisation.\n\nFor each section of the OASIS framework, please provide:\n\nOBJECTIVES\nPrimary behaviour change objectives that follow SMART principles (Specific, Measurable, Achievable, Relevant, Time-bound)\nSecondary supporting objectives that contribute to the primary goals\nClear links between communication objectives and wider organisational/policy objectives\nPrioritisation of objectives if multiple are suggested\n\nAUDIENCE\nDetailed audience segmentation with insights about each group\nCOM-B analysis for each key audience segment showing:\nCapability barriers (knowledge, skills, awareness)\nOpportunity barriers (resources, systems, environment)\nMotivation barriers (beliefs, habits, attitudes)\nRecommendations for overcoming identified barriers\nConsideration of accessibility needs and inclusive communication approaches\n\nSTRATEGY\nA compelling overarching narrative that will resonate with internal audiences\nAt least three strategic approach options with pros and cons of each\nIntegration with any existing internal communications channels or campaigns\nTheory of Change mapping showing how communications activities will lead to desired outcomes\n\nIMPLEMENTATION\nDetailed channel strategy with recommendations for primary and secondary channels\nContent plan with key message points and creative approach\nTimeline with phasing recommendations (immediate, short-term, long-term)\nResource requirements and budget considerations\nRoles and responsibilities for delivery\n\nSCORING\nEvaluation metrics aligned with the GCS Evaluation Cycle (inputs, outputs, outtakes, outcomes, impact)\nSpecific KPIs for each objective that include both quantitative and qualitative measures\nMethods for continuous learning and improvement during the campaign\nReporting framework to track progress and demonstrate value\n\nREVIEW\nCritical assessment of plan strengths and weaknesses\nKey risks and mitigations\nGaps in knowledge that need addressing\nAssumptions being made that should be tested\n\nPlease ensure the plan emphasises continuous evaluation and learning throughout implementation, not just at the end.",
     "use_case_user_input_form": "Background information: [USER TO INSERT PROJECT DESCRIPTION]\nObjectives: [USER TO INSERT INITIAL OBJECTIVES]\nAudience: [USER TO INSERT AUDIENCE INFORMATION]\nStrategy: [USER TO INSERT STRATEGIC CONSIDERATIONS]\nImplementation: [USER TO INSERT IMPLEMENTATION IDEAS]\nScoring: [USER TO INSERT EVALUATION APPROACHES]",
     "use_case_position": 1
