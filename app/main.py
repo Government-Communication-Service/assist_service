@@ -175,6 +175,7 @@ async def database_exception_handler(request: Request, exc: DatabaseError):
         JSONResponse: With appropriate status code and message based on error type
     """
     # Report the detailed bug to Bugsnag
+    logger.error(f"Database Error: code={exc.code}, message={exc.message}")
     bugsnag.notify(f"Database Error: {exc}")
 
     if exc.code == DatabaseExceptionErrorCode.GET_BY_UUID_ERROR:

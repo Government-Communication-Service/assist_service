@@ -95,7 +95,7 @@ class LogsHandler:
     @staticmethod
     def error(error: Exception, task: str = "unamed task"):
         err_message = f"Error occurred during {task}: {error}"
-        logger.error(err_message)
+        logger.exception(err_message)
 
     @staticmethod
     async def with_logging(
@@ -126,5 +126,5 @@ class LogsHandler:
 
             return callback()
         except Exception:
-            logger.error("Got error executing action %s", action)
+            logger.exception("Got error executing action %s", action)
             raise

@@ -1124,11 +1124,14 @@ async def assess_if_next_message_should_use_gov_uk_search(
 
     messages_formatted = []
     for message in messages:
-        citations = citations_by_message.get(message.id, [])
-        citations_text = ""
-        if citations:
-            citations_text = f"\n<gov-uk-search-citations>{citations}</gov-uk-search-citations>"
-        messages_formatted.append({"role": message.role, "content": f"{message.content}{citations_text}"})
+        if message.summary is not None:
+            messages_formatted.append({"role": message.role, "content": message.summary})
+        else:
+            citations = citations_by_message.get(message.id, [])
+            citations_text = ""
+            if citations:
+                citations_text = f"\n<gov-uk-search-citations>{citations}</gov-uk-search-citations>"
+            messages_formatted.append({"role": message.role, "content": f"{message.content}{citations_text}"})
     messages_formatted.append({"role": "user", "content": new_user_message_content})
 
     try:

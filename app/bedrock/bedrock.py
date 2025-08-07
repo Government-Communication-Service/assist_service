@@ -57,45 +57,6 @@ class ToolResult(BaseModel):
     output_tokens: int
 
 
-class MessageFunctions:
-    @staticmethod
-    def format_messages(q: str, q_enhanced_with_rag: str = None, messages=None):
-        if messages is None:
-            messages = []
-
-        messages.extend(
-            [
-                Message(
-                    role="user",
-                    content=q,
-                    content_enhanced_with_rag=q_enhanced_with_rag,
-                )
-            ]
-        )
-        new_messages: List[dict] = []
-        for msg in messages:
-            # Use the RAG-enhanced content if it was created.
-            # Otherwise, use the user-provided content. This should only happen if the RAG encounters an error
-            # or if the env variable USE_RAG is set to false.
-            content_to_use = msg.content_enhanced_with_rag if msg.content_enhanced_with_rag is not None else msg.content
-
-            # check if this is a user message and if the last message was also a user message
-            # then merge this message to the previous user message collapsing them into a single one.
-            if msg.role == "user":
-                last_msg = new_messages[-1] if new_messages else None
-                if last_msg and last_msg["role"] == "user":
-                    new_messages[-1]["content"] += "\n\n" + content_to_use
-                else:
-                    # if the last message was not a user message, then add this message as a new user message.
-                    new_messages.append({"role": "user", "content": content_to_use})
-            else:
-                # assistant messages are always added as new messages.
-                if msg.content:
-                    new_messages.append({"role": "assistant", "content": content_to_use})
-
-        return new_messages
-
-
 class BedrockHandler:
     __CROSS_REGION_INFERENCE_MODELS = {
         AWS_BEDROCK_REGION1: [

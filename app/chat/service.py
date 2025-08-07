@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api import api_wrapper, get_current_session
 from app.api.config import ApiConfig
 from app.api.paths import ApiPaths
-from app.bedrock import BedrockHandler, MessageFunctions, RunMode
+from app.bedrock import BedrockHandler, RunMode
 from app.bedrock.bedrock_types import BedrockError, BedrockErrorType
 from app.bedrock.schemas import LLMResponse
 from app.bedrock.service import llm_transaction
@@ -39,6 +39,7 @@ from app.chat.schemas import (
     RoleEnum,
     UserChatsResponse,
 )
+from app.compaction.service import trigger_compaction_if_needed
 from app.config import (
     LLM_CHAT_RESPONSE_MODEL,
     LLM_CHAT_TITLE_MODEL,
@@ -309,18 +310,13 @@ def chat_save_llm_output(
     llm: LLM,
 ) -> Optional[Message]:
     try:
-        logger.info(f"Starting chat_save_llm_output for user message ID: {user_message.id}")
-
         transaction = llm_transaction(llm, llm_response)
-        logger.info(
+        logger.debug(
             f"LLM transaction created: input_cost={transaction.input_cost}, output_cost={transaction.output_cost}",
         )
 
         message_repo = MessageTable()
-        logger.info(f"Message defaults set: {ai_message_defaults}")
-
         try:
-            logger.info(f"Updating user message ID: {user_message.id}")
             message_repo.update(
                 user_message,
                 {
@@ -336,7 +332,6 @@ def chat_save_llm_output(
             # Continue execution, as this is not a critical error
 
         try:
-            logger.info("Creating AI message")
             content_list = [text_block.text for text_block in llm_response.content if text_block.type == "text"]
             if content_list:
                 content = ", ".join(content_list)
@@ -353,9 +348,10 @@ def chat_save_llm_output(
                     "citation": user_message.citation,
                 },
             )
-            logger.info(f"AI message created successfully. Message ID: {ai_message.id}")
-            logger.debug(
-                f"AI message details: role={ai_message.role}, tokens={ai_message.tokens}, "
+            logger.info(
+                "AI message created succesfully: "
+                f"message_id={ai_message.id}, "
+                f"tokens={ai_message.tokens}, "
                 f"completion_cost={ai_message.completion_cost}",
             )
         except Exception as e:
@@ -550,7 +546,6 @@ async def chat_create(input_data: ChatCreateInput) -> ChatWithLatestMessage:
 
     Return a ChatWithLatestMessage instance, wrapping chat and the message details.
     """
-    logger.debug("---------")
     logger.debug(f"{input_data=}")
     title = "New chat"
 
@@ -585,8 +580,6 @@ async def chat_create(input_data: ChatCreateInput) -> ChatWithLatestMessage:
         )
         await db_session.commit()
 
-    logger.debug("starting return")
-
     if input_data.stream:
         return message
 
@@ -594,7 +587,6 @@ async def chat_create(input_data: ChatCreateInput) -> ChatWithLatestMessage:
 
 
 async def chat_create_title(data: ChatTitleRequest):
-    logger.info("Starting chat_create_title function")
     try:
         system_prompt_title = """The assistant is a title generator called Title Bot. \
 Title Bot creates short titles with a maximum of 5 words. \
@@ -633,14 +625,12 @@ The next message received is the human's query.
         else:
             title = result.content
 
-        logger.info(f"Extracted title: {title}")
-
         if len(title) > 255:
             logger.warning(f"Title exceeds 255 characters. Truncating: {title}")
             title = title[:252] + "..."
-            logger.info(f"Truncated title: {title}")
+            logger.debug(f"Truncated title: {title}")
 
-        logger.info("chat_create_title function completed successfully")
+        logger.info(f"Chat title created: {title}")
         return title
     except Exception as error:
         logger.error(f"Error in chat_create_title: {str(error)}", exc_info=True)
@@ -831,6 +821,17 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
 
     query_enhanced_with_rag = "\n\n".join(query_parts)
 
+    # Check if compaction is needed before generating the final message
+    compaction_triggered = False
+    try:
+        compaction_triggered = await trigger_compaction_if_needed(chat_id, query_enhanced_with_rag, db_session)
+        if compaction_triggered:
+            logger.info(f"Compaction triggered for chat {chat_id} before message generation")
+            # Reload messages from database to get updated summaries
+            messages = message_repo.get_by_chat(chat_id)
+    except Exception as e:
+        logger.exception(f"Error during compaction check for chat {chat_id}: {e}")
+
     m_user = message_repo.update(
         m_user,
         {
@@ -839,7 +840,7 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         },
     )
 
-    formatted_messages = MessageFunctions.format_messages(
+    formatted_messages = format_messages(
         input_data.query,
         query_enhanced_with_rag,
         messages,
@@ -1028,3 +1029,52 @@ async def schedule_expired_messages_deletion(db_session: AsyncSession):
             logger.exception("An error occurred during expired messages deletion: %s", e)
         logger.info("Sleeping for %s seconds before the next message deletion run.", SLEEP_TIME_MESSAGE_DELETION)
         await asyncio.sleep(SLEEP_TIME_MESSAGE_DELETION)
+
+
+def format_messages(q: str, q_enhanced_with_rag: str = None, messages=None):
+    if messages is None:
+        messages = []
+
+    messages.extend(
+        [
+            Message(
+                role="user",
+                content=q,
+                content_enhanced_with_rag=q_enhanced_with_rag,
+            )
+        ]
+    )
+    new_messages: list[dict] = []
+    for msg in messages:
+        # Determine content to use based on priority:
+        # 1. If summary exists, use summary (for compacted messages)
+        # 2. If RAG-enhanced content exists, use it
+        # 3. Otherwise, use original content
+        if hasattr(msg, "summary") and msg.summary is not None:
+            content_to_use = msg.summary
+            logger.debug(f"Using summary for message {getattr(msg, 'id', 'unknown')}: {len(content_to_use)} chars")
+        elif msg.content_enhanced_with_rag is not None:
+            content_to_use = msg.content_enhanced_with_rag
+            logger.debug(f"Using RAG content for message {getattr(msg, 'id', 'unknown')}: {len(content_to_use)} chars")
+        else:
+            content_to_use = msg.content
+            logger.debug(
+                f"Using original content for message {getattr(msg, 'id', 'unknown')}: {len(content_to_use)} chars"
+            )
+
+        # check if this is a user message and if the last message was also a user message
+        # then merge this message to the previous user message collapsing them into a single one.
+        if msg.role == "user":
+            last_msg = new_messages[-1] if new_messages else None
+            if last_msg and last_msg["role"] == "user":
+                new_messages[-1]["content"] += "\n\n" + content_to_use
+            else:
+                # if the last message was not a user message, then add this message as a new user message.
+                new_messages.append({"role": "user", "content": content_to_use})
+        else:
+            # assistant messages are always added as new messages.
+            if msg.content:
+                new_messages.append({"role": "assistant", "content": content_to_use})
+
+    logger.info("Messages formatted for submission to LLM for final response")
+    return new_messages

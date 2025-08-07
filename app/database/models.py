@@ -172,6 +172,8 @@ class Message(Base):
     interrupted = Column(Boolean, nullable=False)
     completion_cost = Column(Numeric, nullable=True)
     llm_id = Column(Integer, ForeignKey("llm.id"), nullable=True)
+    summary = Column(Text, nullable=True)
+    summary_llm_response_id = Column(Integer, ForeignKey("llm_internal_response.id"), nullable=True)
     chat = relationship("Chat", back_populates="messages")
 
     def client_response(self):
