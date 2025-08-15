@@ -8,6 +8,8 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from app.auth.constants import USER_KEY_UUID_ALIAS
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,15 +58,19 @@ class BugsnagLogger:
             params_filters=["Auth-Token"],
         )
 
+    def _get_user_data_from_request_header(self, request: Request) -> dict:
+        user_key_uuid: str | None = request.headers.get(USER_KEY_UUID_ALIAS)  # Returns None if the key is not present
+        return {"id": user_key_uuid, "name": None, "email": None}
+
     async def _catch_all_exception_handler(self, request: Request, exc: Exception) -> JSONResponse:
-        bugsnag.notify(exc)
+        bugsnag.notify(exc, user=self._get_user_data_from_request_header(request))
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"message": "Internal server error"},
         )
 
     async def _not_found_exception_handler(self, request: Request, exc: Exception) -> JSONResponse:
-        bugsnag.notify(exc)
+        bugsnag.notify(exc, user=self._get_user_data_from_request_header(request))
         logger.info(f"404 error: {str(exc)}")
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -72,7 +78,7 @@ class BugsnagLogger:
         )
 
     async def _validation_exception_handler(self, request: Request, exc: RequestValidationError) -> JSONResponse:
-        bugsnag.notify(exc)
+        bugsnag.notify(exc, user=self._get_user_data_from_request_header(request))
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={"detail": exc.errors()},

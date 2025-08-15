@@ -4,7 +4,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.future import select
 
-from app.api import ENDPOINTS, ApiConfig
+from app.api.endpoints import ENDPOINTS
+from app.auth.constants import AUTH_TOKEN_ALIAS, SESSION_AUTH_ALIAS, USER_KEY_UUID_ALIAS
 from app.database.models import Document
 
 logger = logging.getLogger()
@@ -144,9 +145,9 @@ class TestUserDocuments:
 
         # attempt delete document
         non_owning_user_session_params = {
-            ApiConfig.USER_KEY_UUID_ALIAS: non_owning_user,
-            ApiConfig.SESSION_AUTH_ALIAS: other_session,
-            ApiConfig.AUTH_TOKEN_ALIAS: auth_token,
+            USER_KEY_UUID_ALIAS: non_owning_user,
+            SESSION_AUTH_ALIAS: other_session,
+            AUTH_TOKEN_ALIAS: auth_token,
         }
         response = await async_http_requester(
             "delete_document",

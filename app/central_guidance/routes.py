@@ -4,8 +4,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends
 
-from app.api import ENDPOINTS
-from app.auth.auth_token import auth_token_validator_no_user
+from app.api.endpoints import ENDPOINTS
+from app.auth.verify_service import verify_auth_token
 from app.central_guidance.constants import DEFAULT_CHUNKS
 from app.central_guidance.schemas import ListDocumentChunkResponse
 from app.central_guidance.service_index import (
@@ -19,7 +19,7 @@ from app.database.table import async_db_session
 router = APIRouter()
 
 
-@router.get(ENDPOINTS.CENTRAL_RAG_DOCUMENT_CHUNKS, dependencies=[Depends(auth_token_validator_no_user)])
+@router.get(ENDPOINTS.CENTRAL_RAG_DOCUMENT_CHUNKS, dependencies=[Depends(verify_auth_token)])
 async def get_chunks() -> ListDocumentChunkResponse:
     """Lists all the document chunks stored in the PostgreSQL database."""
     async with async_db_session() as db_session:
@@ -28,21 +28,21 @@ async def get_chunks() -> ListDocumentChunkResponse:
 
 @router.post(
     ENDPOINTS.CENTRAL_RAG_DOCUMENT_CHUNKS,
-    dependencies=[Depends(auth_token_validator_no_user)],
+    dependencies=[Depends(verify_auth_token)],
 )
 async def create_chunks(chunks: list = Body(DEFAULT_CHUNKS)) -> bool:
     async with async_db_session() as db_session:
         return await load_chunks_to_central_rag(db_session=db_session, data=chunks)
 
 
-@router.delete(ENDPOINTS.CENTRAL_RAG_DOCUMENT_CHUNK, dependencies=[Depends(auth_token_validator_no_user)])
+@router.delete(ENDPOINTS.CENTRAL_RAG_DOCUMENT_CHUNK, dependencies=[Depends(verify_auth_token)])
 async def delete_chunk(document_chunk_uuid: UUID) -> bool:
     """Soft deletes document chunks in the PostgreSQL database and hard deletes the document chunk in OpenSearch."""
     async with async_db_session() as db_session:
         return await delete_chunk_in_central_rag(db_session, document_chunk_uuid)
 
 
-@router.put(ENDPOINTS.CENTRAL_RAG_SYNC, dependencies=[Depends(auth_token_validator_no_user)])
+@router.put(ENDPOINTS.CENTRAL_RAG_SYNC, dependencies=[Depends(verify_auth_token)])
 async def sync_indexes() -> bool:
     """Synchronises OpenSearch with the PostgreSQL representation of the search indexes and document chunks."""
     async with async_db_session() as db_session:

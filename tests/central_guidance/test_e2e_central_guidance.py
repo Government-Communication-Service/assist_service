@@ -6,7 +6,7 @@ import pytest
 # from pydantic import ValidationError
 from sqlalchemy.future import select
 
-from app.api import ENDPOINTS
+from app.api.endpoints import ENDPOINTS
 from app.central_guidance.constants import CENTRAL_RAG_INDEX_NAME
 from app.database.models import Chat, Document, DocumentChunk, Message, MessageSearchIndexMapping, SearchIndex
 

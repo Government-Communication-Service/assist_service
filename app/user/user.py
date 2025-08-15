@@ -5,16 +5,19 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile, status
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 from unstructured.partition.common import UnsupportedFileFormatError
 from unstructured_pytesseract.pytesseract import TesseractNotFoundError
 
-from app.api import ENDPOINTS, endpoint_defaults
-from app.api.endpoint_defaults import get_current_session
-from app.api.paths import ApiPaths
-from app.auth.auth_token import auth_token_validator
-from app.auth.session_request import SessionRequest
+from app.api.endpoints import ENDPOINTS
+from app.auth.verify_service import (
+    verify_and_get_auth_session_from_header,
+    verify_and_get_user_from_path_and_header,
+    verify_auth_token,
+)
 from app.database.db_operations import DbOperations
-from app.database.table import async_db_session
+from app.database.db_session import get_db_session
+from app.database.models import AuthSession, User
 from app.document_upload.constants import PERSONAL_DOCUMENTS_INDEX_NAME
 from app.document_upload.personal_document_parser import (
     FileFormatError,
@@ -43,9 +46,13 @@ document_parser = PersonalDocumentParser()
     ENDPOINTS.USER,
     response_model=UserCreationResponse,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(auth_token_validator)],
+    dependencies=[Depends(verify_auth_token)],
 )
-async def update_user(user_uuid: Annotated[str, Path()], userinput: UserInput) -> UserCreationResponse:
+async def update_user(
+    user_uuid: Annotated[str, Path()],
+    userinput: UserInput,
+    db_session: AsyncSession = Depends(get_db_session),
+) -> UserCreationResponse:
     """
     Update an existing user's profile information.
 
@@ -71,22 +78,21 @@ async def update_user(user_uuid: Annotated[str, Path()], userinput: UserInput) -
         HTTPException: 404 if user not found
         HTTPException: 422 if validation fails
     """
-
-    async with async_db_session() as db_session:
-        result = await DbOperations.update_user(db_session, user_uuid, userinput)
-        if not result.success:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.message)
-        return result
+    result = await DbOperations.update_user(db_session, user_uuid, userinput)
+    if not result.success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.message)
+    return result
 
 
 @router.post(
     ENDPOINTS.USERS,
     response_model=UserCreationResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(auth_token_validator)],
+    dependencies=[Depends(verify_auth_token)],
 )
 async def create_user(
     user: UserCreationInput,
+    db_session: AsyncSession = Depends(get_db_session),
 ) -> UserCreationResponse:
     """
     Create a new user with the provided details.
@@ -104,17 +110,23 @@ async def create_user(
         HTTPException: 409 if user already exists
         HTTPException: 422 if validation fails
     """
-
-    async with async_db_session() as db_session:
-        result = await DbOperations.create_user(db_session, user)
-        if not result.success:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result.message)
-        return result
+    result = await DbOperations.create_user(db_session, user)
+    if not result.success:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result.message)
+    return result
 
 
-@router.get(ENDPOINTS.USER_DOCUMENTS, response_model=ListDocumentResponse, **endpoint_defaults())
+@router.get(
+    path=ENDPOINTS.USER_DOCUMENTS,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+    response_model=ListDocumentResponse,
+)
 async def list_documents(
-    user=ApiPaths.USER_UUID,
+    user=Depends(verify_and_get_user_from_path_and_header),
+    db_session: AsyncSession = Depends(get_db_session),
 ):
     """
     Return user documents and central documents available for all users.
@@ -132,32 +144,39 @@ async def list_documents(
         GET /user/{user_uuid}/documents
     """
 
-    async with async_db_session() as db_session:
-        user_documents = await DbOperations.get_user_documents(db_session, user)
-        central_documents = await DbOperations.get_central_documents(db_session)
+    user_documents = await DbOperations.get_user_documents(db_session, user)
+    central_documents = await DbOperations.get_central_documents(db_session)
 
-        # Construct response lists
-        user_documents = [
-            DocumentSchema(
-                uuid=doc.uuid,
-                name=doc.name,
-                created_at=doc.created_at,
-                expired_at=doc.expired_at,
-                last_used=doc.last_used,
-            )
-            for doc in user_documents
-        ]
-        central_documents = [
-            DocumentSchema(uuid=doc.uuid, name=doc.name, created_at=doc.created_at) for doc in central_documents
-        ]
+    # Construct response lists
+    user_documents = [
+        DocumentSchema(
+            uuid=doc.uuid,
+            name=doc.name,
+            created_at=doc.created_at,
+            expired_at=doc.expired_at,
+            last_used=doc.last_used,
+        )
+        for doc in user_documents
+    ]
+    central_documents = [
+        DocumentSchema(uuid=doc.uuid, name=doc.name, created_at=doc.created_at) for doc in central_documents
+    ]
 
-        return ListDocumentResponse(user_documents=user_documents, central_documents=central_documents)
+    return ListDocumentResponse(user_documents=user_documents, central_documents=central_documents)
 
 
-@router.delete(ENDPOINTS.USER_DOCUMENT, response_model=DocumentResponse, **endpoint_defaults())
+@router.delete(
+    path=ENDPOINTS.USER_DOCUMENT,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+    response_model=DocumentResponse,
+)
 async def delete_document(
     document_uuid: str,
-    user=ApiPaths.USER_UUID,
+    user=Depends(verify_and_get_user_from_path_and_header),
+    db_session: AsyncSession = Depends(get_db_session),
 ) -> DocumentResponse:
     """
     Deletes a user's document mappings by marking it as deleted.
@@ -183,64 +202,66 @@ async def delete_document(
         extra={"document_uuid": document_uuid, "user_id": user.id},
     )
 
-    async with async_db_session() as db_session:
-        # Retrieve document ID based on the UUID
-        document_id = await DbOperations.get_document_by_uuid(db_session, document_uuid)
+    # Retrieve document ID based on the UUID
+    document_id = await DbOperations.get_document_by_uuid(db_session, document_uuid)
 
-        if document_id is None:
-            logger.info(
-                "Document not found in the database.",
-                extra={"document_uuid": document_id, "user_id": user.id},
-            )
-            return JSONResponse(
-                status_code=404,
-                content=DocumentResponse(message="Document not found", document_uuid=document_uuid).model_dump(),
-            )
-
-        # mark document mapping as deleted
-        result = await DbOperations.mark_user_document_mapping_as_deleted(db_session, document_id, user)
-
-        # Check if any rows were updated and user has document mapping.
-        if result.rowcount == 0:
-            logger.info(
-                "No document mapping found",
-                extra={"document_id": document_id, "user_id": user.id},
-            )
-            return JSONResponse(
-                status_code=404,
-                content=DocumentResponse(message="No Document mapping found", document_uuid=document_uuid).model_dump(),
-            )
-
+    if document_id is None:
         logger.info(
-            "User document mapping marked as deleted",
+            "Document not found in the database.",
+            extra={"document_uuid": document_id, "user_id": user.id},
+        )
+        return JSONResponse(
+            status_code=404,
+            content=DocumentResponse(message="Document not found", document_uuid=document_uuid).model_dump(),
+        )
+
+    # mark document mapping as deleted
+    result = await DbOperations.mark_user_document_mapping_as_deleted(db_session, document_id, user)
+
+    # Check if any rows were updated and user has document mapping.
+    if result.rowcount == 0:
+        logger.info(
+            "No document mapping found",
             extra={"document_id": document_id, "user_id": user.id},
         )
-
-        # fetch id_opensearch list from document chunk table.
-        id_opensearch = await DbOperations.get_opensearch_ids_from_document_chunks(db_session, document_id)
-
-        await AsyncOpenSearchOperations.delete_document_chunks(PERSONAL_DOCUMENTS_INDEX_NAME, id_opensearch)
-        await DbOperations.mark_document_as_deleted(db_session, document_id)
-
-        logger.info(
-            "Document marked as deleted.",
-            extra={"document_uuid": document_uuid, "user_id": user.id},
+        return JSONResponse(
+            status_code=404,
+            content=DocumentResponse(message="No Document mapping found", document_uuid=document_uuid).model_dump(),
         )
-        return DocumentResponse(
-            message="Document marked as deleted successfully.",
-            document_uuid=document_uuid,
-        )
+
+    logger.info(
+        "User document mapping marked as deleted",
+        extra={"document_id": document_id, "user_id": user.id},
+    )
+
+    # fetch id_opensearch list from document chunk table.
+    id_opensearch = await DbOperations.get_opensearch_ids_from_document_chunks(db_session, document_id)
+
+    await AsyncOpenSearchOperations.delete_document_chunks(PERSONAL_DOCUMENTS_INDEX_NAME, id_opensearch)
+    await DbOperations.mark_document_as_deleted(db_session, document_id)
+
+    logger.info(
+        "Document marked as deleted.",
+        extra={"document_uuid": document_uuid, "user_id": user.id},
+    )
+    return DocumentResponse(
+        message="Document marked as deleted successfully.",
+        document_uuid=document_uuid,
+    )
 
 
 @router.post(
     ENDPOINTS.USER_DOCUMENTS,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
     response_model=UploadDocumentResponse,
-    **endpoint_defaults(),
 )
 async def upload_file(
     file: UploadFile = File(...),
-    user=ApiPaths.USER_UUID,
-    auth_session: SessionRequest = Depends(get_current_session),
+    user: User = Depends(verify_and_get_user_from_path_and_header),
+    auth_session: AuthSession = Depends(verify_and_get_auth_session_from_header),
 ) -> UploadDocumentResponse:
     """
     Parses uploaded file and stores it in the database and opensearch index.

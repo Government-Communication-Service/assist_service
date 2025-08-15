@@ -3,8 +3,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 
-from app.api import ENDPOINTS, endpoint_defaults
-from app.auth.auth_token import auth_token_validator_no_user
+from app.api.endpoints import ENDPOINTS
+from app.auth.verify_service import verify_and_get_auth_session_from_header, verify_auth_token
 from app.chat.schemas import (
     PrebuiltPromptsResponse,
     SuccessResponse,
@@ -37,7 +37,7 @@ router = APIRouter()
 ### Endpoint definitions ###
 @router.post(
     ENDPOINTS.PROMPTS_THEMES,
-    dependencies=[Depends(auth_token_validator_no_user)],
+    dependencies=[Depends(verify_auth_token)],
     response_model=ThemeResponse,
 )
 async def post_theme(theme_input: ThemeInput) -> ThemeResponse:
@@ -55,7 +55,7 @@ async def post_theme(theme_input: ThemeInput) -> ThemeResponse:
 
 @router.get(
     ENDPOINTS.PROMPTS_THEME,
-    dependencies=[Depends(auth_token_validator_no_user)],
+    dependencies=[Depends(verify_auth_token)],
     response_model=ThemeResponse,
 )
 async def get_theme(theme_uuid: UUID) -> ThemeResponse:
@@ -71,7 +71,11 @@ async def get_theme(theme_uuid: UUID) -> ThemeResponse:
         return await fetch_theme(db_session=db_session, theme_uuid=theme_uuid)
 
 
-@router.get(ENDPOINTS.PROMPTS_THEMES, **endpoint_defaults(), response_model=ThemesResponse)
+@router.get(
+    path=ENDPOINTS.PROMPTS_THEMES,
+    dependencies=[Depends(verify_auth_token), Depends(verify_and_get_auth_session_from_header)],
+    response_model=ThemesResponse,
+)
 async def get_themes() -> ThemesResponse:
     """Gets all themes.
 
@@ -84,7 +88,7 @@ async def get_themes() -> ThemesResponse:
 
 @router.put(
     ENDPOINTS.PROMPTS_THEME,
-    dependencies=[Depends(auth_token_validator_no_user)],
+    dependencies=[Depends(verify_auth_token)],
     response_model=ThemeResponse,
 )
 async def put_theme(theme_uuid: UUID, theme_input: ThemeInput) -> ThemeResponse:
@@ -103,7 +107,7 @@ async def put_theme(theme_uuid: UUID, theme_input: ThemeInput) -> ThemeResponse:
 
 @router.delete(
     ENDPOINTS.PROMPTS_THEME,
-    dependencies=[Depends(auth_token_validator_no_user)],
+    dependencies=[Depends(verify_auth_token)],
     response_model=SuccessResponse,
 )
 async def delete_theme(theme_uuid: UUID) -> SuccessResponse:
@@ -121,7 +125,7 @@ async def delete_theme(theme_uuid: UUID) -> SuccessResponse:
 
 @router.post(
     ENDPOINTS.PROMPTS_THEMES_USE_CASES,
-    dependencies=[Depends(auth_token_validator_no_user)],
+    dependencies=[Depends(verify_auth_token)],
     response_model=UseCaseResponse,
 )
 async def post_use_case(theme_uuid: UUID, use_case_input: UseCaseInputPost) -> UseCaseResponse:
@@ -138,7 +142,10 @@ async def post_use_case(theme_uuid: UUID, use_case_input: UseCaseInputPost) -> U
         return await create_use_case(db_session=db_session, theme_uuid=theme_uuid, use_case_input=use_case_input)
 
 
-@router.get(ENDPOINTS.PROMPTS_THEMES_USE_CASE, **endpoint_defaults())
+@router.get(
+    path=ENDPOINTS.PROMPTS_THEMES_USE_CASE,
+    dependencies=[Depends(verify_auth_token), Depends(verify_and_get_auth_session_from_header)],
+)
 async def get_use_case(theme_uuid: UUID, use_case_uuid: UUID) -> UseCaseResponse:
     """Gets a use case under a specific theme.
 
@@ -153,7 +160,13 @@ async def get_use_case(theme_uuid: UUID, use_case_uuid: UUID) -> UseCaseResponse
         return await fetch_use_case(db_session=db_session, theme_uuid=theme_uuid, use_case_uuid=use_case_uuid)
 
 
-@router.get(ENDPOINTS.PROMPTS_USE_CASE, **endpoint_defaults())
+@router.get(
+    path=ENDPOINTS.PROMPTS_USE_CASE,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+)
 async def get_use_case_without_requiring_theme(use_case_uuid: UUID) -> UseCaseResponse:
     """Gets a use case without requiring its parent theme.
 
@@ -169,7 +182,7 @@ async def get_use_case_without_requiring_theme(use_case_uuid: UUID) -> UseCaseRe
 
 @router.put(
     ENDPOINTS.PROMPTS_THEMES_USE_CASE,
-    dependencies=[Depends(auth_token_validator_no_user)],
+    dependencies=[Depends(verify_auth_token)],
     response_model=UseCaseResponse,
 )
 async def put_use_case(theme_uuid: UUID, use_case_uuid: UUID, use_case_input: UseCaseInputPut) -> UseCaseResponse:
@@ -191,7 +204,7 @@ async def put_use_case(theme_uuid: UUID, use_case_uuid: UUID, use_case_input: Us
 
 @router.delete(
     ENDPOINTS.PROMPTS_THEMES_USE_CASE,
-    dependencies=[Depends(auth_token_validator_no_user)],
+    dependencies=[Depends(verify_auth_token)],
     response_model=SuccessResponse,
 )
 async def delete_use_case(theme_uuid: UUID, use_case_uuid: UUID) -> SuccessResponse:
@@ -209,8 +222,11 @@ async def delete_use_case(theme_uuid: UUID, use_case_uuid: UUID) -> SuccessRespo
 
 
 @router.get(
-    ENDPOINTS.PROMPTS_THEMES_USE_CASES,
-    **endpoint_defaults(),
+    path=ENDPOINTS.PROMPTS_THEMES_USE_CASES,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
     response_model=UseCasesResponse,
 )
 async def get_use_cases_by_theme(theme_uuid: UUID) -> UseCasesResponse:
@@ -229,7 +245,7 @@ async def get_use_cases_by_theme(theme_uuid: UUID) -> UseCasesResponse:
 # Bulk get prompts (both themes and use cases - may be used when preparing for a bulk upload)
 @router.get(
     ENDPOINTS.PROMPTS_BULK,
-    dependencies=[Depends(auth_token_validator_no_user)],
+    dependencies=[Depends(verify_auth_token)],
     response_model=PrebuiltPromptsResponse,
 )
 async def bulk_get_prompts() -> PrebuiltPromptsResponse:
@@ -245,7 +261,7 @@ async def bulk_get_prompts() -> PrebuiltPromptsResponse:
 # Bulk upload
 @router.post(
     ENDPOINTS.PROMPTS_BULK,
-    dependencies=[Depends(auth_token_validator_no_user)],
+    dependencies=[Depends(verify_auth_token)],
     response_model=SuccessResponse,
 )
 async def bulk_upload_prompts(prebuilt_prompts: List[PrebuiltPrompt]) -> SuccessResponse:

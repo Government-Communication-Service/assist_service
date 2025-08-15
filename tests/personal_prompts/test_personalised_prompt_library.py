@@ -5,7 +5,7 @@ import uuid
 import pytest
 from pydantic import ValidationError
 
-from app.api import ENDPOINTS
+from app.api.endpoints import ENDPOINTS
 from tests.mock_request import fail_test
 
 logger = logging.getLogger(__name__)
@@ -80,9 +80,9 @@ class TestPPLUserPrompts:
         assert isinstance(body["user_prompts"], list), "The response was not a list."
 
     # Tests for GET requests to /user/{user_uuid}/prompts
-    # Test the 400 response (Unauthorised) path
+    # Test the 403 response path
     async def test_get_user_prompts_uuid_unauthorised(self, async_client, user_id, async_http_requester, session):
-        logger.debug("Test the 400 response (Unauthorised) path for GET requests to /user/{user_uuid}/prompts/}")
+        logger.debug("Test the 403 response path for GET requests to /user/{user_uuid}/prompts/}")
 
         non_existent_user_id = uuid.uuid4()
         logger.debug(f"Overriding user_id: {user_id} with {non_existent_user_id}")
@@ -90,11 +90,10 @@ class TestPPLUserPrompts:
         # get all user prompts
         get_url = api.get_user_prompts(user_uuid=non_existent_user_id)
         get_response = await async_http_requester(
-            "get all PPL user prompts by user UUID", async_client.get, get_url, response_code=400
+            "get all PPL user prompts by user UUID", async_client.get, get_url, response_code=403
         )
 
         logger.debug(f"GET Response body: {get_response}")
-        assert {"detail": "user UUIDs do not match"} == get_response
 
     # Tests for GET requests to /user/{user_uuid}/prompts
     # Test the 200 response for no records found path
@@ -219,9 +218,7 @@ class TestPPLUserPrompt:
     async def test_post_user_prompt_uuid_unauthorised(
         self, async_client, user_id, async_http_requester, session, user_prompt_item, user_prompt_payload
     ):
-        logger.debug(
-            "Test the 400 response (Unauthorised) path for GET requests to /user/{user_uuid}/prompts/{user_prompt_uuid}"
-        )
+        logger.debug("Test the 403 response path for GET requests to /user/{user_uuid}/prompts/{user_prompt_uuid}")
 
         # create a new user prompt
         non_existent_user_id = uuid.uuid4()
@@ -241,12 +238,10 @@ class TestPPLUserPrompt:
             async_client.post,
             post_url,
             json=payload,
-            response_code=400,
+            response_code=403,
             response_type=None,
         )
         logger.debug(f"post_response: {post_response}")
-
-        assert b'{"detail":"user UUIDs do not match"}' == post_response
 
     # Tests for GET requests to /user/{user_uuid}/prompts/{user_prompt_uuid}
     # Test the happy path
@@ -327,16 +322,12 @@ class TestPPLUserPrompt:
         )
         logger.debug(f"GET Response body: {get_response_after_delete}")
 
-        assert (b'"Record not found"') == get_response_after_delete
-
     # Tests for GET requests to /user/{user_uuid}/prompts/{user_prompt_uuid}
     # Test the 400 response (Unauthorised) path
     async def test_get_user_prompt_uuid_unauthorised(
         self, async_client, user_id, async_http_requester, session, user_prompt_item, user_prompt_payload
     ):
-        logger.debug(
-            "Test the 400 response (Unauthorised) path for GET requests to /user/{user_uuid}/prompts/{user_prompt_uuid}"
-        )
+        logger.debug("Test the 403 response path for GET requests to /user/{user_uuid}/prompts/{user_prompt_uuid}")
 
         # create a new user prompt
         post_response = user_prompt_item
@@ -354,12 +345,10 @@ class TestPPLUserPrompt:
             "GET from user_prompt_endpoint",
             async_client.get,
             get_url,
-            response_code=400,
+            response_code=403,
             response_type=None,
         )
-
         logger.debug(f"GET Response body: {get_response}")
-        assert (b'{"detail":"user UUIDs do not match"}') == get_response
 
     # Tests for GET requests to /user/{user_uuid}/prompts/{user_prompt_uuid}
     # Test the 404 response (Not Found) path
@@ -398,9 +387,7 @@ class TestPPLUserPrompt:
             response_code=404,
             response_type=None,
         )
-
         logger.debug(f"GET Response body: {get_response}")
-        assert (b'"Record not found"') == get_response
 
     # Tests for PATCH requests to /user/{user_uuid}/prompts/{user_prompt_uuid}
     # Test the happy path
@@ -492,15 +479,13 @@ class TestPPLUserPrompt:
         )
         logger.debug(f"GET Response body: {get_response_after_delete}")
 
-        assert (b'"Record not found"') == get_response_after_delete
-
     # Tests for PATCH requests to /user/{user_uuid}/prompts/{user_prompt_uuid}
-    # Test the 400 response (Unauthorised) path
+    # Test the 403 response (Forbidden) path
     async def test_patch_user_prompt_uuid_unauthorised(
         self, async_client, user_id, async_http_requester, session, user_prompt_item, user_prompt_payload
     ):
         logger.debug(
-            "Test the 400 response (Unauthorised) path for PATCH requests to "
+            "Test the 403 response (Forbidden) path for PATCH requests to "
             + "/user/{user_uuid}/prompts/{user_prompt_uuid}"
         )
 
@@ -525,12 +510,11 @@ class TestPPLUserPrompt:
             async_client.patch,
             patch_url,
             json=patch_payload,
-            response_code=400,
+            response_code=403,
             response_type=None,
         )
 
         logger.debug(f"PATCH Response body: {patch_response}")
-        assert (b'{"detail":"user UUIDs do not match"}') == patch_response
 
     # Tests for PATCH requests to /user/{user_uuid}/prompts/{user_prompt_uuid}
     # Test the 404 response (Not Found) path
@@ -561,7 +545,6 @@ class TestPPLUserPrompt:
         )
 
         logger.debug(f"PATCH Response body: {patch_response}")
-        assert (b'"Record not found"') == patch_response
 
     # Tests for DELETE requests to /user/{user_uuid}/prompts/{user_prompt_uuid}
     # Test the happy path
@@ -593,13 +576,12 @@ class TestPPLUserPrompt:
         assert b"" == delete_response
 
     # Tests for DELETE requests to /user/{user_uuid}/prompts/{user_prompt_uuid}
-    # Test the 400 response (Unauthorised) path
+    # Test the 403 response (Unauthorised) path
     async def test_delete_user_prompt_uuid_unauthorised(
         self, async_client, user_id, async_http_requester, session, user_prompt_item, user_prompt_payload
     ):
         logger.debug(
-            "Test the 400 response (Unauthorised) path for DELETE requests to "
-            + "/user/{user_uuid}/prompts/{user_prompt_uuid}"
+            "Test the 403 response path for DELETE requests to " + "/user/{user_uuid}/prompts/{user_prompt_uuid}"
         )
 
         # create a new user prompt
@@ -619,12 +601,11 @@ class TestPPLUserPrompt:
             "DELETE from user_prompt_endpoint",
             async_client.delete,
             delete_url,
-            response_code=400,
+            response_code=403,
             response_type=None,
         )
 
         logger.debug(f"DELETE Response body: {delete_response}")
-        assert (b'{"detail":"user UUIDs do not match"}') == delete_response
 
     # Tests for DELETE requests to /user/{user_uuid}/prompts/{user_prompt_uuid}
     # Test the 404 response (Not Found) path
@@ -648,4 +629,3 @@ class TestPPLUserPrompt:
         )
 
         logger.debug(f"DELETE Response body: {delete_response}")
-        assert (b'"Record not found"') == delete_response

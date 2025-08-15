@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.api import ENDPOINTS
+from app.api.endpoints import ENDPOINTS
 from app.bedrock import BedrockHandler, RunMode
 from app.bedrock.bedrock_types import BedrockError
 from app.bedrock.service import calculate_completion_cost

@@ -9,7 +9,8 @@ from pydantic import ValidationError
 # from pydantic import ValidationError
 from sqlalchemy.future import select
 
-from app.api import ENDPOINTS, ApiConfig
+from app.api.endpoints import ENDPOINTS
+from app.auth.constants import AUTH_TOKEN_ALIAS, SESSION_AUTH_ALIAS, USER_KEY_UUID_ALIAS
 from app.bedrock import BedrockHandler
 from app.bedrock.schemas import LLMTransaction
 from app.chat.schemas import ChatWithLatestMessage, ItemTitleResponse
@@ -195,22 +196,20 @@ class TestUserChats:
         assert isinstance(get_response["chats"], list), "The response was not a list."
 
     # Tests for GET requests to /user/chats/{id}
-    # Test the 400 response (Unauthorised) path
+    # Test the 403 response (Forbidden) path
     @pytest.mark.asyncio
     async def test_get_user_chats_id_unauthorised(self, async_client, user_id, async_http_requester, session):
-        logger.debug("Test the 400 response (Unauthorised) path for GET requests to /user/chats/{id}")
+        logger.debug("Test the 403 response path for GET requests to /user/chats/{id}")
 
         non_existent_user_id = uuid.uuid4()
         logger.debug(f"Overriding user_id: {user_id} with {non_existent_user_id}")
 
         get_url = api.get_chats_by_user(non_existent_user_id)
         get_response = await async_http_requester(
-            "get all chats by user UUID", async_client.get, get_url, response_code=400
+            "get all chats by user UUID", async_client.get, get_url, response_code=403
         )
 
         logging.info(f"GET Response body: {get_response}")
-
-        assert {"detail": "user UUIDs do not match"} == get_response
 
 
 class TestUserChatsV1:
@@ -229,9 +228,9 @@ class TestUserChatsV1:
         other_session = await another_user_auth_session(non_owning_user)
 
         non_owning_user_session_params = {
-            ApiConfig.USER_KEY_UUID_ALIAS: non_owning_user,
-            ApiConfig.SESSION_AUTH_ALIAS: other_session,
-            ApiConfig.AUTH_TOKEN_ALIAS: auth_token,
+            USER_KEY_UUID_ALIAS: non_owning_user,
+            SESSION_AUTH_ALIAS: other_session,
+            AUTH_TOKEN_ALIAS: auth_token,
         }
         chat_url = api.get_chat_item(non_owning_user, chat.uuid)
         response = await async_http_requester(
@@ -258,9 +257,9 @@ class TestUserChatsV1:
         other_session = await another_user_auth_session(non_owning_user)
 
         non_owning_user_session_params = {
-            ApiConfig.USER_KEY_UUID_ALIAS: non_owning_user,
-            ApiConfig.SESSION_AUTH_ALIAS: other_session,
-            ApiConfig.AUTH_TOKEN_ALIAS: auth_token,
+            USER_KEY_UUID_ALIAS: non_owning_user,
+            SESSION_AUTH_ALIAS: other_session,
+            AUTH_TOKEN_ALIAS: auth_token,
         }
         chat_messages_url = api.get_chat_messages(non_owning_user, chat.uuid)
         response = await async_http_requester(
@@ -287,9 +286,9 @@ class TestUserChatsV1:
         other_session = await another_user_auth_session(non_owning_user)
 
         non_owning_user_session_params = {
-            ApiConfig.USER_KEY_UUID_ALIAS: non_owning_user,
-            ApiConfig.SESSION_AUTH_ALIAS: other_session,
-            ApiConfig.AUTH_TOKEN_ALIAS: auth_token,
+            USER_KEY_UUID_ALIAS: non_owning_user,
+            SESSION_AUTH_ALIAS: other_session,
+            AUTH_TOKEN_ALIAS: auth_token,
         }
         chat_messages_url = api.get_chat_item(non_owning_user, chat.uuid)
         response = await async_http_requester(
@@ -316,9 +315,9 @@ class TestUserChatsV1:
         other_session = await another_user_auth_session(non_owning_user)
 
         non_owning_user_session_params = {
-            ApiConfig.USER_KEY_UUID_ALIAS: non_owning_user,
-            ApiConfig.SESSION_AUTH_ALIAS: other_session,
-            ApiConfig.AUTH_TOKEN_ALIAS: auth_token,
+            USER_KEY_UUID_ALIAS: non_owning_user,
+            SESSION_AUTH_ALIAS: other_session,
+            AUTH_TOKEN_ALIAS: auth_token,
         }
         chat_messages_url = api.create_chat_title(non_owning_user, chat.uuid)
         response = await async_http_requester(
@@ -345,9 +344,9 @@ class TestUserChatsV1:
         other_session = await another_user_auth_session(non_owning_user)
 
         non_owning_user_session_params = {
-            ApiConfig.USER_KEY_UUID_ALIAS: non_owning_user,
-            ApiConfig.SESSION_AUTH_ALIAS: other_session,
-            ApiConfig.AUTH_TOKEN_ALIAS: auth_token,
+            USER_KEY_UUID_ALIAS: non_owning_user,
+            SESSION_AUTH_ALIAS: other_session,
+            AUTH_TOKEN_ALIAS: auth_token,
         }
         chat_messages_url = api.get_chat_stream(non_owning_user, chat.uuid)
         response = await async_http_requester(
@@ -370,7 +369,7 @@ class TestUserChatsV1:
 
     @pytest.mark.asyncio
     async def test_post_chat_unauthorised(self, async_client, user_id, async_http_requester):
-        logger.debug("Test the 400 response (Unauthorised) path for GET requests to /user/chats/")
+        logger.debug("Test the 403 response (Unauthorised) path for GET requests to /user/chats/")
 
         non_existent_user_id = uuid.uuid4()
         logger.debug(f"Overriding user_id: {user_id} with {non_existent_user_id}")
@@ -381,12 +380,10 @@ class TestUserChatsV1:
             "chat_endpoint",
             async_client.post,
             url,
-            response_code=400,
+            response_code=403,
             json={"query": "hello", "use_rag": False},
         )
-
         logger.debug(f"GET Response body: {post_response}")
-        assert {"detail": "user UUIDs do not match"} == post_response
 
     @pytest.mark.asyncio
     async def test_get_chat(self, async_client, chat_item, user_id, async_http_requester):

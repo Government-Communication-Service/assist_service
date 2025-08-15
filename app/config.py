@@ -25,10 +25,6 @@ IS_DEV = env_variable("IS_DEV")
 URL_HOSTNAME = os.getenv("URL_HOSTNAME", "http://localhost:" + os.getenv("PORT", "5312"))
 DATA_DIR = "data"
 
-BYPASS_SESSION_VALIDATOR = env_variable("BYPASS_SESSION_VALIDATOR")
-BYPASS_AUTH_VALIDATOR = env_variable("BYPASS_AUTH_VALIDATOR")
-
-
 ### --- LLM / Bedrock Configuration --- ###
 
 LLM_DEFAULT_PROVIDER = "bedrock"

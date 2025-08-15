@@ -2,7 +2,7 @@ import logging
 
 import pytest
 
-from app.api import ENDPOINTS
+from app.api.endpoints import ENDPOINTS
 from app.chat.schemas import FeedbackRequest
 from app.database.table import FeedbackLabelTable, FeedbackTable
 

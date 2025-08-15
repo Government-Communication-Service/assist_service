@@ -1,4 +1,3 @@
-import os
 from datetime import datetime
 from enum import Enum
 from typing import Any, List, Optional
@@ -10,8 +9,6 @@ from pydantic import BaseModel, Field, field_validator
 from app.request_schemas import RequestModel, RequestStandard
 from app.themes_use_cases.schemas import PrebuiltPrompt
 from app.user.schemas import DocumentSchema
-
-TEST_DEFAULT_QUERY = os.getenv("TEST_DEFAULT_QUERY", "")
 
 
 class RoleEnum(str, Enum):
@@ -77,7 +74,7 @@ class ChatBaseRequest(RequestStandard):
 
 
 class ChatQueryRequest(RequestModel):
-    query: str = Field(TEST_DEFAULT_QUERY)
+    query: str
 
 
 class ChatRequest(ChatQueryRequest):

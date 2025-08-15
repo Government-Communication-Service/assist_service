@@ -95,7 +95,7 @@ async def async_db_session() -> AsyncSession:
 
     """
     async with AsyncSessionMaker() as session:
-        logger.info("Starting DB session %s", session.sync_session.hash_key)
+        logger.debug("Starting DB session %s", session.sync_session.hash_key)
         try:
             async with session.begin():
                 try:
@@ -104,7 +104,7 @@ async def async_db_session() -> AsyncSession:
                     await session.rollback()  # Rollback on error
                     raise e
         finally:
-            logger.info("Closing DB session %s", session.sync_session.hash_key)
+            logger.debug("Closing DB session %s", session.sync_session.hash_key)
             await session.close()
 
 

@@ -3,7 +3,7 @@ import logging
 import pytest
 
 # from pydantic import ValidationError
-from app.api import ENDPOINTS
+from app.api.endpoints import ENDPOINTS
 
 api = ENDPOINTS()
 

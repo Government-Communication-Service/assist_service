@@ -15,8 +15,9 @@ import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
-from app.api import ENDPOINTS, ApiConfig
-from app.auth.auth_token import SECRET_KEY
+from app.api.endpoints import ENDPOINTS
+from app.auth.config import AUTH_TOKEN
+from app.auth.constants import AUTH_TOKEN_ALIAS, SESSION_AUTH_ALIAS, USER_KEY_UUID_ALIAS
 from app.central_guidance.service_index import sync_central_index
 from app.chat.schemas import ChatWithLatestMessage
 from app.database.db_session import get_db_session
@@ -190,14 +191,14 @@ def use_case():
 
 @pytest.fixture(name="auth_token", autouse=True)
 def auth_token(user_id):
-    return SECRET_KEY
+    return AUTH_TOKEN
 
 
 @pytest.fixture(name="auth_session")
 async def auth_session(async_client, auth_token, user_id):
     response = await async_client.post(
         api.get_sessions(),
-        headers={ApiConfig.USER_KEY_UUID_ALIAS: user_id, ApiConfig.AUTH_TOKEN_ALIAS: auth_token},
+        headers={USER_KEY_UUID_ALIAS: user_id, AUTH_TOKEN_ALIAS: auth_token},
     )
     assert response.status_code == 200, f"The status code {response.status_code} was incorrect; it should be 200."
 
@@ -206,7 +207,7 @@ async def auth_session(async_client, auth_token, user_id):
     assert body, "The response was empty."
     assert body != "", "The response was empty."
 
-    return body[ApiConfig.SESSION_AUTH_ALIAS]
+    return body[SESSION_AUTH_ALIAS]
 
 
 @pytest.fixture(name="another_user_auth_session")
@@ -214,7 +215,7 @@ async def another_user_auth_session(async_client, auth_token):
     async def _session(user_id):
         response = await async_client.post(
             api.get_sessions(),
-            headers={ApiConfig.USER_KEY_UUID_ALIAS: user_id, ApiConfig.AUTH_TOKEN_ALIAS: auth_token},
+            headers={USER_KEY_UUID_ALIAS: user_id, AUTH_TOKEN_ALIAS: auth_token},
         )
         assert response.status_code == 200, f"The status code {response.status_code} was incorrect; it should be 200."
 
@@ -223,7 +224,7 @@ async def another_user_auth_session(async_client, auth_token):
         assert body, "The response was empty."
         assert body != "", "The response was empty."
 
-        return body[ApiConfig.SESSION_AUTH_ALIAS]
+        return body[SESSION_AUTH_ALIAS]
 
     return _session
 
@@ -243,15 +244,15 @@ async def async_client(test_app):
 @pytest.fixture(name="default_headers", autouse=True)
 def default_headers(user_id, auth_token, auth_session):
     return {
-        ApiConfig.USER_KEY_UUID_ALIAS: user_id,
-        ApiConfig.SESSION_AUTH_ALIAS: auth_session,
-        ApiConfig.AUTH_TOKEN_ALIAS: auth_token,
+        USER_KEY_UUID_ALIAS: user_id,
+        SESSION_AUTH_ALIAS: auth_session,
+        AUTH_TOKEN_ALIAS: auth_token,
     }
 
 
 @pytest.fixture(name="auth_token_only_headers", autouse=True)
 def auth_token_only_headers(auth_token):
-    return {ApiConfig.AUTH_TOKEN_ALIAS: auth_token}
+    return {AUTH_TOKEN_ALIAS: auth_token}
 
 
 def _log_http_request(kwargs, test_name, url):

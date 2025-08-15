@@ -3,6 +3,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import BinaryIO, List
 
 from sqlalchemy import insert
@@ -16,8 +17,7 @@ from unstructured.partition.pdf import partition_pdf
 from unstructured.partition.ppt import partition_ppt
 from unstructured.partition.pptx import partition_pptx
 
-from app.auth.session_request import SessionRequest
-from app.database.models import Document, DocumentChunk, DocumentUserMapping, SearchIndex, User
+from app.database.models import AuthSession, Document, DocumentChunk, DocumentUserMapping, SearchIndex, User
 from app.database.table import async_db_session
 from app.document_upload.constants import PERSONAL_DOCUMENTS_INDEX_NAME
 from app.opensearch.schemas import OpenSearchRecord
@@ -106,7 +106,7 @@ class PersonalDocumentParser:
         # text = text.replace('\x00', '')
         return _UTF8_INVALID_CHARS_PATTERN.sub("", text)
 
-    async def process_document(self, file: FileInfo, auth_session: SessionRequest, user: User) -> Document:
+    async def process_document(self, file: FileInfo, auth_session: AuthSession, user: User) -> Document:
         """
         Parses the provided file into its constituent elements (chunks),
         saves both the document metadata and its content chunks to the database, and
@@ -157,7 +157,12 @@ class PersonalDocumentParser:
 
             await db_session.execute(
                 insert(DocumentUserMapping)
-                .values(document_id=new_document.id, user_id=user.id, auth_session_id=auth_session.id)
+                .values(
+                    document_id=new_document.id,
+                    user_id=user.id,
+                    auth_session_id=auth_session.id,
+                    last_used=datetime.now(),
+                )
                 .returning(DocumentUserMapping)
             )
 

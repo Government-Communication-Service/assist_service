@@ -1,14 +1,16 @@
 # ruff: noqa: B008
 import logging
-from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, status
+from fastapi import APIRouter, Body, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
-from app.api import ENDPOINTS, endpoint_defaults
-from app.api.paths import ApiPaths
-from app.auth.auth_token import auth_token_validator_no_user
+from app.api.endpoints import ENDPOINTS
+from app.auth.verify_service import (
+    verify_and_get_auth_session_from_header,
+    verify_and_get_user_from_path_and_header,
+    verify_auth_token,
+)
 from app.chat.schemas import (
     ChatCreateInput,
     ChatRequest,
@@ -30,10 +32,10 @@ from app.chat.service import (
     patch_chat_title,
     update_chat_title,
 )
+from app.chat.utils import chat_validator
 from app.database.db_session import get_db_session
+from app.database.models import User
 from app.database.table import (
-    ChatTable,
-    UserTable,
     async_db_session,
 )
 
@@ -42,65 +44,55 @@ router = APIRouter()
 logger = logging.getLogger()
 
 
-def chat_validator(chat_uuid: str = Path(..., description="Chat UUID"), user_uuid: str = Path(...)):
-    try:
-        chat_uuid = UUID(chat_uuid)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"'id' parameter '{chat_uuid}' is not a valid UUID",
-        ) from e
-
-    chat = ChatTable().get_by_uuid(chat_uuid)
-
-    if not chat:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"No chat found with UUID '{chat_uuid}'",
-        )
-
-    user = UserTable().get_one_by("id", chat.user_id)
-    if str(user.uuid) != user_uuid:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Access denied to chat '{chat_uuid}'",
-        )
-
-    return chat
-
-
-chat_endpoint_defaults = {
-    **endpoint_defaults(
-        extra_dependencies=[
-            ApiPaths.USER_UUID,
-            # Depends(chat_common_params),
-        ],
-    ),
-}
-
-
-@router.post(ENDPOINTS.CHATS, **chat_endpoint_defaults, response_model=ChatWithLatestMessage)
+@router.post(
+    path=ENDPOINTS.CHATS,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_user_from_path_and_header),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+    response_model=ChatWithLatestMessage,
+)
 async def create_new_chat(data=Depends(chat_request_data)):
     chat_input = ChatCreateInput(**data.dict())
     return await chat_create(chat_input)
 
 
-@router.get(ENDPOINTS.CHAT_ITEM, **chat_endpoint_defaults, response_model=ChatWithAllMessages)
+@router.get(
+    path=ENDPOINTS.CHAT_ITEM,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_user_from_path_and_header),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+    response_model=ChatWithAllMessages,
+)
 async def get_chat_entry(
     chat=Depends(chat_validator),
 ):
-    logger.info("Calling chat item")
     return await chat_get_messages(chat)
 
 
-@router.put(ENDPOINTS.CHAT_ITEM, **chat_endpoint_defaults, response_model=ChatWithLatestMessage)
+@router.put(
+    path=ENDPOINTS.CHAT_ITEM,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_user_from_path_and_header),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+    response_model=ChatWithLatestMessage,
+)
 async def add_new_chat_message(chat=Depends(chat_validator), data=Depends(chat_request_data)):
     return await chat_add_message(chat, data)
 
 
 @router.get(
-    ENDPOINTS.CHAT_MESSAGES,
-    **chat_endpoint_defaults,
+    path=ENDPOINTS.CHAT_MESSAGES,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_user_from_path_and_header),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
     response_model=ChatWithAllMessages,
 )
 async def get_chat_messages(
@@ -110,7 +102,14 @@ async def get_chat_messages(
     return await chat_get_messages(chat)
 
 
-@router.put(ENDPOINTS.CHAT_TITLE, **chat_endpoint_defaults)
+@router.put(
+    path=ENDPOINTS.CHAT_TITLE,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_user_from_path_and_header),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+)
 async def create_chat_title(
     chat=Depends(chat_validator),
     data: ChatRequest = Body(...),
@@ -119,7 +118,14 @@ async def create_chat_title(
         return await update_chat_title(db_session=db_session, chat=chat, data=data)
 
 
-@router.get(ENDPOINTS.CHAT_TITLE, **chat_endpoint_defaults)
+@router.get(
+    path=ENDPOINTS.CHAT_TITLE,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_user_from_path_and_header),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+)
 async def get_chat_title(chat=Depends(chat_validator)) -> ChatSuccessResponse:
     """
     Get the title of a chat.
@@ -133,9 +139,18 @@ async def get_chat_title(chat=Depends(chat_validator)) -> ChatSuccessResponse:
     return ChatSuccessResponse(uuid=chat.uuid, created_at=chat.created_at, updated_at=chat.updated_at, title=chat.title)
 
 
-@router.patch(ENDPOINTS.CHAT_TITLE, **chat_endpoint_defaults)
+@router.patch(
+    path=ENDPOINTS.CHAT_TITLE,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_user_from_path_and_header),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+)
 async def user_update_chat_title(
-    chat=Depends(chat_validator), title: str = Body(..., embed=True)
+    chat=Depends(chat_validator),
+    title: str = Body(..., embed=True),
+    db_session: AsyncSession = Depends(get_db_session),
 ) -> ChatSuccessResponse:
     """
     Update the title of an existing chat.
@@ -154,37 +169,56 @@ async def user_update_chat_title(
             - status: Success status
             - status_message: Success message
     """
-    async with async_db_session() as db_session:
-        return await patch_chat_title(db_session=db_session, chat=chat, title=title)
+    return await patch_chat_title(db_session=db_session, chat=chat, title=title)
 
 
-@router.get(ENDPOINTS.USER_GET_CHATS, response_model=UserChatsResponse, **endpoint_defaults())
+@router.get(
+    path=ENDPOINTS.USER_GET_CHATS,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+    response_model=UserChatsResponse,
+)
 async def get_user_chats(
-    user=ApiPaths.USER_UUID,
+    db_session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(verify_and_get_user_from_path_and_header),
 ):
     """
     Fetch a user's chat history by their ID. Expandable down the line to include filters / recent slices.
     """
-
-    async with async_db_session() as db_session:
-        return await get_all_user_chats(db_session=db_session, user=user)
+    return await get_all_user_chats(db_session=db_session, user=user)
 
 
-@router.post(ENDPOINTS.CHAT_CREATE_STREAM, **chat_endpoint_defaults)
+@router.post(
+    path=ENDPOINTS.CHAT_CREATE_STREAM,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_user_from_path_and_header),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+)
 async def create_new_chat_stream(data=Depends(chat_request_data)) -> StreamingResponse:
     logger.info("Calling new chat stream")
     return await chat_create_stream(ChatCreateInput(**data.dict()))
 
 
-@router.put(ENDPOINTS.CHAT_UPDATE_STREAM, **chat_endpoint_defaults)
+@router.put(
+    path=ENDPOINTS.CHAT_UPDATE_STREAM,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_user_from_path_and_header),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+)
 async def add_new_message_stream(chat=Depends(chat_validator), data=Depends(chat_request_data)):
     logger.info("Calling add message to chat stream")
     return await chat_add_message_stream(chat, data)
 
 
 @router.delete(
-    ENDPOINTS.CHAT_CLEANUP_EXPIRED_CONTENT,
-    dependencies=[Depends(auth_token_validator_no_user)],
+    path=ENDPOINTS.CHAT_CLEANUP_EXPIRED_CONTENT,
+    dependencies=[Depends(verify_auth_token)],
     response_model=MessageCleanupResponse,
 )
 async def delete_expired_message_content(db_session: AsyncSession = Depends(get_db_session)):

@@ -8,7 +8,7 @@ import anyio
 import pytest
 from sqlalchemy.future import select
 
-from app.api import ENDPOINTS
+from app.api.endpoints import ENDPOINTS
 from app.database.models import Document, DocumentChunk
 
 logger = logging.getLogger()

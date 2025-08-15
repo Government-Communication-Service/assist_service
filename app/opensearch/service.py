@@ -181,7 +181,7 @@ class AsyncOpenSearchOperations:
 
         """
 
-        logger.info("Indexing % documents to index %s", len(document_list), index)
+        logger.info("Indexing %d documents to index %s", len(document_list), index)
         docs = []
         doc_header = {"index": {"_index": index}}
         for d in document_list:

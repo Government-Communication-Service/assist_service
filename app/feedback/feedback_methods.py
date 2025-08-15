@@ -2,7 +2,6 @@ import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.wrapper import api_wrapper
 from app.chat.schemas import FeedbackRequest, MessageFeedbackEnum, MessageFeedbackResponse
 from app.database.db_operations import DbOperations
 from app.database.models import Message
@@ -11,12 +10,10 @@ from app.logs.logs_handler import logger
 __FEEDBACK_SCORE_LOOKUP = {score.value: score for score in MessageFeedbackEnum}
 
 
-@api_wrapper(task="get_message_feedback_labels")
 async def get_message_feedback_labels(db_session: AsyncSession):
     return await DbOperations.get_message_feedback_labels_list(db_session)
 
 
-@api_wrapper(task="process_message_feedback")
 async def process_message_feedback(
     db_session: AsyncSession, message: Message, feedback_request: FeedbackRequest
 ) -> MessageFeedbackResponse:

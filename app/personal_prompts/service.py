@@ -12,8 +12,7 @@ from starlette.status import (
     HTTP_502_BAD_GATEWAY,
 )
 
-from app.api import api_wrapper, get_current_session
-from app.api.paths import ApiPaths
+from app.auth.verify_service import verify_and_get_auth_session_from_header, verify_and_get_user_from_path_and_header
 from app.database.db_operations import DbOperations
 from app.database.models import User, UserPrompt
 from app.personal_prompts.schemas import (
@@ -25,13 +24,14 @@ from app.personal_prompts.schemas import (
     UserPromptRequestBody,
     UserPromptRequestData,
 )
+from app.personal_prompts.utils import verify_and_get_user_prompt_by_uuid
 
 logger = logging.getLogger(__name__)
 
 
 def user_prompts_request_data(
-    user: User = ApiPaths.USER_UUID,
-    session: Any = Depends(get_current_session),
+    user: User = Depends(verify_and_get_user_from_path_and_header),
+    auth_session: Any = Depends(verify_and_get_auth_session_from_header),
     data: UserPromptRequestBody = Body(...),
 ) -> UserPromptRequestData:
     data_dict = data.model_dump()
@@ -39,16 +39,16 @@ def user_prompts_request_data(
     return UserPromptRequestData(
         user_id=user.id,
         user_uuid=user.uuid,
-        auth_session_id=session.id,
+        auth_session_id=auth_session.id,
         uuid=None,
         **data_dict,
     )
 
 
 def user_prompt_request_data(
-    user: User = ApiPaths.USER_UUID,
-    user_prompt: UserPrompt = ApiPaths.USER_PROMPT_UUID,
-    session: Any = Depends(get_current_session),
+    user: User = Depends(verify_and_get_user_from_path_and_header),
+    user_prompt: UserPrompt = Depends(verify_and_get_user_prompt_by_uuid),
+    session: Any = Depends(verify_and_get_auth_session_from_header),
     data: UserPromptRequestBody = Body(...),
 ) -> UserPromptRequestData:
     data_dict = data.model_dump()
@@ -63,14 +63,13 @@ def user_prompt_request_data(
 
 
 def no_body_user_prompt_request_data(
-    user: User = ApiPaths.USER_UUID,
-    user_prompt: UserPrompt = ApiPaths.USER_PROMPT_UUID,
-    session: Any = Depends(get_current_session),
+    user: User = Depends(verify_and_get_user_from_path_and_header),
+    user_prompt: UserPrompt = Depends(verify_and_get_user_prompt_by_uuid),
+    session: Any = Depends(verify_and_get_auth_session_from_header),
 ) -> NoBodyUserPromptRequestData:
     return NoBodyUserPromptRequestData(user_id=user.id, auth_session_id=session.id, uuid=user_prompt.uuid)
 
 
-@api_wrapper(task="get_all_user_prompts")
 async def get_all_user_prompts(db_session: AsyncSession, user: User) -> ListUserPromptResponse:
     """
     Fetch a user's user prompts by their ID. Expandable down the line to include filters / recent slices.
@@ -98,7 +97,6 @@ async def get_all_user_prompts(db_session: AsyncSession, user: User) -> ListUser
     return ListUserPromptResponse(user_prompts=user_prompts_list)
 
 
-@api_wrapper(task="post_create_user_prompt")
 async def post_create_user_prompt(
     db_session: AsyncSession,
     user_prompt_input: UserPromptRequestData,
@@ -116,7 +114,6 @@ async def post_create_user_prompt(
     return ItemUserPromptResponse(**user_prompt.client_response())
 
 
-@api_wrapper(task="get_user_prompt")
 async def get_existing_user_prompt(
     db_session: AsyncSession,
     user_prompt_input: UserPromptInput,
@@ -140,7 +137,6 @@ async def get_existing_user_prompt(
     return ItemUserPromptResponse(**user_prompt.client_response())
 
 
-@api_wrapper(task="update_user_prompt")
 async def patch_update_existing_user_prompt(
     db_session: AsyncSession,
     user_prompt_req_data: UserPromptRequestData,
@@ -173,7 +169,6 @@ async def patch_update_existing_user_prompt(
         return ItemUserPromptResponse(**updated_user_prompt.client_response())
 
 
-@api_wrapper(task="delete_user_prompt")
 async def delete_existing_user_prompt(
     db_session: AsyncSession,
     user_prompt_input: NoBodyUserPromptRequestData,

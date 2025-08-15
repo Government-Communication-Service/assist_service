@@ -72,14 +72,92 @@ Each domain module contains:
 #### Service Layer Returns Simple Data
 Service functions should return simple data structures (dicts, lists) rather than Pydantic models. The API layer is responsible for converting to proper response schemas.
 
+#### Auth system using dependency injection
+When creating a new endpoint, you will need to perform some validation of the user input. Compose these validations as dependencies. Configure your dependencies in a thoughtful way such resources needed for business logic are available after validation.
+
+```python
+# app/new_module/routes.py
+
+from app.auth.verify_service import (
+  verify_auth_token,
+  verify_and_get_auth_session_from_header,
+  verify_and_get_user_from_path_and_header,
+)
+from app.database.models import User, AuthSession
+
+@router.post(
+  path=ENDPOINTS.NEW_PATH_NAME_1,
+  dependencies=[
+    Depends(verify_auth_token) # The Auth-Token is not returned, so this dependency is in the decorator.
+  ]
+)
+async def new_endpoint_1(
+  db_session: AsyncSession = Depends(get_db_session), # We want the database session in our business logic so we return it here
+  user: User = Depends(verify_and_get_user_from_path_and_header), # We want the user object in our business logic so we return it here
+  auth_session: AuthSession = Depends(verify_and_get_auth_session_from_header), # We want the auth session object in our business logic so we return it here
+) -> ...:
+  ...
+
+@router.put(
+  path=ENDPOINTS.NEW_PATH_NAME_2,
+  # Sometimes you don't need some / any of the resources in the business logic but we still want to perform validation. Therefore, we put the dependencies in the decorator instead.
+  dependencies=[
+    Depends(verify_auth_token),
+    Depends(verify_and_get_auth_session_from_header),
+    Depends(verify_and_get_user_from_path_and_header),
+  ]
+)
+async def new_endpoint_2():
+  ...
+```
+
+Sometimes you will want to create additional validation logic. This validation should always appear as a new dependency injection. The extra validation logic should be written in the utils.py file of the current module which you are developing for.
+
+```python
+# app/new_module/utils.py
+# e.g. validating a message uuid
+from fastapi import Path
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Annotated
+
+from app.auth.utils import verify_and_parse_uuid
+from app.database.db_session import get_db_session
+from app.database.models import Message
+
+async def verify_and_get_message_from_path(message_uuid: Annotated[str, Path(...)], db_session: AsyncSession = Depends(get_db_session)) -> Message:
+  # Logic to verify and get message
+  message = ...
+  return message
+```
+
+```python
+# app/new_module/routes.py
+from app.new_module.utils import verify_and_get_message_from_path
+
+@router.get(...)
+async def new_endpoint_3(
+  message: Message = Depends(verify_and_get_message_from_path)
+):
+  ...
+```
+
 #### Database Session Injection
 Use dependency injection for database sessions at the API level, then pass the same session through the service layer functions to maintain consistency.
+```python
+from app.database.db_session import get_db_session
+from fastapi import Depends
+
+@app.get(...)
+async def new_endpoint(
+  db_session=Depends(get_db_session)
+) -> ...:
+  ...
+```
 
 #### Cross-Module Imports
-When importing from other packages, use explicit module names:
+Be explicit and specific when importing from other packages:
 ```python
-from app.auth import constants as auth_constants
-from app.bedrock import service as bedrock_service
+from app.auth.utils import verify_and_parse_uuid
 ```
 
 ### LLM Configuration
@@ -110,7 +188,6 @@ The RAG system operates through multiple components:
 Key environment variables (defined in `.env`):
 - `USE_RAG`: Enable/disable RAG functionality
 - `DEBUG_MODE`: Enable debugpy debugging
-- `BYPASS_SESSION_VALIDATOR`/`BYPASS_AUTH_VALIDATOR`: Skip auth for development
 - `LLM_DEFAULT_MODEL`: Override default LLM model
 - Various model-specific configurations for different LLM use cases
 
@@ -119,7 +196,6 @@ Key environment variables (defined in `.env`):
 - **Unit tests**: Test individual functions and methods
 - **Integration tests**: Test component interactions
 - **E2E tests**: Test full API workflows
-- **Test markers**: Use pytest markers like `@pytest.mark.chat`, `@pytest.mark.rag` for selective test running
 - **Test isolation**: Each test run recreates the test database from scratch
 
 ## Local Development

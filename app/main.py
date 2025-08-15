@@ -3,17 +3,28 @@ from asyncio import exceptions
 from contextlib import asynccontextmanager
 
 import bugsnag
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 
+import app.auth.routes as auth
+import app.central_guidance.routes as central_guidance
 import app.chat.routes as chat
 import app.feedback.routes as feedback
+import app.healthcheck.routes as healthcheck
 import app.user.user as user
-from app.api import healthcheck
-from app.auth import session
+from app.auth.exceptions import (
+    AddNewUserError,
+    AuthTokenInvalidError,
+    AuthTokenMissingError,
+    SessionUuidMalformedError,
+    SessionUuidMissingError,
+    SessionUuidNotInDatabaseError,
+    UserKeyUuidMalformedError,
+    UserKeyUuidMissingError,
+    UserUuidNotMatchingError,
+)
 from app.bedrock.bedrock_types import BedrockError
-from app.central_guidance import routes
 from app.central_guidance.service_index import sync_central_index
 from app.chat.schemas import DocumentAccessError
 from app.chat.service import schedule_expired_messages_deletion
@@ -28,7 +39,8 @@ from app.document_upload.document_management import schedule_expired_files_delet
 from app.logs import BUGSNAG_ENABLED, BugsnagLogger
 from app.logs.logs_handler import logger, session_id_var
 from app.opensearch.service import verify_connection_to_opensearch
-from app.personal_prompts import user_prompt
+from app.personal_prompts import routes
+from app.personal_prompts.exceptions import UserPromptMissingError
 from app.themes_use_cases import themes_use_cases
 from app.themes_use_cases.sync_service import sync_themes_use_cases
 
@@ -48,21 +60,21 @@ async def lifespan(app: FastAPI):
         None: Yields control to the main API code
     """
     # Startup code is written here
+    if not IS_DEV:
+        # Sync with OpenSearch
+        verify_connection_to_opensearch()
+        async with async_db_session() as s:
+            # Sync themes and use cases
+            await sync_themes_use_cases(s)
 
-    # Sync with OpenSearch
-    verify_connection_to_opensearch()
-    async with async_db_session() as s:
-        # Sync themes and use cases
-        await sync_themes_use_cases(s)
+            # Sync the central RAG documents (OpenSearch)
+            await sync_central_index(s)
 
-        # Sync the central RAG documents (OpenSearch)
-        await sync_central_index(s)
+            # schedule deleting expired messages
+            asyncio.create_task(schedule_expired_messages_deletion(s))
 
-        # schedule deleting expired messages
-        asyncio.create_task(schedule_expired_messages_deletion(s))
-
-    # schedule deleting expired documents
-    asyncio.create_task(schedule_expired_files_deletion())
+        # schedule deleting expired documents
+        asyncio.create_task(schedule_expired_files_deletion())
 
     # Now yield to the main API code
     yield
@@ -136,16 +148,76 @@ def root():
 
 # Include routers
 app.include_router(healthcheck.router, prefix="/healthcheck", tags=["Health Check"])
-app.include_router(session.router, prefix="/v1", tags=["Auth Sessions"])
+app.include_router(auth.router, prefix="/v1", tags=["Auth Sessions"])
 app.include_router(chat.router, prefix="/v1", tags=["Chat Sessions"])
 app.include_router(feedback.router, prefix="/v1", tags=["Message Feedback"])
 app.include_router(user.router, prefix="/v1", tags=["User Data"])
-app.include_router(user_prompt.router, prefix="/v1", tags=["User Prompts"])
+app.include_router(routes.router, prefix="/v1", tags=["User Prompts"])
 app.include_router(themes_use_cases.router, prefix="/v1", tags=["Themes / Use Cases"])
-app.include_router(routes.router, prefix="/v1", tags=["Central RAG"])
+app.include_router(central_guidance.router, prefix="/v1", tags=["Central RAG"])
 
 
-# exception handlers
+### --- Exception Handlers --- ###
+
+
+def log_and_raise_http_exception(status_code: int, request: Request, exc: Exception):
+    logger.error(f"Error in endpoint {request.url.path}: {exc}\n", exc_info=exc)
+    raise HTTPException(status_code=status_code, detail=str(exc))
+
+
+## Auth module
+@app.exception_handler(AuthTokenMissingError)
+async def auth_token_missing_handler(request: Request, exc: AuthTokenMissingError):
+    log_and_raise_http_exception(status_code=401, request=request, exc=exc)
+
+
+@app.exception_handler(AuthTokenInvalidError)
+def auth_token_invalid_handler(request: Request, exc: AuthTokenInvalidError):
+    log_and_raise_http_exception(status_code=401, request=request, exc=exc)
+
+
+@app.exception_handler(AddNewUserError)
+def add_new_user_error_handler(request: Request, exc: AddNewUserError):
+    log_and_raise_http_exception(status_code=401, request=request, exc=exc)
+
+
+@app.exception_handler(SessionUuidMissingError)
+def session_uuid_missing_handler(request: Request, exc: SessionUuidMissingError):
+    log_and_raise_http_exception(status_code=400, request=request, exc=exc)
+
+
+@app.exception_handler(UserKeyUuidMissingError)
+def user_key_uuid_missing_handler(request: Request, exc: UserKeyUuidMissingError):
+    log_and_raise_http_exception(status_code=400, request=request, exc=exc)
+
+
+@app.exception_handler(UserUuidNotMatchingError)
+def user_uuid_not_matching_handler(request: Request, exc: UserUuidNotMatchingError):
+    log_and_raise_http_exception(status_code=403, request=request, exc=exc)
+
+
+@app.exception_handler(SessionUuidMalformedError)
+def session_uuid_malformed_handler(request: Request, exc: SessionUuidMalformedError):
+    log_and_raise_http_exception(status_code=400, request=request, exc=exc)
+
+
+@app.exception_handler(UserKeyUuidMalformedError)
+def user_key_uuid_malformed_handler(request: Request, exc: UserKeyUuidMalformedError):
+    log_and_raise_http_exception(status_code=400, request=request, exc=exc)
+
+
+@app.exception_handler(SessionUuidNotInDatabaseError)
+def session_uuid_not_in_database_handler(request: Request, exc: SessionUuidNotInDatabaseError):
+    log_and_raise_http_exception(status_code=404, request=request, exc=exc)
+
+
+## User Prompt module
+@app.exception_handler(UserPromptMissingError)
+def user_prompt_missing_handler(request: Request, exc: UserPromptMissingError):
+    log_and_raise_http_exception(status_code=404, request=request, exc=exc)
+
+
+## ...
 @app.exception_handler(DocumentAccessError)
 def handle_document_access_error(request: Request, ex: DocumentAccessError):
     """

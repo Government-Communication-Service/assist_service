@@ -120,7 +120,7 @@ class LogsHandler:
             re-raised after logging.
         """
         try:
-            logger.info("Executing %s", action)
+            logger.debug("Executing %s", action)
             if asyncio.iscoroutine(callback):
                 return await callback
 

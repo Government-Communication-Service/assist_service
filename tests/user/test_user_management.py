@@ -1,7 +1,8 @@
 import logging
 import uuid
 
-from app.api import ENDPOINTS, ApiConfig
+from app.api.endpoints import ENDPOINTS
+from app.auth.constants import SESSION_AUTH_ALIAS
 
 api = ENDPOINTS()
 logger = logging.getLogger(__name__)
@@ -154,7 +155,7 @@ class TestUserManagement:
         )
 
         data = session_response.json()
-        session_uuid = data.get(ApiConfig.SESSION_AUTH_ALIAS)
+        session_uuid = data.get(SESSION_AUTH_ALIAS)
         assert session_uuid is not None, "Session UUID missing in response"
 
         # Verify that the returned session UUID is valid.
@@ -195,7 +196,7 @@ class TestUserManagement:
         )
 
         data = session_response.json()
-        session_uuid = data.get(ApiConfig.SESSION_AUTH_ALIAS)
+        session_uuid = data.get(SESSION_AUTH_ALIAS)
         assert session_uuid is not None, "Session UUID missing in response"
 
         # Verify that the returned session UUID is valid.

@@ -7,7 +7,6 @@ from starlette.status import (
     HTTP_404_NOT_FOUND,
 )
 
-from app.api import api_wrapper
 from app.chat.schemas import (
     PrebuiltPromptsResponse,
     SuccessResponse,
@@ -33,7 +32,6 @@ async def success_response():
 
 
 # CRUD operations on themes
-@api_wrapper(task="create_theme")
 async def create_theme(db_session: AsyncSession, theme_input: ThemeInput) -> ThemeResponse:
     """
     Creates a new theme or revives a soft-deleted theme with the given details.
@@ -60,7 +58,6 @@ async def create_theme(db_session: AsyncSession, theme_input: ThemeInput) -> The
     return Response(status_code=HTTP_404_NOT_FOUND)
 
 
-@api_wrapper(task="fetch_theme")
 async def fetch_theme(db_session: AsyncSession, theme_uuid: UUID) -> ThemeResponse | Response:
     """
     Retrieves a single active theme by its UUID.
@@ -83,7 +80,6 @@ async def fetch_theme(db_session: AsyncSession, theme_uuid: UUID) -> ThemeRespon
     return ThemeResponse(**theme.client_response())
 
 
-@api_wrapper(task="update_theme")
 async def update_theme(db_session: AsyncSession, theme_uuid: UUID, theme_input: ThemeInput) -> ThemeResponse:
     """
     Updates an existing theme's details.
@@ -107,7 +103,6 @@ async def update_theme(db_session: AsyncSession, theme_uuid: UUID, theme_input: 
     return ThemeResponse(**theme.client_response())
 
 
-@api_wrapper(task="soft_delete_theme")
 async def soft_delete_theme(db_session: AsyncSession, theme_uuid: UUID) -> SuccessResponse:
     """
     Marks a theme as deleted without removing it from the database.
@@ -127,7 +122,6 @@ async def soft_delete_theme(db_session: AsyncSession, theme_uuid: UUID) -> Succe
     return SuccessResponse()
 
 
-@api_wrapper(task="fetch_themes")
 async def fetch_themes(db_session: AsyncSession) -> ThemesResponse:
     """
     Retrieves all active themes ordered by position or ID.
@@ -143,7 +137,6 @@ async def fetch_themes(db_session: AsyncSession) -> ThemesResponse:
 # CRUD operations on use cases
 
 
-@api_wrapper(task="create_use_case")
 async def create_use_case(
     db_session: AsyncSession, theme_uuid: UUID, use_case_input: UseCaseInputPost
 ) -> UseCaseResponse:
@@ -180,7 +173,6 @@ async def create_use_case(
     return response
 
 
-@api_wrapper(task="fetch_use_case")
 async def fetch_use_case(db_session: AsyncSession, theme_uuid: UUID, use_case_uuid: UUID) -> UseCaseResponse | Response:
     """
     Retrieves a single use case, verifying it belongs to the specified theme.
@@ -206,7 +198,6 @@ async def fetch_use_case(db_session: AsyncSession, theme_uuid: UUID, use_case_uu
     return Response(status_code=HTTP_404_NOT_FOUND)
 
 
-@api_wrapper(task="fetch_use_case_without_requiring_theme")
 async def fetch_use_case_without_requiring_theme(db_session: AsyncSession, use_case_uuid: UUID) -> UseCaseResponse:
     """
     Retrieves a single use case without theme verification.
@@ -228,7 +219,6 @@ async def fetch_use_case_without_requiring_theme(db_session: AsyncSession, use_c
     return UseCaseResponse(**use_case.client_response(), theme_uuid=theme.uuid)
 
 
-@api_wrapper(task="fetch_use_cases")
 async def fetch_use_cases(db_session: AsyncSession, theme_uuid: UUID) -> UseCasesResponse:
     """
     Retrieves all active use cases belonging to a theme.
@@ -253,7 +243,6 @@ async def fetch_use_cases(db_session: AsyncSession, theme_uuid: UUID) -> UseCase
     )
 
 
-@api_wrapper(task="update_use_case")
 async def update_use_case(
     db_session: AsyncSession, theme_uuid: UUID, use_case_uuid: UUID, use_case_input: UseCaseInputPut
 ) -> UseCaseResponse:
@@ -298,7 +287,6 @@ async def update_use_case(
     return UseCaseResponse(**use_case.client_response(), theme_uuid=theme_to_update_to.uuid)
 
 
-@api_wrapper(task="soft_delete_use_case")
 async def soft_delete_use_case(db_session: AsyncSession, theme_uuid: UUID, use_case_uuid: UUID) -> SuccessResponse:
     """
     Marks a use case as deleted without removing it from the database.
@@ -330,7 +318,6 @@ async def soft_delete_use_case(db_session: AsyncSession, theme_uuid: UUID, use_c
 
 
 # Bulk upload of prompts
-@api_wrapper(task="upload_prompts_in_bulk")
 async def upload_prompts_in_bulk(db_session: AsyncSession, prompts: List[PrebuiltPrompt]) -> SuccessResponse:
     """
     Replaces all existing prompts with a new set of themes and use cases.
@@ -389,7 +376,6 @@ async def upload_prompts_in_bulk(db_session: AsyncSession, prompts: List[Prebuil
     return await asyncio.create_task(success_response())
 
 
-@api_wrapper(task="fetch_all_prompts")
 async def fetch_all_prompts(db_session: AsyncSession) -> PrebuiltPromptsResponse:
     """
     Retrieves all active themes and their use cases in a format suitable for bulk editing.

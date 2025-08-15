@@ -3,7 +3,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api import ENDPOINTS
+from app.api.endpoints import ENDPOINTS
 from app.database.models import Theme, UseCase
 from app.themes_use_cases.config import DEFAULT_THEMES_USE_CASES
 from app.themes_use_cases.sync_service import sync_themes_use_cases

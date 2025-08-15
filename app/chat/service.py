@@ -1,19 +1,23 @@
 # ruff: noqa: B008
 import asyncio
 import json
+import os
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 
 import sqlalchemy
 from anthropic.types import TextBlock
-from fastapi import Body, Depends, HTTPException
+from fastapi import Body, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import cast, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api import api_wrapper, get_current_session
-from app.api.config import ApiConfig
-from app.api.paths import ApiPaths
+from app.auth.constants import USER_GROUPS_ALIAS
+from app.auth.verify_service import (
+    verify_and_get_auth_session_from_header,
+    verify_and_get_user_from_path_and_header,
+    verify_and_parse_uuid,
+)
 from app.bedrock import BedrockHandler, RunMode
 from app.bedrock.bedrock_types import BedrockError, BedrockErrorType
 from app.bedrock.schemas import LLMResponse
@@ -67,13 +71,8 @@ from app.document_upload.service import search_uploaded_documents
 from app.error_messages import ErrorMessages
 from app.gov_uk_search.service import assess_if_next_message_should_use_gov_uk_search, enhance_user_prompt
 from app.logs.logs_handler import logger
-from app.verify_uuid import verify_uuid
 
 
-class ChatService: ...
-
-
-@api_wrapper(task="get_all_user_chats")
 async def get_all_user_chats(db_session: AsyncSession, user: User):
     chats = await DbOperations.get_chats_by_user(db_session=db_session, user_id=user.id)
 
@@ -364,7 +363,14 @@ def chat_save_llm_output(
         return None
 
 
-def get_user_groups(user_groups_string=ApiConfig.USER_GROUPS):
+def get_user_groups(
+    user_groups_string=Header(
+        default=os.getenv("TEST_USER_GROUPS", ""),
+        alias=USER_GROUPS_ALIAS,
+        description="A comma-separated list of groups assigned to the user from GCS Connect which can be used to "
+        "filter queries.",
+    ),
+):
     user_group_ids = []
 
     if user_groups_string:
@@ -378,8 +384,8 @@ def get_user_groups(user_groups_string=ApiConfig.USER_GROUPS):
 
 
 def chat_request_data(
-    user=ApiPaths.USER_UUID,
-    session=Depends(get_current_session),
+    user=Depends(verify_and_get_user_from_path_and_header),
+    auth_session=Depends(verify_and_get_auth_session_from_header),
     data: ChatPost = Body(...),
     user_group_ids=Depends(get_user_groups),
 ):
@@ -389,16 +395,17 @@ def chat_request_data(
 
     try:
         if use_case_id:
-            use_case_id = verify_uuid("use_case_id", use_case_id)
+            use_case_id = verify_and_parse_uuid(use_case_id)
 
             data_dict["use_case_id"] = UseCaseTable().get_by_uuid(use_case_id).id
 
-        return ChatRequestData(user_id=user.id, auth_session_id=session.id, user_group_ids=user_group_ids, **data_dict)
+        return ChatRequestData(
+            user_id=user.id, auth_session_id=auth_session.id, user_group_ids=user_group_ids, **data_dict
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@api_wrapper(task="chat_create_stream")
 async def chat_create_stream(data: ChatCreateInput):
     data.stream = True
     response = await chat_create(data)
@@ -426,7 +433,6 @@ async def _chat_message_with_documents(chat: Chat, db_session: AsyncSession, req
     return request_input
 
 
-@api_wrapper(task="chat_add_message_stream")
 async def chat_add_message_stream(chat: Chat, data):
     chat_message = data.to_dict()
     # check if there are chat documents, then fetch and append them to the request
@@ -436,7 +442,6 @@ async def chat_add_message_stream(chat: Chat, data):
         return StreamingResponse(response, media_type="text/event-stream")
 
 
-@api_wrapper(task="chat_add_message")
 async def chat_add_message(chat: Chat, data):
     request_input = data.to_dict()
     # check if there are chat documents, then fetch and append them to the request
@@ -449,7 +454,6 @@ async def chat_add_message(chat: Chat, data):
         )
 
 
-@api_wrapper(task="update_chat_title")
 async def update_chat_title(db_session: AsyncSession, chat: Chat, data) -> ChatSuccessResponse:
     # update chat title
     title = await chat_create_title(ChatTitleRequest(**data.to_dict()))
@@ -458,7 +462,6 @@ async def update_chat_title(db_session: AsyncSession, chat: Chat, data) -> ChatS
     return ChatSuccessResponse(**chat_result.client_response())
 
 
-@api_wrapper(task="patch_chat_title")
 async def patch_chat_title(db_session: AsyncSession, chat: Chat, title) -> ChatSuccessResponse:
     """
     Updates the title of a chat.
@@ -486,7 +489,6 @@ async def patch_chat_title(db_session: AsyncSession, chat: Chat, title) -> ChatS
     return ChatSuccessResponse(**chat_result.client_response())
 
 
-@api_wrapper(task="chat_get_messages")
 async def chat_get_messages(chat: Chat):
     """
     Retrieves all messages for a specific chat, including related documents.
@@ -536,7 +538,6 @@ async def chat_get_messages(chat: Chat):
         return chat_response
 
 
-@api_wrapper(task="create chat")
 async def chat_create(input_data: ChatCreateInput) -> ChatWithLatestMessage:
     """
     Takes a chat creation request and creates a new chat with the message.
@@ -939,7 +940,6 @@ async def _check_document_access(db_session: AsyncSession, rag_request: RagReque
         )
 
 
-@api_wrapper(task="clean_expired_message_content")
 async def clean_expired_message_content(db_session: AsyncSession):
     """
     Removes content from messages older than 1 year for data protection compliance.

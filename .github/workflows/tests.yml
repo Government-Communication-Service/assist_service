@@ -121,6 +121,7 @@ jobs:
           LLM_USE_BEDROCK: True
           OPENSEARCH_DISABLE_SSL: True
           AUTH_SECRET_KEY: ${{ secrets.AUTH_SECRET_KEY }}
+          AUTH_SECRET_KEY_2: ${{ secrets.AUTH_SECRET_KEY_2 }}
           BUGSNAG_API_KEY: ${{ secrets.BUGSNAG_API_KEY }}
           BUGSNAG_RELEASE_STAGE: copilot-dev-github-actions
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
@@ -130,8 +131,6 @@ jobs:
           CLOUDWATCH_LOG_GROUP: ${{ secrets.CLOUDWATCH_LOG_GROUP }}
           CLOUDWATCH_LOG_STREAM: ${{ secrets.CLOUDWATCH_LOG_STREAM }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          BYPASS_SESSION_VALIDATOR: ${{ secrets.BYPASS_SESSION_VALIDATOR }}
-          BYPASS_AUTH_VALIDATOR: ${{ secrets.BYPASS_AUTH_VALIDATOR }}
           USE_RAG: ${{ secrets.USE_RAG }}
           OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${{ secrets.OPENSEARCH_INITIAL_ADMIN_PASSWORD }}
           OPENSEARCH_USER: ${{ secrets.OPENSEARCH_USER }}
