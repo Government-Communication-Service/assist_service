@@ -25,6 +25,14 @@ IS_DEV = env_variable("IS_DEV")
 URL_HOSTNAME = os.getenv("URL_HOSTNAME", "http://localhost:" + os.getenv("PORT", "5312"))
 DATA_DIR = "data"
 
+### --- AWS Configuration --- ###
+
+AWS_DEFAULT_REGION = os.getenv("AWS_DEFAULT_REGION", "eu-west-2")
+
+### --- S3 Configuration --- ###
+
+S3_ERRORDOCS_BUCKET = os.getenv("S3_ERRORDOCS_BUCKET", "assist-error-docs")
+
 ### --- LLM / Bedrock Configuration --- ###
 
 LLM_DEFAULT_PROVIDER = "bedrock"

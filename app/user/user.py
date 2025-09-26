@@ -1,6 +1,7 @@
 import asyncio
 import io
 import logging
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile, status
@@ -15,6 +16,8 @@ from app.auth.verify_service import (
     verify_and_get_user_from_path_and_header,
     verify_auth_token,
 )
+from app.aws_services.s3_service import S3Service
+from app.config import AWS_DEFAULT_REGION, IS_DEV, S3_ERRORDOCS_BUCKET
 from app.database.db_operations import DbOperations
 from app.database.db_session import get_db_session
 from app.database.models import AuthSession, User
@@ -40,6 +43,18 @@ router = APIRouter()
 
 logger = logging.getLogger(__name__)
 document_parser = PersonalDocumentParser()
+s3_service = S3Service(AWS_DEFAULT_REGION)
+
+
+async def upload_failed_document(file_content: bytes, filename: str, user: User, error_type: str):
+    """Upload failed document to S3 for debugging (only in production)"""
+    if not IS_DEV:
+        try:
+            content_stream = io.BytesIO(file_content)
+            key = f"user_{user.uuid}/{error_type}/{datetime.now().isoformat('T', 'seconds')}_{filename or 'unknown'}"
+            await s3_service.upload_file(bucket_name=S3_ERRORDOCS_BUCKET, key=key, content=content_stream)
+        except Exception as e:
+            logger.error(f"Failed to upload error document to S3: {e}")
 
 
 @router.put(
@@ -262,7 +277,7 @@ async def upload_file(
     file: UploadFile = File(...),
     user: User = Depends(verify_and_get_user_from_path_and_header),
     auth_session: AuthSession = Depends(verify_and_get_auth_session_from_header),
-) -> UploadDocumentResponse:
+) -> UploadDocumentResponse | JSONResponse:
     """
     Parses uploaded file and stores it in the database and opensearch index.
 
@@ -284,8 +299,11 @@ async def upload_file(
             - description: "Description of the file"
             - file: File to upload
     """
+    # Read file content once to avoid stream consumption issues
+    file_content = await file.read()
+    file_name = file.filename or "unknown"
     try:
-        file_info = FileInfo(filename=file.filename, content=io.BytesIO(await file.read()))
+        file_info = FileInfo(filename=file_name, content=io.BytesIO(file_content))
         new_document = await document_parser.process_document(file=file_info, auth_session=auth_session, user=user)
 
         # Return a response model object
@@ -294,6 +312,7 @@ async def upload_file(
             document_uuid=str(new_document.uuid),
         )
     except NoTextContentError as ex:
+        await upload_failed_document(file_content, file_name, user, "no_text_content")
         logger.info(f"User uploaded file with no text content: {file.filename}")
         content = {
             "error_code": "NO_TEXT_CONTENT_ERROR",
@@ -303,7 +322,8 @@ async def upload_file(
         return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content=content)
 
     except FileFormatError as ex:
-        logger.info(f"User uploaded file not supported: {file.filename}")
+        await upload_failed_document(file_content, file_name, user, "unsupported_format")
+        logger.info(f"User uploaded file not supported: {file_name}")
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
@@ -314,6 +334,7 @@ async def upload_file(
             },
         )
     except asyncio.TimeoutError as ex:
+        await upload_failed_document(file_content, file_name, user, "timeout")
         logger.info(f"Processing file timed out: {file.filename}, error: {ex}")
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -324,6 +345,7 @@ async def upload_file(
             },
         )
     except TesseractNotFoundError:
+        await upload_failed_document(file_content, file_name, user, "ocr_required")
         logger.warning(f"Uploaded document requires OCR tesseract tool, file: {file.filename}")
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -337,8 +359,9 @@ async def upload_file(
             },
         )
     except UnsupportedFileFormatError as ex:
+        await upload_failed_document(file_content, file_name, user, "unsupported_file_format")
         logger.warning(f"UnsupportedFileFormatError: {ex},", extra={"file_name": f"{file.filename}"})
-        if file.filename.lower().endswith(".docx"):
+        if file.filename and file.filename.lower().endswith(".docx"):
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 content={
@@ -358,12 +381,14 @@ async def upload_file(
             },
         )
     except Exception as e:
+        await upload_failed_document(file_content, file_name, user, "general_exception")
+
         bad_word_error_string = (
             "no relationship of type 'http://schemas.openxmlformats.org/"
             "officeDocument/2006/relationships/officeDocument"
         )
 
-        if file.filename.lower().endswith(".docx") and bad_word_error_string in str(e):
+        if file.filename and file.filename.lower().endswith(".docx") and bad_word_error_string in str(e):
             logger.warning("Error uploading file: %s, error: %s", file.filename, e)
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
