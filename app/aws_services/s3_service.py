@@ -26,14 +26,15 @@ def _check_and_create_s3_bucket(s3_client, bucket_name: str, region: str):
     """
     try:
         s3_client.head_bucket(Bucket=bucket_name)
-    except ClientError as e:
-        if e.response["Error"]["Code"] == "404":
-            # us-east-1 is the default region and doesn't need LocationConstraint
+    except ClientError:
+        try:
             if region == "us-east-1":
                 s3_client.create_bucket(Bucket=bucket_name)
             else:
                 s3_client.create_bucket(Bucket=bucket_name, CreateBucketConfiguration={"LocationConstraint": region})
             logger.info(f"Created S3 bucket: {bucket_name}")
+        except Exception as e:
+            raise Exception(f"Could not create bucket {e}") from e
 
 
 class S3Service:
