@@ -29,6 +29,7 @@ from app.chat.service import (
     chat_request_data,
     clean_expired_message_content,
     get_all_user_chats,
+    patch_chat_favourite,
     patch_chat_title,
     update_chat_title,
 )
@@ -248,3 +249,31 @@ async def delete_expired_message_content(db_session: AsyncSession = Depends(get_
         ),
         cleaned_count=cleanup_data["cleaned_count"],
     )
+
+
+@router.patch(
+    path=ENDPOINTS.CHAT_FAVOURITE,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_user_from_path_and_header),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+    response_model=ChatSuccessResponse,
+)
+async def update_chat_favourite(
+    chat=Depends(chat_validator),
+    favourite: bool = Body(False, embed=True),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> ChatSuccessResponse:
+    """
+    Update the favourite status of a chat.
+
+    Args:
+        chat: Chat object from chat_validator dependency
+        favourite (bool): The new favourite status for the chat. If null, defaults to False.
+        db_session: Database session
+
+    Returns:
+        ChatSuccessResponse: Response containing updated chat details
+    """
+    return await patch_chat_favourite(db_session=db_session, chat=chat, favourite=favourite)

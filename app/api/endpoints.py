@@ -15,6 +15,7 @@ class ENDPOINTS:
     CHAT_UPDATE_STREAM = "/chats/users/{user_uuid}/chats/{chat_uuid}/stream"
     CHAT_MESSAGES = "/chats/users/{user_uuid}/chats/{chat_uuid}/messages"
     CHAT_TITLE = "/chats/users/{user_uuid}/chats/{chat_uuid}/title"
+    CHAT_FAVOURITE = "/chats/users/{user_uuid}/chats/{chat_uuid}/favourite"
     #
     #
     PROMPTS_BULK = "/prompts/bulk"

@@ -200,6 +200,7 @@ class ChatBasicResponse(ItemTitleResponse):
     use_rag: bool = True
     use_gov_uk_search_api: bool = False
     documents: Optional[List[DocumentSchema]] = None
+    favourite: bool = False
 
 
 class UserChatsResponse(SuccessResponse, ItemResponse):

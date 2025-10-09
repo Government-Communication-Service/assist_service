@@ -141,6 +141,7 @@ class Chat(Base):
     from_open_chat = Column(Boolean, nullable=False)
     use_rag = Column(Boolean, nullable=True, server_default="true")
     use_gov_uk_search_api = Column(Boolean, nullable=True, server_default="false")
+    favourite = Column(Boolean, nullable=False, server_default="false")
 
     def client_response(self):
         return {
@@ -150,6 +151,7 @@ class Chat(Base):
                     "title": self.title,
                     "use_rag": self.use_rag,
                     "use_gov_uk_search_api": self.use_gov_uk_search_api,
+                    "favourite": self.favourite,
                 }
             ),
         }

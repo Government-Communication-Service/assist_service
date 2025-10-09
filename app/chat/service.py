@@ -347,6 +347,16 @@ def chat_save_llm_output(
                     "citation": user_message.citation,
                 },
             )
+
+            # Update chat updated_at timestamp when AI message is created
+            try:
+                chat_repo = ChatTable()
+                chat_obj = chat_repo.get(ai_message.chat_id)
+                chat_repo.update(chat_obj, {"updated_at": datetime.now()})
+            except Exception as e:
+                # Log error but continue execution, as not a critical error
+                logger.error(f"Failed to update chat timestamp for chat ID {ai_message.chat_id}: {str(e)}")
+
             logger.info(
                 "AI message created succesfully: "
                 f"message_id={ai_message.id}, "
@@ -489,6 +499,25 @@ async def patch_chat_title(db_session: AsyncSession, chat: Chat, title) -> ChatS
     return ChatSuccessResponse(**chat_result.client_response())
 
 
+async def patch_chat_favourite(db_session: AsyncSession, chat: Chat, favourite: bool) -> ChatSuccessResponse:
+    """
+    Updates the favourite status of a chat.
+
+    Args:
+        db_session (AsyncSession): The active database session for performing the update.
+        chat (Chat): The Chat instance representing the chat to be favourited.
+        favourite (bool): The new favourite status to be assigned to the chat.
+
+    Returns:
+        ChatSuccessResponse: Response object containing the updated chat details.
+
+    Raises:
+        Exception: If the database operation fails, the underlying DatabaseError will be propagated.
+    """
+    chat_result = await DbOperations.chat_update_favourite(db_session, chat, favourite)
+    return ChatSuccessResponse(**chat_result.client_response())
+
+
 async def chat_get_messages(chat: Chat):
     """
     Retrieves all messages for a specific chat, including related documents.
@@ -508,6 +537,7 @@ async def chat_get_messages(chat: Chat):
             created_at=chat.created_at,
             updated_at=chat.updated_at,
             title=chat.title,
+            favourite=chat.favourite,
             from_open_chat=chat.from_open_chat,
             use_rag=chat.use_rag,
             use_gov_uk_search_api=chat.use_gov_uk_search_api,

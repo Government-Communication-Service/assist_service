@@ -212,6 +212,61 @@ class TestUserChats:
         logging.info(f"GET Response body: {get_response}")
 
 
+class TestChatFavourite:
+    @pytest.mark.asyncio
+    async def test_update_chat_favourite_to_true(self, chat, user_id, async_client, async_http_requester):
+        """Test updating chat favourite status to true"""
+        endpoint = f"/v1/chats/users/{user_id}/chats/{chat.uuid}/favourite"
+
+        response = await async_http_requester(
+            "update chat favourite to true", async_client.patch, endpoint, json={"favourite": True}
+        )
+
+        assert response["status"] == "success"
+        assert "uuid" in response
+        assert "title" in response
+
+    @pytest.mark.asyncio
+    async def test_update_chat_favourite_to_false(self, chat, user_id, async_client, async_http_requester):
+        """Test updating chat favourite status to false"""
+        endpoint = f"/v1/chats/users/{user_id}/chats/{chat.uuid}/favourite"
+
+        response = await async_http_requester(
+            "update chat favourite to false", async_client.patch, endpoint, json={"favourite": False}
+        )
+
+        assert response["status"] == "success"
+        assert "uuid" in response
+        assert "title" in response
+
+    @pytest.mark.asyncio
+    async def test_update_chat_favourite_default_false(self, chat, user_id, async_client, async_http_requester):
+        """Test updating chat favourite with empty body defaults to false"""
+        endpoint = f"/v1/chats/users/{user_id}/chats/{chat.uuid}/favourite"
+
+        response = await async_http_requester(
+            "update chat favourite with default", async_client.patch, endpoint, json={}
+        )
+
+        assert response["status"] == "success"
+        assert "uuid" in response
+        assert "title" in response
+
+    @pytest.mark.asyncio
+    async def test_update_chat_favourite_unauthorized(self, chat, async_client, async_http_requester):
+        """Test updating chat favourite for non-existent user returns 403"""
+        non_existent_user = str(uuid.uuid4())
+        endpoint = f"/v1/chats/users/{non_existent_user}/chats/{chat.uuid}/favourite"
+
+        await async_http_requester(
+            "update chat favourite unauthorized",
+            async_client.patch,
+            endpoint,
+            json={"favourite": True},
+            response_code=403,
+        )
+
+
 class TestUserChatsV1:
     async def test_accessing_another_user_chat_denied(
         self,
