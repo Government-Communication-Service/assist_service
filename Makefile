@@ -132,6 +132,12 @@ test-user:
 test-chat-create-message:
 	$(docker-cmd) "${test-cmd} tests/chat/test_chat_create_message.py"
 
+test-gov-uk-search:
+	$(docker-cmd) "${test-cmd} tests/gov_uk_search/test_gov_uk_search_client.py::TestGovUKSearch tests/lib/test_gov_uk_document_search.py tests/streaming/test_stream_v1.py::test_stream_with_gov_uk_search_api_response"
+
+test-chat-create-message:
+	$(docker-cmd) "${test-cmd} tests/chat/test_chat_create_message.py"
+
 api-stop:
 	docker stop ${container-name}
 
