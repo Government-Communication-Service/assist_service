@@ -267,6 +267,48 @@ class TestChatFavourite:
         )
 
 
+class TestChatArchive:
+    @pytest.mark.asyncio
+    async def test_archive_chat_success(self, chat, user_id, async_client, async_http_requester):
+        """Test successfully archiving a chat"""
+        endpoint = f"/v1/chats/users/{user_id}/chats/{chat.uuid}/archive"
+
+        response = await async_http_requester("archive chat success", async_client.patch, endpoint)
+
+        assert response["status"] == "success"
+        assert "uuid" in response
+        assert "title" in response
+
+    @pytest.mark.asyncio
+    async def test_archive_chat_unauthorized(self, chat, async_client, async_http_requester):
+        """Test archiving chat for non-existent user returns 403"""
+        non_existent_user = str(uuid.uuid4())
+        endpoint = f"/v1/chats/users/{non_existent_user}/chats/{chat.uuid}/archive"
+
+        await async_http_requester(
+            "archive chat unauthorized",
+            async_client.patch,
+            endpoint,
+            response_code=403,
+        )
+
+    @pytest.mark.asyncio
+    async def test_archived_chat_not_accessible(self, chat, user_id, async_client, async_http_requester):
+        """Test that archived chat cannot be accessed via get_chat_messages"""
+        # First archive the chat
+        archive_endpoint = f"/v1/chats/users/{user_id}/chats/{chat.uuid}/archive"
+        await async_http_requester("archive chat for access test", async_client.patch, archive_endpoint)
+
+        # Then try to access the archived chat
+        get_endpoint = f"/v1/chats/users/{user_id}/chats/{chat.uuid}"
+        await async_http_requester(
+            "get archived chat",
+            async_client.get,
+            get_endpoint,
+            response_code=500,
+        )
+
+
 class TestUserChatsV1:
     async def test_accessing_another_user_chat_denied(
         self,

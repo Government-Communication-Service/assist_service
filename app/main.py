@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
             await sync_central_index(s)
 
             # schedule deleting expired messages
-            asyncio.create_task(schedule_expired_messages_deletion(s))
+            asyncio.create_task(schedule_expired_messages_deletion())
 
         # schedule deleting expired documents
         asyncio.create_task(schedule_expired_files_deletion())

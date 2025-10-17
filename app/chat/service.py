@@ -518,6 +518,24 @@ async def patch_chat_favourite(db_session: AsyncSession, chat: Chat, favourite: 
     return ChatSuccessResponse(**chat_result.client_response())
 
 
+async def chat_archive(db_session: AsyncSession, chat: Chat) -> ChatSuccessResponse:
+    """
+    Archives a chat by setting the deleted_at timestamp.
+
+    Args:
+        db_session (AsyncSession): The active database session for performing the update.
+        chat (Chat): The Chat instance representing the chat to be archived.
+
+    Returns:
+        ChatSuccessResponse: Response object containing the updated chat details.
+
+    Raises:
+        Exception: If the database operation fails, the underlying DatabaseError will be propagated.
+    """
+    chat_result = await DbOperations.chat_archive(db_session, chat)
+    return ChatSuccessResponse(**chat_result.client_response())
+
+
 async def chat_get_messages(chat: Chat):
     """
     Retrieves all messages for a specific chat, including related documents.
@@ -1014,12 +1032,12 @@ async def clean_expired_message_content(db_session: AsyncSession):
     chats_to_mark_deleted = []
     for chat_id in chat_ids_with_cleaned_messages:
         # Check if there are any remaining undeleted messages in this chat
-        remaining_stmt = select(Message).where(Message.chat_id == chat_id, Message.deleted_at.is_(None))
+        remaining_stmt = select(Message.id).where(Message.chat_id == chat_id, Message.deleted_at.is_(None)).limit(1)
         remaining_result = await db_session.execute(remaining_stmt)
-        remaining_messages = remaining_result.fetchall()
+        remaining_message = remaining_result.scalar()
 
         # If no remaining undeleted messages, mark this chat for deletion
-        if not remaining_messages:
+        if remaining_message is None:
             chats_to_mark_deleted.append(chat_id)
 
     # Mark chats as deleted where ALL messages are now deleted
@@ -1046,7 +1064,7 @@ async def clean_expired_message_content(db_session: AsyncSession):
     }
 
 
-async def schedule_expired_messages_deletion(db_session: AsyncSession):
+async def schedule_expired_messages_deletion():
     """
     Schedules the periodic execution of the expired message deletion process.
     The process runs every hour and checks if there are expired documents to delete from database and opensearch
@@ -1054,7 +1072,10 @@ async def schedule_expired_messages_deletion(db_session: AsyncSession):
     while True:
         try:
             logger.info("Running scheduled expired messages deletion process")
-            await clean_expired_message_content(db_session)
+            async with async_db_session() as db_session:
+                await clean_expired_message_content(db_session)
+                await db_session.commit()
+                logger.info("Successfully committed expired messages deletion changes")
         except Exception as e:
             logger.exception("An error occurred during expired messages deletion: %s", e)
         logger.info("Sleeping for %s seconds before the next message deletion run.", SLEEP_TIME_MESSAGE_DELETION)

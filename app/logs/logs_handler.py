@@ -85,6 +85,7 @@ class Action(str, Enum):
     DB_UPDATE_USER_PROMPT = auto()
     DB_DELETE_USER_PROMPT = auto()
     DB_UPDATE_CHAT_TITLE = auto()
+    DB_ARCHIVE_CHAT = auto()
     DB_UPDATE_MESSAGE = auto()
     DB_UPDATE_THEME = auto()
     DB_UPDATE_USE_CASE = auto()

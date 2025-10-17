@@ -232,12 +232,18 @@ class DbOperations:
                 .contains_eager(Document.user_mappings)
             )
             .options(contains_eager(Chat.messages))
-            .where(Chat.id == chat_id, Chat.user_id == user_id)
+            .where(Chat.id == chat_id, Chat.user_id == user_id, Chat.deleted_at.is_(None))
             .order_by(Message.created_at, Document.created_at)
         )
 
         result = await LogsHandler.with_logging(Action.DB_RETRIEVE_CHAT, db_session.execute(stmt))
-        return result.scalars().unique().one()
+        chat_result = result.scalars().unique().first()
+        if not chat_result:
+            raise DatabaseError(
+                code=DatabaseExceptionErrorCode.GET_ERROR,
+                message="Chat not found or has been archived",
+            )
+        return chat_result
 
     @staticmethod
     async def fetch_undeleted_chat_documents(
@@ -1293,6 +1299,29 @@ class DbOperations:
             raise DatabaseError(
                 code=DatabaseExceptionErrorCode.UPDATE_ERROR,
                 message=f"An error occurred in the `chat_update_favourite` method on the table {Chat.__tablename__}:"
+                + f"Original error: {e}",
+            ) from e
+
+    @staticmethod
+    async def chat_archive(db_session: AsyncSession, chat: Chat) -> Chat:
+        """
+        Archives a chat by setting the deleted_at timestamp.
+
+        Args:
+            db_session (AsyncSession): The asynchronous SQLAlchemy session for executing database queries.
+            chat (Chat): Chat object to be archived.
+
+        Returns:
+            Chat: A Chat object with updated deleted_at timestamp.
+        """
+        try:
+            chat_stmt = update(Chat).values(deleted_at=datetime.now()).where(Chat.id == chat.id).returning(Chat)
+            result = await LogsHandler.with_logging(Action.DB_ARCHIVE_CHAT, db_session.execute(chat_stmt))
+            return result.scalars().first()
+        except Exception as e:
+            raise DatabaseError(
+                code=DatabaseExceptionErrorCode.UPDATE_ERROR,
+                message=f"An error occurred in the `chat_archive` method on the table {Chat.__tablename__}: "
                 + f"Original error: {e}",
             ) from e
 

@@ -1,4 +1,4 @@
-# ruff: noqa: E501, F841
+# ruff: noqa: E501, F841, I001
 
 import json
 import logging

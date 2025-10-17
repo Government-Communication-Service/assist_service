@@ -16,6 +16,7 @@ class ENDPOINTS:
     CHAT_MESSAGES = "/chats/users/{user_uuid}/chats/{chat_uuid}/messages"
     CHAT_TITLE = "/chats/users/{user_uuid}/chats/{chat_uuid}/title"
     CHAT_FAVOURITE = "/chats/users/{user_uuid}/chats/{chat_uuid}/favourite"
+    CHAT_ARCHIVE = "/chats/users/{user_uuid}/chats/{chat_uuid}/archive"
     #
     #
     PROMPTS_BULK = "/prompts/bulk"
@@ -108,6 +109,9 @@ class ENDPOINTS:
 
     def create_chat_title(self, user_uuid: UUID, chat_uuid: UUID) -> str:
         return self.build_url(self.CHAT_TITLE, user_uuid=user_uuid, chat_uuid=chat_uuid)
+
+    def archive_chat(self, user_uuid: UUID, chat_uuid: UUID) -> str:
+        return self.build_url(self.CHAT_ARCHIVE, user_uuid=user_uuid, chat_uuid=chat_uuid)
 
     def themes_use_cases(self, theme_uuid: UUID) -> str:
         return self.build_url(self.PROMPTS_THEMES_USE_CASES, theme_uuid=theme_uuid)

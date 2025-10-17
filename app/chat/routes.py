@@ -23,6 +23,7 @@ from app.chat.schemas import (
 from app.chat.service import (
     chat_add_message,
     chat_add_message_stream,
+    chat_archive,
     chat_create,
     chat_create_stream,
     chat_get_messages,
@@ -277,3 +278,29 @@ async def update_chat_favourite(
         ChatSuccessResponse: Response containing updated chat details
     """
     return await patch_chat_favourite(db_session=db_session, chat=chat, favourite=favourite)
+
+
+@router.patch(
+    path=ENDPOINTS.CHAT_ARCHIVE,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_user_from_path_and_header),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+    response_model=ChatSuccessResponse,
+)
+async def archive_chat(
+    chat=Depends(chat_validator),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> ChatSuccessResponse:
+    """
+    Archive a chat by setting the deleted_at timestamp.
+
+    Args:
+        chat: Chat object from chat_validator dependency
+        db_session: Database session
+
+    Returns:
+        ChatSuccessResponse: Response containing updated chat details
+    """
+    return await chat_archive(db_session=db_session, chat=chat)
