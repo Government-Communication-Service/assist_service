@@ -60,6 +60,7 @@ class ToolResult(BaseModel):
 class BedrockHandler:
     __CROSS_REGION_INFERENCE_MODELS = {
         AWS_BEDROCK_REGION1: [
+            "anthropic.claude-sonnet-4-5-20250929-v1:0",
             "anthropic.claude-opus-4-20250514-v1:0",
             "anthropic.claude-sonnet-4-20250514-v1:0",
             "anthropic.claude-3-7-sonnet-20250219-v1:0",

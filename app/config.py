@@ -43,14 +43,14 @@ AWS_BEDROCK_REGION2 = "us-east-1"
 # Note that, when building an instance of BedrockHandler, a region prefix is added
 # E.g. if the region is 'us', a 'us.' prefix is added to the model name.
 # This is necessary to handle cross-region inference, which we use as a failover mechanism
-# anthropic.claude-sonnet-4-20250514-v1:0
-LLM_DEFAULT_MODEL = "anthropic.claude-sonnet-4-20250514-v1:0"
+# anthropic.claude-sonnet-4-5-20250929-v1:0
+LLM_DEFAULT_MODEL = "anthropic.claude-sonnet-4-5-20250929-v1:0"
 
 ### --- Chat Configuration --- ###
 
 # This LLM generates the final response to the user's query.
 # This model shuole ideally be of thie highest quality.
-LLM_CHAT_RESPONSE_MODEL = "anthropic.claude-sonnet-4-20250514-v1:0"
+LLM_CHAT_RESPONSE_MODEL = "anthropic.claude-sonnet-4-5-20250929-v1:0"
 
 # This LLM generates the title of the user's chat.
 LLM_CHAT_TITLE_MODEL = "anthropic.claude-3-7-sonnet-20250219-v1:0"

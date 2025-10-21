@@ -4,8 +4,8 @@ from uuid import UUID
 
 import pytest
 
+from app.chat.actions import get_response_system_prompt
 from app.chat.schemas import MessageDefaults
-from app.chat.service import chat_system_prompt
 from app.database.table import async_db_session
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,6 @@ def test_auto_generated_uuid(mock_uuid4):
 @pytest.mark.asyncio
 async def test_return_type():
     async with async_db_session() as db_session:
-        response = await chat_system_prompt(db_session)
+        response = await get_response_system_prompt(db_session)
         logging.info(f"Generated system prompt: {response}")
     assert isinstance(response, str)

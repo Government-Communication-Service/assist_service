@@ -10,6 +10,7 @@ from app.api.endpoints import ENDPOINTS
 from app.bedrock import BedrockHandler, RunMode
 from app.bedrock.bedrock_types import BedrockError
 from app.bedrock.service import calculate_completion_cost
+from app.config import LLM_CHAT_RESPONSE_MODEL, LLM_DEFAULT_MODEL
 from app.database.models import LLM
 
 api = ENDPOINTS()
@@ -18,10 +19,10 @@ logger = logging.getLogger(__name__)
 
 def test_bedrock_service_with_cross_region_inference_with_selected_llm_model():
     llm = MagicMock()
-    llm.model = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+    llm.model = LLM_CHAT_RESPONSE_MODEL
     bedrock = BedrockHandler(llm=llm)
 
-    assert bedrock.model == "us.anthropic.claude-3-5-sonnet-20240620-v1:0"
+    assert bedrock.model == f"us.{LLM_CHAT_RESPONSE_MODEL}"
 
 
 def test_bedrock_service_with_no_cross_region_inference_with_selected_llm_model():
@@ -257,7 +258,7 @@ async def test_completion_cost_calculation():
     https://yourgpt.ai/tools/openai-and-other-llm-api-pricing-calculator
     """
     llm = LLM(
-        model="anthropic.claude-sonnet-4-20250514-v1:0",
+        model=LLM_DEFAULT_MODEL,
         provider="bedrock",
         input_cost_per_token=3e-06,
         output_cost_per_token=1.5e-05,
