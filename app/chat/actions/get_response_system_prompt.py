@@ -1,8 +1,16 @@
 # ruff: noqa: B008, E501
 from datetime import datetime
+from logging import getLogger
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.bmdb.exceptions import GetBenchmarkDatabaseEditionError
+from app.bmdb.services import BmdbEditionService
+from app.smart_targets.exceptions import GetSmartTargetsMetricsError
+from app.smart_targets.service import SmartTargetsService
+
+logger = getLogger(__name__)
 
 
 async def get_response_system_prompt(db_session: AsyncSession) -> str:
@@ -29,6 +37,38 @@ async def get_response_system_prompt(db_session: AsyncSession) -> str:
         ORDER BY position
     """)
 
+    # Get smart targets metrics
+    try:
+        smart_targets_metrics_prompt_segment = (
+            " The metrics available in the Smart Targets tool are "
+            + f"{list(await SmartTargetsService().get_available_metrics())}"
+        )
+    except GetSmartTargetsMetricsError as e:
+        logger.error(
+            "Failed to get Smart Targets metrics when building the system prompt; "
+            + f"continuing to build system prompt without metric information. Error: {e}"
+        )
+        smart_targets_metrics_prompt_segment = ""
+
+    # Get Smart Targets Edition information
+    try:
+        edition = await BmdbEditionService.get_latest_edition()
+        smart_targets_edition_prompt_segment = (
+            f" The latest edition of the Benchmark Database is {edition.version_number}, received at {edition.date_received}."
+            f" The latest campaign in the database finished on {edition.latest_campaign_end_date}."
+            f" The earliest campaign in the database finished on {edition.earliest_campaign_end_date}."
+            f" The number of campaigns in the database is {edition.n_campaigns}."
+            f" The max campaign media spend in the database is {edition.max_media_spend}."
+            f" The min campaign media spend in the database is {edition.min_media_spend}."
+        )
+
+    except GetBenchmarkDatabaseEditionError as e:
+        logger.error(
+            "Failed to get Smart Targets edition when building the system prompt; "
+            + f"continuing to build system prompt without metric information. Error: {e}"
+        )
+        smart_targets_edition_prompt_segment = ""
+
     result = await db_session.execute(theme_query)
     themes = result.fetchall()
     theme_list = ", ".join([f"{t.title} ({t.subtitle})" for t in themes])
@@ -41,6 +81,8 @@ Assist cannot open URLs, links, videos, spreadsheets or images. If it seems like
 Assist has access to centrally-uploaded documents. These documents are {doc_list}.
 Assist can search GOV.UK for information. To use this tool, the person must select the 'Use GOV.UK Search' checkbox when starting a new chat with Assist. Assist can search GOV.UK based on dates. Assist can also search GOV.UK for news and communications only. Assist can only search GOV.UK for information from a new chat. Assist should not offer to search GOV.UK for information if a chat is already in progress.
 The message provided to Assist by the human may contain a section with extracts from the documents uploaded by the user or from the centrally-uploaded documents. These extracts are appended to the person's query, following an information-retrieval task, after the human submitted their query and are not directly visible to the human. Assist only uses the extracts when it is relevant to the human's query. Assist refers to the document name if Assist uses the extracts to formulate an answer. Assist makes sure to understand what the user is asking and does not get distracted by the search engine results.
+Assist can use the Smart Targets tool to retrieve summary statistics about past campaign performance. This happens as a background task outside of the main stream of conversation. If the Smart Targets tool was used, the results will be provided as a piece of context.{smart_targets_metrics_prompt_segment}
+Smart Targets is powered by the Government Communications Benchmark Database. This is a dataset collected by OMG (Omnicom Media Group) during the normal course of campaign media buying. When a government campaign uses OMG's services to buy media, OMG completes a record in the Government Communications Benchmark Database at the end of the campaign. This record contains information about the campaign objectives and performance. The Benchmark Database is shared with the Government Communications Service team in the Cabinet Office on a quarterly basis.{smart_targets_edition_prompt_segment}
 Assist has access to a set of prebuilt prompts built specifically for GCS use cases. These prebuilt prompts can be used by the human at https://connect.gcs.civilservice.gov.uk/assist. The pre-built prompts are organised into broad themes and specific use cases. The themes are {theme_list}.
 Assist avoids writing content that attributes fictional quotes to real public figures. Assist is happy to use real quotes provided by the user to write content that is attributed to a public figure. This is because Assist can be legitimately asked by government communicators to write content on behalf of public officials, including government Ministers.
 If the human asks for more information about Assist, Assist should point them to "https://connect.gcs.civilservice.gov.uk/assist/about"

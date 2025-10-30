@@ -71,6 +71,7 @@ class ChatBaseRequest(RequestStandard):
     use_gov_uk_search_api: bool = False
     enable_web_browsing: bool = False
     document_uuids: Optional[List[str]] = None
+    use_smart_targets: bool = False
 
 
 class ChatQueryRequest(RequestModel):
@@ -82,6 +83,7 @@ class ChatRequest(ChatQueryRequest):
     use_rag: bool = True
     use_gov_uk_search_api: bool = False
     document_uuids: Optional[List[str]] = None
+    use_smart_targets: bool = False
 
     @field_validator("query")
     def validate_query(cls, v):
@@ -193,6 +195,7 @@ class MessageBasicResponse(ItemResponse):
     redaction_alert_level: bool = False
     interrupted: bool = False
     citation: str = ""
+    sources: str = ""
 
 
 class ChatBasicResponse(ItemTitleResponse):
@@ -242,3 +245,34 @@ class MessageCleanupResponse(SuccessResponse):
 
     message: str
     cleaned_count: int
+
+
+## Source schemas, which are used to build the citation data structure provided in the response.
+
+
+class Source(BaseModel):
+    """A source of information that was injected as extra context when creating the user's response."""
+
+    pretty_name: str
+    url: str | None
+
+
+class CentralGuidanceSource(Source): ...
+
+
+class UserDocumentSource(Source): ...
+
+
+class GovUkSearchSource(Source): ...
+
+
+class SmartTargetsSource(Source): ...
+
+
+class Sources(BaseModel):
+    """Used in the main message response to provide structured citation information."""
+
+    central_guidance_sources: list[CentralGuidanceSource] | None = None
+    user_document_sources: list[UserDocumentSource] | None = None
+    gov_uk_search_sources: list[GovUkSearchSource] | None = None
+    smart_targets_sources: list[SmartTargetsSource] | None = None

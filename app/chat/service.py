@@ -28,6 +28,7 @@ from app.chat.actions import get_response_system_prompt
 from app.chat.config import SLEEP_TIME_MESSAGE_DELETION
 from app.chat.constants import DELETION_NOTICE
 from app.chat.schemas import (
+    CentralGuidanceSource,
     ChatBasicResponse,
     ChatCreateInput,
     ChatCreateMessageInput,
@@ -39,11 +40,16 @@ from app.chat.schemas import (
     ChatWithLatestMessage,
     DocumentAccessError,
     DocumentSchema,
+    GovUkSearchSource,
     MessageBasicResponse,
     MessageDefaults,
     RoleEnum,
+    SmartTargetsSource,
+    Sources,
     UserChatsResponse,
+    UserDocumentSource,
 )
+from app.chat.utils import prepare_message_objects_for_llm
 from app.compaction.service import trigger_compaction_if_needed
 from app.config import (
     LLM_CHAT_RESPONSE_MODEL,
@@ -72,6 +78,7 @@ from app.document_upload.service import search_uploaded_documents
 from app.error_messages import ErrorMessages
 from app.gov_uk_search.service import assess_if_next_message_should_use_gov_uk_search, enhance_user_prompt
 from app.logs.logs_handler import logger
+from app.smart_targets.service import SmartTargetsService
 
 
 async def get_all_user_chats(db_session: AsyncSession, user: User):
@@ -87,7 +94,7 @@ def chat_user_group_mapping(message: Message, user_group_ids: list[int]):
         user_group_mapping_table.create({"message_id": message.id, "user_group_id": user_group_id})
 
 
-def chat_stream_message(chat: Chat, message_uuid: str, content: str, citations: str) -> Dict:
+def chat_stream_message(chat: Chat, message_uuid: str, content: str, citations: str, sources: Sources) -> Dict:
     response = {
         **chat.client_response(),
         "message_streamed": {
@@ -95,6 +102,7 @@ def chat_stream_message(chat: Chat, message_uuid: str, content: str, citations: 
             "role": RoleEnum.assistant,
             "content": content,
             "citations": citations,
+            "sources": sources.model_dump_json(exclude_none=True),
         },
     }
 
@@ -169,6 +177,7 @@ def chat_save_llm_output(
                     "content": content,
                     "tokens": llm_response.output_tokens,
                     "citation": user_message.citation,
+                    "sources": user_message.sources,
                 },
             )
 
@@ -403,10 +412,12 @@ async def chat_get_messages(chat: Chat):
                     role=m.role,
                     interrupted=m.interrupted,
                     citation=m.citation or "",
+                    sources=m.sources or "",
                 )
                 for m in chat.messages
             ],
         )
+        logger.info(f"{chat_response=}")
         return chat_response
 
 
@@ -435,6 +446,7 @@ async def chat_create(input_data: ChatCreateInput) -> ChatWithLatestMessage:
         "title": title,
         "use_rag": input_data.use_rag,
         "use_gov_uk_search_api": input_data.use_gov_uk_search_api,
+        "use_smart_targets": input_data.use_smart_targets,
     }
     chat_obj = chat_repo.create(chat_data)
 
@@ -542,6 +554,7 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
             **MessageDefaults(**message_defaults).dict(),
         }
     )
+    all_messages_pre_retrieval: list[Message] = messages + [m_user]
 
     ai_message = MessageDefaults(**message_defaults)
 
@@ -559,8 +572,10 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
     # Default to None so it writes as Null into the database if the RAG errors out of the try block.
     query_enhanced_with_rag = None
     citations = None
+    sources = Sources()
     prompt_segment_central_guidance = None
     prompt_segment_document_upload = None
+    prompt_segment_smart_targets = None
     rag_request = RagRequest(
         use_central_rag=input_data.use_rag,
         user_id=chat.user_id,
@@ -622,6 +637,14 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         search_uploaded_documents_task = asyncio.create_task(search_uploaded_documents(rag_request, m_user, db_session))
         tasks.append(search_uploaded_documents_task)
 
+    # Condition for using Smart Targets
+    smart_targets_task = None
+    if input_data.use_smart_targets:
+        smart_targets_task = asyncio.create_task(
+            SmartTargetsService().use_smart_targets_tool(messages=all_messages_pre_retrieval)
+        )
+        tasks.append(smart_targets_task)
+
     # Run tasks concurrently if any were created
     if tasks:
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -634,6 +657,7 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         search_uploaded_documents_result_index = (
             tasks.index(search_uploaded_documents_task) if search_uploaded_documents_task else -1
         )
+        smart_targets_result_index = tasks.index(smart_targets_task) if smart_targets_task else -1
 
         if enhance_task and enhance_result_index != -1:
             enhance_res = results[enhance_result_index]
@@ -651,6 +675,9 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
                     citations = citations_gov_uk_search
                 else:
                     citations.extend(citations_gov_uk_search)
+                sources.gov_uk_search_sources = [
+                    GovUkSearchSource(pretty_name=c["docname"], url=c["docurl"]) for c in citations_gov_uk_search
+                ]
 
         if search_central_guidance_task and search_central_guidance_result_index != -1:
             search_central_guidance_result = results[search_central_guidance_result_index]
@@ -666,6 +693,9 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
                     citations = citations_central_guidance
                 else:
                     citations.extend(citations_central_guidance)
+                sources.central_guidance_sources = [
+                    CentralGuidanceSource(pretty_name=c["docname"], url=c["docurl"]) for c in citations_central_guidance
+                ]
 
         if search_uploaded_documents_task and search_uploaded_documents_result_index != -1:
             search_uploaded_documents_result = results[search_uploaded_documents_result_index]
@@ -681,6 +711,29 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
                     citations = citations_uploaded_documents
                 else:
                     citations.extend(citations_uploaded_documents)
+                sources.user_document_sources = [
+                    UserDocumentSource(pretty_name=c["docname"], url=c["docurl"]) for c in citations_uploaded_documents
+                ]
+
+        if smart_targets_task and smart_targets_result_index != -1:
+            smart_targets_result = results[smart_targets_result_index]
+            if isinstance(smart_targets_result, Exception):
+                logger.exception(
+                    f"Error when using Smart Targets tool - "
+                    f"{type(smart_targets_result).__name__}: {str(smart_targets_result)}",
+                    exc_info=smart_targets_result,
+                )
+            elif smart_targets_result is None:
+                prompt_segment_smart_targets = None
+            else:
+                context, citations_smart_targets = smart_targets_result
+                prompt_segment_smart_targets = (
+                    f"<results-from-smart-targets-tool>\n{context}\n</results-from-smart-targets-tool>"
+                )
+                # Smart Targets results are handled separately on the frontend and not handled by the 'citations' array
+                sources.smart_targets_sources = [
+                    SmartTargetsSource(pretty_name=c["docname"], url=c["docurl"]) for c in citations_smart_targets
+                ]
 
     # Compile the final query to be passed to the LLM
     query_parts = [input_data.query]
@@ -691,6 +744,8 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         query_parts.append(prompt_segment_central_guidance)
     if prompt_segment_document_upload:
         query_parts.append(prompt_segment_document_upload)
+    if prompt_segment_smart_targets:
+        query_parts.append(prompt_segment_smart_targets)
 
     query_enhanced_with_rag = "\n\n".join(query_parts)
 
@@ -710,14 +765,13 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         {
             "content_enhanced_with_rag": query_enhanced_with_rag,
             "citation": json.dumps(citations),
+            "sources": sources.model_dump_json(exclude_none=True),
         },
     )
 
-    formatted_messages = format_messages(
-        input_data.query,
-        query_enhanced_with_rag,
-        messages,
-    )
+    all_messages_post_retrieval = messages + [m_user]
+
+    formatted_messages = prepare_message_objects_for_llm(all_messages_post_retrieval)
 
     def on_complete(response):
         formatted_response = llm.format_response(response)
@@ -737,6 +791,7 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
                 message_uuid=ai_message.uuid,
                 content=text,
                 citations=citations,
+                sources=sources,
             )
 
         def on_error(ex: Exception):
@@ -904,52 +959,3 @@ async def schedule_expired_messages_deletion():
             logger.exception("An error occurred during expired messages deletion: %s", e)
         logger.info("Sleeping for %s seconds before the next message deletion run.", SLEEP_TIME_MESSAGE_DELETION)
         await asyncio.sleep(SLEEP_TIME_MESSAGE_DELETION)
-
-
-def format_messages(q: str, q_enhanced_with_rag: str = None, messages=None):
-    if messages is None:
-        messages = []
-
-    messages.extend(
-        [
-            Message(
-                role="user",
-                content=q,
-                content_enhanced_with_rag=q_enhanced_with_rag,
-            )
-        ]
-    )
-    new_messages: list[dict] = []
-    for msg in messages:
-        # Determine content to use based on priority:
-        # 1. If summary exists, use summary (for compacted messages)
-        # 2. If RAG-enhanced content exists, use it
-        # 3. Otherwise, use original content
-        if hasattr(msg, "summary") and msg.summary is not None:
-            content_to_use = msg.summary
-            logger.debug(f"Using summary for message {getattr(msg, 'id', 'unknown')}: {len(content_to_use)} chars")
-        elif msg.content_enhanced_with_rag is not None:
-            content_to_use = msg.content_enhanced_with_rag
-            logger.debug(f"Using RAG content for message {getattr(msg, 'id', 'unknown')}: {len(content_to_use)} chars")
-        else:
-            content_to_use = msg.content
-            logger.debug(
-                f"Using original content for message {getattr(msg, 'id', 'unknown')}: {len(content_to_use)} chars"
-            )
-
-        # check if this is a user message and if the last message was also a user message
-        # then merge this message to the previous user message collapsing them into a single one.
-        if msg.role == "user":
-            last_msg = new_messages[-1] if new_messages else None
-            if last_msg and last_msg["role"] == "user":
-                new_messages[-1]["content"] += "\n\n" + content_to_use
-            else:
-                # if the last message was not a user message, then add this message as a new user message.
-                new_messages.append({"role": "user", "content": content_to_use})
-        else:
-            # assistant messages are always added as new messages.
-            if msg.content:
-                new_messages.append({"role": "assistant", "content": content_to_use})
-
-    logger.info("Messages formatted for submission to LLM for final response")
-    return new_messages

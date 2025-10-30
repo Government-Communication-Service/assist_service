@@ -17,6 +17,8 @@ services:
     container_name: api
     env_file:
       - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     working_dir: /app
     volumes:
       - ./:/app

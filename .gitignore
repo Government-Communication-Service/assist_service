@@ -19,3 +19,5 @@ venv/*
 app/copilot_api.egg-info/*
 .pre-commit-trivy-cache/*
 psql
+thoughts/
+.claude/

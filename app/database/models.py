@@ -141,6 +141,7 @@ class Chat(Base):
     from_open_chat = Column(Boolean, nullable=False)
     use_rag = Column(Boolean, nullable=True, server_default="true")
     use_gov_uk_search_api = Column(Boolean, nullable=True, server_default="false")
+    use_smart_targets = Column(Boolean, nullable=True, server_default="false")
     favourite = Column(Boolean, nullable=False, server_default="false")
 
     def client_response(self):
@@ -151,6 +152,7 @@ class Chat(Base):
                     "title": self.title,
                     "use_rag": self.use_rag,
                     "use_gov_uk_search_api": self.use_gov_uk_search_api,
+                    "use_smart_targets": self.use_smart_targets,
                     "favourite": self.favourite,
                 }
             ),
@@ -166,6 +168,7 @@ class Message(Base):
     content = Column(Text, nullable=False)
     content_enhanced_with_rag = Column(Text, nullable=True)
     citation = Column(Text, nullable=True)
+    sources = Column(Text, nullable=True)
     role = Column(Text, nullable=False)
     tokens = Column(Integer, nullable=False)
     auth_session_id = Column(Integer, ForeignKey("auth_session.id"), nullable=False)

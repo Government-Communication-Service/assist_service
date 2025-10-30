@@ -183,7 +183,10 @@ test-db: api-stop test-db-reset test-db-schema-reset test-up
 
 migrate:
 	@read -p "Enter migration message - what have you changed in the database? " user_message; \
-	$(docker-cmd) "cd app/alembic && alembic revision --autogenerate -m '$$user_message'"
+	$(docker-cmd) "cd app/alembic && alembic revision --autogenerate -m '$$user_message'"; \
+	if [ "$$(whoami)" = "ubuntu" ]; then \
+		$(docker-cmd) "chown -R $$(id -u):$$(id -g) app/alembic/versions/"; \
+	fi
 
 install:
 	pip install -r requirements.txt

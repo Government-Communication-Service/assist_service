@@ -17,6 +17,7 @@ from app.logs import BUGSNAG_ENABLED, BugsnagLogger
 from app.logs.logs_handler import logger, session_id_var
 from app.opensearch.service import verify_connection_to_opensearch
 from app.routers import routers
+from app.smart_targets.service import SmartTargetsService
 from app.themes_use_cases.sync_service import sync_themes_use_cases
 
 
@@ -35,9 +36,13 @@ async def lifespan(app: FastAPI):
         None: Yields control to the main API code
     """
     # Startup code is written here
+    verify_connection_to_opensearch()
+
+    # Verify connection with the GCS Data API
+    await SmartTargetsService().verify_connection()
+
     if not IS_DEV:
         # Sync with OpenSearch
-        verify_connection_to_opensearch()
         async with async_db_session() as s:
             # Sync themes and use cases
             await sync_themes_use_cases(s)
