@@ -116,16 +116,25 @@ class SmartTargetsService:
                     context_for_filters = metric_data["context_for_filters"]
                     if selected_metric_name in available_metrics:
                         selected_metric = available_metrics[selected_metric_name]
-                        result.append(
-                            {
-                                "uuid": UUID(selected_metric["uuid"]),
-                                "name": selected_metric_name,
-                                "context_for_filters": context_for_filters,
-                            }
-                        )
+                        try:
+                            selected_metric_uuid = selected_metric["uuid"]
+                            parsed_selected_metric_uuid = UUID(selected_metric_uuid)
+                            result.append(
+                                {
+                                    "uuid": parsed_selected_metric_uuid,
+                                    "name": selected_metric_name,
+                                    "context_for_filters": context_for_filters,
+                                }
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Could not append selected metric: "
+                                f"{selected_metric=}, {selected_metric_name}, "
+                                f"{selected_metric_uuid=}, {context_for_filters=}"
+                            )
+                            continue
                 logger.info(f"Selected Smart Targets metrics: {result}")
                 return result
-
         raise Exception("No tool use was detected.")
 
     async def _get_filters_for_selected_metric(self, metric_uuid: UUID) -> dict:
