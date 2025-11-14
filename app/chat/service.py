@@ -260,19 +260,29 @@ async def _chat_message_with_documents(chat: Chat, db_session: AsyncSession, req
     """
     Checks if the chat item has documents referenced, then associates those documents under document_uuids key
      to the request input.
+    Merges existing chat documents with new documents from request input.
     Args:
         chat (Chat): The Chat object containing the chat information (e.g., `id`).
         db_session (AsyncSession): The asynchronous database session to be used for the query.
         request_input (Dict): The dictionary containing the initial request input.
 
     Returns:
-        Dict: The updated request input dictionary, with "document_uuids" key if there are chat
-        documents in the database.
+        Dict: The updated request input dictionary, with merged "document_uuids" key.
     """
+    # Get existing chat documents
     chat_document_mappings = await DbOperations.fetch_undeleted_chat_documents(db_session, chat.user_id, chat.id)
-    if chat_document_mappings:
-        document_uuids = [str(doc.uuid) for doc in chat_document_mappings]
-        request_input["document_uuids"] = document_uuids
+    existing_document_uuids = [str(doc.uuid) for doc in chat_document_mappings] if chat_document_mappings else []
+
+    # Get NEW documents from request (these are the ones user added to chat message)
+    new_document_uuids = request_input.get("document_uuids") or []
+
+    # Combine existing + new documents for RAG processing
+    all_document_uuids = existing_document_uuids + new_document_uuids
+
+    # Store combined list for RAG and new_documents_uuids for saving to DB
+    request_input["document_uuids"] = all_document_uuids
+    request_input["new_document_uuids"] = new_document_uuids
+
     return request_input
 
 
@@ -576,6 +586,7 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
     prompt_segment_central_guidance = None
     prompt_segment_document_upload = None
     prompt_segment_smart_targets = None
+
     rag_request = RagRequest(
         use_central_rag=input_data.use_rag,
         user_id=chat.user_id,
@@ -583,10 +594,25 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         document_uuids=input_data.document_uuids,
     )
 
-    # check if there are documents referenced in the chat request
-    if rag_request.document_uuids and input_data.initial_call:
-        await _check_document_access(db_session, rag_request)
-        await _save_chat_documents(db_session, m_user, rag_request)
+    # Save documents to chat_document_mapping
+    new_document_uuids = getattr(input_data, "new_document_uuids", [])
+
+    if new_document_uuids:
+        documents_to_save = new_document_uuids
+    elif input_data.initial_call:
+        documents_to_save = rag_request.document_uuids
+    else:
+        documents_to_save = []
+
+    if documents_to_save:
+        save_rag_request = RagRequest(
+            use_central_rag=False,
+            user_id=chat.user_id,
+            query="",
+            document_uuids=documents_to_save,
+        )
+        await _check_document_access(db_session, save_rag_request)
+        await _save_chat_documents(db_session, m_user, save_rag_request)
 
     # extend document expiry time and update last_used time
     if rag_request.document_uuids:

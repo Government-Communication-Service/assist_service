@@ -134,6 +134,7 @@ class FeedbackLabelListResponse(BaseModel):
 class ChatCreateMessageInput(ChatBaseRequest):
     use_case: Optional[Any] = None
     initial_call: bool = False
+    new_document_uuids: Optional[List[str]] = None
 
 
 class SuccessResponse(BaseModel):
