@@ -118,14 +118,18 @@ class SmartTargetsService:
                         selected_metric = available_metrics[selected_metric_name]
                         try:
                             selected_metric_uuid = selected_metric["uuid"]
-                            parsed_selected_metric_uuid = UUID(selected_metric_uuid)
-                            result.append(
-                                {
-                                    "uuid": parsed_selected_metric_uuid,
-                                    "name": selected_metric_name,
-                                    "context_for_filters": context_for_filters,
-                                }
-                            )
+                            if selected_metric_uuid:
+                                parsed_selected_metric_uuid = UUID(selected_metric_uuid)
+                                result.append(
+                                    {
+                                        "uuid": parsed_selected_metric_uuid,
+                                        "name": selected_metric_name,
+                                        "context_for_filters": context_for_filters,
+                                    }
+                                )
+                            else:
+                                logger.debug("The LLM chose not to select any metrics")
+                                continue
                         except Exception:
                             logger.exception(
                                 "Could not append selected metric: "
