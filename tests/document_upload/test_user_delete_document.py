@@ -123,7 +123,6 @@ class TestUserDocuments:
         async_client,
         async_http_requester,
         file_uploader,
-        auth_session,
         auth_token,
         another_user_auth_session,
     ):

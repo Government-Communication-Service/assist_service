@@ -1,3 +1,5 @@
+# ruff: noqa: F401
+
 import asyncio
 from asyncio import exceptions
 from contextlib import asynccontextmanager
@@ -41,20 +43,20 @@ async def lifespan(app: FastAPI):
     # Verify connection with the GCS Data API
     await SmartTargetsService().verify_connection()
 
-    if not IS_DEV:
-        # Sync with OpenSearch
-        async with async_db_session() as s:
-            # Sync themes and use cases
-            await sync_themes_use_cases(s)
+    # if not IS_DEV:
+    #     # Sync with OpenSearch
+    #     async with async_db_session() as s:
+    #         # Sync themes and use cases
+    #         await sync_themes_use_cases(s)
 
-            # Sync the central RAG documents (OpenSearch)
-            await sync_central_index(s)
+    #         # Sync the central RAG documents (OpenSearch)
+    #         await sync_central_index(s)
 
-            # schedule deleting expired messages
-            asyncio.create_task(schedule_expired_messages_deletion())
+    #         # schedule deleting expired messages
+    #         asyncio.create_task(schedule_expired_messages_deletion())
 
-        # schedule deleting expired documents
-        asyncio.create_task(schedule_expired_files_deletion())
+    #     # schedule deleting expired documents
+    #     asyncio.create_task(schedule_expired_files_deletion())
 
     # Now yield to the main API code
     yield

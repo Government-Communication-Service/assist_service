@@ -12,7 +12,7 @@ logger = logging.getLogger()
 
 @pytest.mark.asyncio
 async def test_delete_expired_documents_success(
-    async_client, user_id, async_http_requester, db_session_provider, db_session, file_uploader, auth_session, caplog
+    async_client, user_id, async_http_requester, db_session_provider, db_session, file_uploader, caplog
 ):
     """
     Tests marking expired documents as deleted, when the expiry time is over today's date, when
@@ -72,7 +72,7 @@ async def test_delete_expired_documents_success(
 
 @pytest.mark.asyncio
 async def test_delete_expired_documents_when_no_expired_documents_found(
-    async_client, user_id, async_http_requester, db_session_provider, db_session, file_uploader, auth_session, caplog
+    async_client, user_id, async_http_requester, db_session_provider, db_session, file_uploader, caplog
 ):
     """
     Tests document deletion process, when there aren't any expired documents
