@@ -794,16 +794,14 @@ class DbOperations:
         return result.scalars().all()
 
     @staticmethod
-    async def theme_delete_all(db_session: AsyncSession) -> List[bool]:
-        stmt = update(Theme).where(Theme.deleted_at is not None).values(deleted_at=datetime.now())
+    async def theme_delete_all(db_session: AsyncSession) -> None:
+        stmt = update(Theme).where(Theme.deleted_at.is_(None)).values(deleted_at=datetime.now())
         _ = await LogsHandler.with_logging(Action.DB_UPDATE_THEME, db_session.execute(stmt))
-        # await db_session.commit()
 
     @staticmethod
-    async def use_case_delete_all(db_session: AsyncSession) -> List[bool]:
-        stmt = update(UseCase).where(UseCase.deleted_at is not None).values(deleted_at=datetime.now())
+    async def use_case_delete_all(db_session: AsyncSession) -> None:
+        stmt = update(UseCase).where(UseCase.deleted_at.is_(None)).values(deleted_at=datetime.now())
         _ = await LogsHandler.with_logging(Action.DB_UPDATE_USE_CASE, db_session.execute(stmt))
-        # await db_session.commit()
 
     async def get_document_chunks(db_session: AsyncSession, search_index: SearchIndex) -> List[DocumentChunk]:
         """
