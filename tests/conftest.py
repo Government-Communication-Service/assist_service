@@ -395,9 +395,11 @@ def opensearch_client():
     return create_client()
 
 
-@pytest.fixture(scope="module")
-def async_opensearch_client():
-    return AsyncOpenSearchClient.get()
+@pytest.fixture
+async def async_opensearch_client():
+    client = AsyncOpenSearchClient.get()
+    yield client
+    await AsyncOpenSearchClient.close()
 
 
 @pytest.fixture(scope="session")

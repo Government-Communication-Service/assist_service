@@ -143,6 +143,13 @@ class AsyncOpenSearchClient:
             cls._instance = create_async_client()
         return cls._instance
 
+    @classmethod
+    async def close(cls):
+        """Close the async client connection if it exists"""
+        if cls._instance is not None:
+            await cls._instance.close()
+            cls._instance = None
+
 
 class AsyncOpenSearchOperations:
     @staticmethod

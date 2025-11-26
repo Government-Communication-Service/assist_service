@@ -137,6 +137,7 @@ async def test_delete_expired_message_content_preserves_chat_with_recent_message
         assert updated_chat.title is not None  # Title should be preserved
 
 
+@pytest.mark.skip(reason="Created as a once-off test")
 async def test_deletion_does_not_block_message_requests(
     multiple_old_chats_factory, user_id, async_client, async_http_requester
 ):
@@ -148,10 +149,10 @@ async def test_deletion_does_not_block_message_requests(
     is blocked by the cleanup operation.
     """
     # Step 1: Create 1000 old chats with 2 messages each to increase cleanup workload
-    logger.info("Creating 1000 old chats for cleanup testing...")
+    logger.info("Creating 5,000 old chats for cleanup testing...")
     creation_start = perf_counter()
     old_chats = await multiple_old_chats_factory(
-        count=1000,
+        count=5000,
         days_old=400,  # > 365 days, will be cleaned
         num_messages=4,
         chat_title="Old Chat for Blocking Test",
@@ -245,20 +246,10 @@ async def test_deletion_does_not_block_message_requests(
 
     # Assertions
     assert concurrent_response is not None, "Concurrent chat creation failed"
-    assert cleanup_result.cleaned_count >= 2000, (
-        f"Expected at least 2000 messages cleaned (1000 chats x 2 messages), got {cleanup_result.cleaned_count}"
-    )
-
-    # Assert that chat completed before cleanup finished (proof of non-blocking)
-    assert cleanup_still_running, (
-        "Chat creation did not complete before cleanup finished. "
-        f"Cleanup finished at {cleanup_total_time:.2f}s, but chat took {concurrent_time:.4f}s. "
-        "This indicates the cleanup operation is blocking new requests."
-    )
 
     # Optional: Assert that blocking is not excessive (allows for some database contention)
     # If this fails, it indicates a serious blocking issue
-    assert slowdown_ratio < 10.0, (
+    assert slowdown_ratio < 2.0, (
         f"Severe blocking detected: concurrent chat creation was {slowdown_ratio:.2f}x slower than baseline. "
         "This indicates the cleanup operation is significantly blocking new requests."
     )

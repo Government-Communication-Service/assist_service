@@ -4,7 +4,6 @@ These tests mock AWS S3 using moto and test the S3Service class directly.
 No authentication fixtures since testing the infrastructure layer, not API endpoints.
 """
 
-import asyncio
 import io
 from unittest.mock import patch
 
@@ -20,34 +19,34 @@ def sample_content():
     return io.BytesIO(b"test file content")
 
 
-@mock_aws
-def test_upload_file_with_existing_bucket(sample_content):
+@pytest.mark.asyncio
+async def test_upload_file_with_existing_bucket(sample_content):
     """Test upload to existing bucket"""
-    s3_service = S3Service(aws_region="us-east-1")
+    with mock_aws():
+        s3_service = S3Service(aws_region="us-east-1")
 
-    # Create bucket first
-    s3_client = boto3.client("s3", region_name="us-east-1")
-    s3_client.create_bucket(Bucket="existing-bucket")
+        # Create bucket first
+        s3_client = boto3.client("s3", region_name="us-east-1")
+        s3_client.create_bucket(Bucket="existing-bucket")
 
-    result = asyncio.run(
-        s3_service.upload_file(bucket_name="existing-bucket", key="test-file.txt", content=sample_content)
-    )
+        result = await s3_service.upload_file(
+            bucket_name="existing-bucket", key="test-file.txt", content=sample_content
+        )
 
-    assert result is True
+        assert result is True
 
 
-@mock_aws
-def test_upload_file_without_bucket_creation(sample_content):
+@pytest.mark.asyncio
+async def test_upload_file_without_bucket_creation(sample_content):
     """Test upload fails when bucket doesn't exist and create_bucket=False"""
-    s3_service = S3Service(aws_region="us-east-1")
+    with mock_aws():
+        s3_service = S3Service(aws_region="us-east-1")
 
-    result = asyncio.run(
-        s3_service.upload_file(
+        result = await s3_service.upload_file(
             bucket_name="nonexistent-bucket", key="test-file.txt", content=sample_content, create_bucket=False
         )
-    )
 
-    assert result is False
+        assert result is False
 
 
 @mock_aws

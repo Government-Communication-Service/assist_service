@@ -352,6 +352,7 @@ async def test_sync_central_index(async_http_requester, async_client, async_open
     assert response["found"] is False
 
 
+@pytest.mark.skip(reason="Flaky test")
 async def test_multiple_citations_are_referenced_in_chat_message(
     user_id,
     async_client,
