@@ -16,6 +16,8 @@ class ENDPOINTS:
     CHAT_MESSAGES = "/chats/users/{user_uuid}/chats/{chat_uuid}/messages"
     CHAT_TITLE = "/chats/users/{user_uuid}/chats/{chat_uuid}/title"
     CHAT_FAVOURITE = "/chats/users/{user_uuid}/chats/{chat_uuid}/favourite"
+    CHAT_SHARE = "/chats/users/{user_uuid}/chats/{chat_uuid}/share"
+    CHAT_SHARED = "/chats/shared/{share_code}"
     CHAT_ARCHIVE = "/chats/users/{user_uuid}/chats/{chat_uuid}/archive"
     #
     #

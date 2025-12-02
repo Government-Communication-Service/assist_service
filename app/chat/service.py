@@ -34,6 +34,7 @@ from app.chat.schemas import (
     ChatCreateMessageInput,
     ChatPost,
     ChatRequestData,
+    ChatShareResponse,
     ChatSuccessResponse,
     ChatTitleRequest,
     ChatWithAllMessages,
@@ -361,6 +362,25 @@ async def patch_chat_favourite(db_session: AsyncSession, chat: Chat, favourite: 
     return ChatSuccessResponse(**chat_result.client_response())
 
 
+async def patch_chat_share(db_session: AsyncSession, chat: Chat, share: bool) -> ChatShareResponse:
+    """
+    Updates the share status of a chat.
+
+    Args:
+        db_session (AsyncSession): The active database session for performing the update.
+        chat (Chat): The Chat instance representing the chat to be shared.
+        share (bool): The new share status to be assigned to the chat.
+
+    Returns:
+        ChatShareResponse: Response object containing the updated chat details including share_code.
+
+    Raises:
+        Exception: If the database operation fails, the underlying DatabaseError will be propagated.
+    """
+    chat_result = await DbOperations.chat_update_share(db_session, chat, share)
+    return ChatShareResponse(**chat_result.client_response())
+
+
 async def chat_archive(db_session: AsyncSession, chat: Chat) -> ChatSuccessResponse:
     """
     Archives a chat by setting the deleted_at timestamp.
@@ -399,6 +419,8 @@ async def chat_get_messages(chat: Chat):
             updated_at=chat.updated_at,
             title=chat.title,
             favourite=chat.favourite,
+            share=chat.share,
+            share_code=chat.share_code,
             from_open_chat=chat.from_open_chat,
             use_rag=chat.use_rag,
             use_gov_uk_search_api=chat.use_gov_uk_search_api,

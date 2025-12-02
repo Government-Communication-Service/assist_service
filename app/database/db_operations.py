@@ -1301,6 +1301,44 @@ class DbOperations:
             ) from e
 
     @staticmethod
+    async def chat_update_share(db_session: AsyncSession, chat: Chat, share: bool) -> Chat:
+        """
+        Updates the chat share status and generates share_code if needed.
+        Toggling the share status does not update the chat's updated_at timestamp,
+            hence we pass in the existing value.
+
+        Args:
+            db_session (AsyncSession): The asynchronous SQLAlchemy session for executing database queries.
+            chat (Chat): Chat object.
+            share (bool): New share status.
+
+        Returns:
+            Chat: A Chat object with updated share status.
+        """
+        try:
+            import hashlib
+            import time
+
+            values = {"share": share, "updated_at": chat.updated_at}
+
+            # Generate share_code if sharing is enabled and no code exists
+            if share and chat.share_code is None:
+                timestamp = str(int(time.time() * 1000000))  # create timestamp in microseconds
+                hash_input = f"{chat.id}_{timestamp}"
+                share_code = hashlib.sha256(hash_input.encode()).hexdigest()[:10]
+                values["share_code"] = share_code
+
+            chat_stmt = update(Chat).values(**values).where(Chat.id == chat.id).returning(Chat)
+            result = await LogsHandler.with_logging(Action.DB_UPDATE_CHAT_SHARE, db_session.execute(chat_stmt))
+            return result.scalars().first()
+        except Exception as e:
+            raise DatabaseError(
+                code=DatabaseExceptionErrorCode.UPDATE_ERROR,
+                message=f"An error occurred in the `chat_update_share` method on the table {Chat.__tablename__}:"
+                + f"Original error: {e}",
+            ) from e
+
+    @staticmethod
     async def chat_archive(db_session: AsyncSession, chat: Chat) -> Chat:
         """
         Archives a chat by setting the deleted_at timestamp.

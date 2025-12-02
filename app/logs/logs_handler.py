@@ -62,6 +62,7 @@ class Action(str, Enum):
     DB_CREATE_FEEDBACK = auto()
     DB_GET_FEEDBACK = auto()
     DB_UPDATE_CHAT_FAVOURITE = auto()
+    DB_UPDATE_CHAT_SHARE = auto()
     DB_UPDATE_FEEDBACK = auto()
     DB_DELETE_FEEDBACK = auto()
     DB_GET_EXISTING_INDEX = auto()

@@ -39,6 +39,24 @@ def chat_validator(chat_uuid: str = Path(..., description="Chat UUID"), user_uui
     return chat
 
 
+def shared_chat_validator(share_code: str = Path(..., description="Share code")):
+    try:
+        chat = ChatTable().get_one_by("share_code", share_code)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invalid share code",
+        ) from e
+
+    if not chat.share:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This chat is not shared",
+        )
+
+    return chat
+
+
 def prepare_message_objects_for_llm(all_messages: list[Message]) -> list[dict]:
     new_messages: list[dict] = []
     for msg in all_messages:

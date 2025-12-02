@@ -205,6 +205,8 @@ class ChatBasicResponse(ItemTitleResponse):
     use_gov_uk_search_api: bool = False
     documents: Optional[List[DocumentSchema]] = None
     favourite: bool = False
+    share: bool = False
+    share_code: Optional[str] = None
 
 
 class UserChatsResponse(SuccessResponse, ItemResponse):
@@ -213,6 +215,10 @@ class UserChatsResponse(SuccessResponse, ItemResponse):
 
 class ChatSuccessResponse(SuccessResponse, ItemTitleResponse):
     pass
+
+
+class ChatShareResponse(ChatSuccessResponse):
+    share_code: Optional[str] = None
 
 
 class ChatWithLatestMessage(SuccessResponse, ChatBasicResponse):

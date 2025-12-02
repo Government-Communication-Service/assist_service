@@ -143,6 +143,8 @@ class Chat(Base):
     use_gov_uk_search_api = Column(Boolean, nullable=True, server_default="false")
     use_smart_targets = Column(Boolean, nullable=True, server_default="false")
     favourite = Column(Boolean, nullable=False, server_default="false")
+    share = Column(Boolean, nullable=False, server_default="false")
+    share_code = Column(String(10), nullable=True)
 
     def client_response(self):
         return {
@@ -154,6 +156,8 @@ class Chat(Base):
                     "use_gov_uk_search_api": self.use_gov_uk_search_api,
                     "use_smart_targets": self.use_smart_targets,
                     "favourite": self.favourite,
+                    "share": self.share,
+                    "share_code": self.share_code,
                 }
             ),
         }

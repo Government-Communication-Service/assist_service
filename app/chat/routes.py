@@ -14,6 +14,7 @@ from app.auth.verify_service import (
 from app.chat.schemas import (
     ChatCreateInput,
     ChatRequest,
+    ChatShareResponse,
     ChatSuccessResponse,
     ChatWithAllMessages,
     ChatWithLatestMessage,
@@ -31,10 +32,11 @@ from app.chat.service import (
     clean_expired_message_content,
     get_all_user_chats,
     patch_chat_favourite,
+    patch_chat_share,
     patch_chat_title,
     update_chat_title,
 )
-from app.chat.utils import chat_validator
+from app.chat.utils import chat_validator, shared_chat_validator
 from app.database.db_session import get_db_session
 from app.database.models import User
 from app.database.table import (
@@ -278,6 +280,52 @@ async def update_chat_favourite(
         ChatSuccessResponse: Response containing updated chat details
     """
     return await patch_chat_favourite(db_session=db_session, chat=chat, favourite=favourite)
+
+
+@router.patch(
+    path=ENDPOINTS.CHAT_SHARE,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_user_from_path_and_header),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+    response_model=ChatShareResponse,
+)
+async def update_chat_share(
+    chat=Depends(chat_validator),
+    share: bool = Body(False, embed=True),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> ChatShareResponse:
+    """
+    Update the share status of a chat.
+
+    Args:
+        chat: Chat object from chat_validator dependency
+        share (bool): The new share status for the chat. If null, defaults to False.
+        db_session: Database session
+
+    Returns:
+        ChatSuccessResponse: Response containing updated chat details
+    """
+    return await patch_chat_share(db_session=db_session, chat=chat, share=share)
+
+
+@router.get(
+    path=ENDPOINTS.CHAT_SHARED,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+    response_model=ChatWithAllMessages,
+)
+async def get_shared_chat_messages(
+    chat=Depends(shared_chat_validator),
+):
+    """
+    Retrieve messages for a shared chat using share_code.
+    Requires authentication but not ownership.
+    """
+    return await chat_get_messages(chat)
 
 
 @router.patch(
