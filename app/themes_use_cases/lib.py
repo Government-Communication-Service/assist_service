@@ -16,7 +16,7 @@ from app.chat.schemas import (
     UseCasesResponse,
 )
 from app.database.db_operations import DbOperations
-from app.database.table import DatabaseError, DatabaseExceptionErrorCode, UseCaseTable
+from app.database.table import DatabaseError, DatabaseExceptionErrorCode
 from app.logs.logs_handler import logger
 from app.themes_use_cases.schemas import (
     PrebuiltPrompt,
@@ -198,7 +198,9 @@ async def fetch_use_case(db_session: AsyncSession, theme_uuid: UUID, use_case_uu
     return Response(status_code=HTTP_404_NOT_FOUND)
 
 
-async def fetch_use_case_without_requiring_theme(db_session: AsyncSession, use_case_uuid: UUID) -> UseCaseResponse:
+async def fetch_use_case_without_requiring_theme(
+    db_session: AsyncSession, use_case_uuid: UUID
+) -> UseCaseResponse | Response:
     """
     Retrieves a single use case without theme verification.
 
@@ -206,20 +208,25 @@ async def fetch_use_case_without_requiring_theme(db_session: AsyncSession, use_c
         use_case_uuid: UUID of the use case to fetch
 
     Returns:
-        UseCaseResponse containing the use case details and its theme UUID
-
-    Raises:
-        DatabaseError: If use case not found
+        UseCaseResponse containing the use case details and its theme UUID, or 404 Response if not found
     """
     use_case = await DbOperations.use_case_get_by_uuid_no_theme(
         db_session=db_session, use_case_uuid=use_case_uuid, include_deleted_records=False
     )
+    if not use_case:
+        logger.info(f"Use case not found with UUID: {use_case_uuid}")
+        return Response(status_code=HTTP_404_NOT_FOUND)
+
     theme = await DbOperations.theme_get_by_id(db_session=db_session, theme_id=use_case.theme_id)
+    if not theme:
+        logger.info(f"Theme not found for use case with UUID: {use_case_uuid}")
+        return Response(status_code=HTTP_404_NOT_FOUND)
+
     logger.info(f"Fetched use case with UUID: {use_case_uuid}")
     return UseCaseResponse(**use_case.client_response(), theme_uuid=theme.uuid)
 
 
-async def fetch_use_cases(db_session: AsyncSession, theme_uuid: UUID) -> UseCasesResponse:
+async def fetch_use_cases(db_session: AsyncSession, theme_uuid: UUID) -> UseCasesResponse | Response:
     """
     Retrieves all active use cases belonging to a theme.
 
@@ -227,13 +234,13 @@ async def fetch_use_cases(db_session: AsyncSession, theme_uuid: UUID) -> UseCase
         theme_id: UUID of the theme to fetch use cases for
 
     Returns:
-        UseCasesResponse containing the theme details and list of its use cases
-
-    Raises:
-        DatabaseError: If theme not found
+        UseCasesResponse containing the theme details and list of its use cases, or 404 Response if theme not found
     """
     theme = await DbOperations.get_theme(db_session=db_session, theme_uuid=theme_uuid, include_deleted_records=False)
-    use_cases = UseCaseTable().get_by_theme(theme.id)
+    if not theme:
+        logger.info(f"Theme not found with UUID: {theme_uuid}")
+        return Response(status_code=HTTP_404_NOT_FOUND)
+
     use_cases = await DbOperations.use_case_get_by_theme(db_session=db_session, theme_uuid=theme.id)
 
     logger.info(f"Fetched use cases for theme UUID: {theme_uuid}")
