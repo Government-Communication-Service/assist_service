@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.central_guidance.service_index import sync_central_index
 from app.chat.service import schedule_expired_messages_deletion
-from app.config import IS_DEV, URL_HOSTNAME, load_environment_variables
+from app.config import IS_DEV, URL_HOSTNAME, SMART_TARGETS_SERVICE_DISABLED, load_environment_variables
 from app.database.db_session import async_db_session
 from app.database.table import AsyncEngineProvider
 from app.document_upload.document_management import schedule_expired_files_deletion
@@ -41,7 +41,10 @@ async def lifespan(app: FastAPI):
     verify_connection_to_opensearch()
 
     # Verify connection with the GCS Data API
-    await SmartTargetsService().verify_connection()
+    if SMART_TARGETS_SERVICE_DISABLED and IS_DEV:
+        logger.info("Skipping Smart Targets Service connection verification")
+    else:
+        await SmartTargetsService().verify_connection()
 
     if not IS_DEV:
         # Sync with OpenSearch

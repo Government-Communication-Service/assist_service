@@ -79,6 +79,9 @@ LLM_GOV_UK_SEARCH_FOLLOWUP_ASSESMENT = "anthropic.claude-3-5-haiku-20241022-v1:0
 ### --- GCS Data API Configuration --- ###
 GCS_DATA_API_URL = os.getenv("GCS_DATA_API_URL")
 
+### --- Smart Targets Configuration --- ###
+SMART_TARGETS_SERVICE_DISABLED = env_variable("SMART_TARGETS_SERVICE_DISABLED", False)
+
 
 ### --- Compaction Configuration --- ###
 
