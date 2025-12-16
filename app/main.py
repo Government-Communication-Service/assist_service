@@ -8,19 +8,14 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.central_guidance.service_index import sync_central_index
-from app.chat.service import schedule_expired_messages_deletion
-from app.config import IS_DEV, URL_HOSTNAME, SMART_TARGETS_SERVICE_DISABLED, load_environment_variables
-from app.database.db_session import async_db_session
+from app.config import IS_DEV, SMART_TARGETS_SERVICE_DISABLED, URL_HOSTNAME, load_environment_variables
 from app.database.table import AsyncEngineProvider
-from app.document_upload.document_management import schedule_expired_files_deletion
 from app.exceptions.handlers import register_exception_handlers
 from app.logs import BUGSNAG_ENABLED, BugsnagLogger
 from app.logs.logs_handler import logger, session_id_var
 from app.opensearch.service import verify_connection_to_opensearch
 from app.routers import routers
 from app.smart_targets.service import SmartTargetsService
-from app.themes_use_cases.sync_service import sync_themes_use_cases
 
 
 @asynccontextmanager
@@ -45,21 +40,6 @@ async def lifespan(app: FastAPI):
         logger.info("Skipping Smart Targets Service connection verification")
     else:
         await SmartTargetsService().verify_connection()
-
-    if not IS_DEV:
-        # Sync with OpenSearch
-        async with async_db_session() as s:
-            # Sync themes and use cases
-            # await sync_themes_use_cases(s)
-
-            # Sync the central RAG documents (OpenSearch)
-            await sync_central_index(s)
-
-        # schedule deleting expired messages
-        asyncio.create_task(schedule_expired_messages_deletion())
-
-        # schedule deleting expired documents
-        asyncio.create_task(schedule_expired_files_deletion())
 
     # Now yield to the main API code
     yield
