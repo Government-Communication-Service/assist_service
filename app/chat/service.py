@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import cast, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audience_segments.services import AudienceSegmentsService
 from app.auth.constants import USER_GROUPS_ALIAS
 from app.auth.verify_service import (
     verify_and_get_auth_session_from_header,
@@ -28,6 +29,7 @@ from app.chat.actions import get_response_system_prompt
 from app.chat.config import SLEEP_TIME_MESSAGE_DELETION
 from app.chat.constants import DELETION_NOTICE
 from app.chat.schemas import (
+    AudienceSegmentsSource,
     CentralGuidanceSource,
     ChatBasicResponse,
     ChatCreateInput,
@@ -608,7 +610,7 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
     prompt_segment_central_guidance = None
     prompt_segment_document_upload = None
     prompt_segment_smart_targets = None
-
+    prompt_segment_audience_segments = None
     rag_request = RagRequest(
         use_central_rag=input_data.use_rag,
         user_id=chat.user_id,
@@ -693,6 +695,14 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         )
         tasks.append(smart_targets_task)
 
+    # Condition for using Audience Segments
+    audience_segments_task = None
+    if input_data.audience_segment_uuids and len(input_data.audience_segment_uuids) > 0:
+        audience_segments_task = asyncio.create_task(
+            AudienceSegmentsService.use_audience_segments(audience_segment_uuids=input_data.audience_segment_uuids)
+        )
+        tasks.append(audience_segments_task)
+
     # Run tasks concurrently if any were created
     if tasks:
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -706,6 +716,7 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
             tasks.index(search_uploaded_documents_task) if search_uploaded_documents_task else -1
         )
         smart_targets_result_index = tasks.index(smart_targets_task) if smart_targets_task else -1
+        audience_segments_result_index = tasks.index(audience_segments_task) if audience_segments_task else -1
 
         if enhance_task and enhance_result_index != -1:
             enhance_res = results[enhance_result_index]
@@ -783,6 +794,27 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
                     SmartTargetsSource(pretty_name=c["docname"], url=c["docurl"]) for c in citations_smart_targets
                 ]
 
+        if audience_segments_task and audience_segments_result_index != -1:
+            audience_segments_result = results[audience_segments_result_index]
+            if isinstance(audience_segments_result, BaseException):
+                logger.exception(
+                    f"Error when using Audience Segments tool - "
+                    f"{type(audience_segments_result).__name__}: {str(audience_segments_result)}",
+                    exc_info=audience_segments_result,
+                )
+            elif audience_segments_result is None:
+                prompt_segment_audience_segments = None
+            else:
+                prompt_segment_audience_segments = "<audience-segment-information-selected-by-user>"
+                prompt_segment_audience_segments += "".join(
+                    [f"{audience_segment.wrap_for_context()}" for audience_segment in audience_segments_result]
+                )
+                prompt_segment_audience_segments += "</audience-segment-information-selected-by-user>"
+                sources.audience_segments_sources = [
+                    AudienceSegmentsSource(pretty_name=audience_segment.pretty_name, url=audience_segment.connect_url)
+                    for audience_segment in audience_segments_result
+                ]
+
     # Compile the final query to be passed to the LLM
     query_parts = [input_data.query]
     # Add each segment only if it has content
@@ -794,6 +826,8 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         query_parts.append(prompt_segment_document_upload)
     if prompt_segment_smart_targets:
         query_parts.append(prompt_segment_smart_targets)
+    if prompt_segment_audience_segments:
+        query_parts.append(prompt_segment_audience_segments)
 
     query_enhanced_with_rag = "\n\n".join(query_parts)
 

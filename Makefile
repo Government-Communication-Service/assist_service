@@ -144,6 +144,9 @@ test-smart-targets-services:
 test-chat-create-message:
 	$(docker-cmd) "${test-cmd} tests/chat/test_chat_create_message.py"
 
+test-audience-segments:
+	$(docker-cmd) "${test-cmd} tests/audience_segments"
+
 api-stop:
 	docker stop ${container-name}
 

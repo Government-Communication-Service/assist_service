@@ -7,11 +7,12 @@ from collections.abc import Generator
 from contextlib import ExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Dict, Optional, TypeVar
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import anyio
 import pytest
+from anthropic.types import TextBlock
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
@@ -95,11 +96,14 @@ async def session_override(test_app, db_session):
     test_app.dependency_overrides[get_db_session] = get_db_session_override
 
 
-@pytest.fixture(scope="module")
-def mock_llm_invoke():
-    with patch("app.chat.create_new_chat") as mock_invoke:
-        mock_invoke.return_value = "Hi! how can I help you today?"
-        yield mock_invoke
+@pytest.fixture
+def mock_llm_response(mocker):
+    mock_response = Mock()
+    mock_response.content = [TextBlock(type="text", text="Dummy response")]
+    mock_response.usage = Mock()
+    mock_response.usage.input_tokens = 10
+    mock_response.usage.output_tokens = 10
+    return mocker.patch("app.bedrock.bedrock.BedrockHandler.invoke_async", return_value=mock_response)
 
 
 @pytest.fixture(autouse=True)

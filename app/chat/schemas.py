@@ -72,6 +72,7 @@ class ChatBaseRequest(RequestStandard):
     enable_web_browsing: bool = False
     document_uuids: Optional[List[str]] = None
     use_smart_targets: bool = False
+    audience_segment_uuids: list[UUID] | None = None
 
 
 class ChatQueryRequest(RequestModel):
@@ -84,6 +85,7 @@ class ChatRequest(ChatQueryRequest):
     use_gov_uk_search_api: bool = False
     document_uuids: Optional[List[str]] = None
     use_smart_targets: bool = False
+    audience_segment_uuids: list[UUID] | None = None
 
     @field_validator("query")
     def validate_query(cls, v):
@@ -276,6 +278,9 @@ class GovUkSearchSource(Source): ...
 class SmartTargetsSource(Source): ...
 
 
+class AudienceSegmentsSource(Source): ...
+
+
 class Sources(BaseModel):
     """Used in the main message response to provide structured citation information."""
 
@@ -283,3 +288,4 @@ class Sources(BaseModel):
     user_document_sources: list[UserDocumentSource] | None = None
     gov_uk_search_sources: list[GovUkSearchSource] | None = None
     smart_targets_sources: list[SmartTargetsSource] | None = None
+    audience_segments_sources: list[AudienceSegmentsSource] | None = None
