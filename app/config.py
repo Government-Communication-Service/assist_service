@@ -49,8 +49,8 @@ LLM_DEFAULT_MODEL = "anthropic.claude-sonnet-4-5-20250929-v1:0"
 ### --- Chat Configuration --- ###
 
 # This LLM generates the final response to the user's query.
-# This model shuole ideally be of thie highest quality.
-LLM_CHAT_RESPONSE_MODEL = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+# This model should ideally be of thie highest quality.
+LLM_CHAT_RESPONSE_MODEL = "anthropic.claude-opus-4-5-20251101-v1:0"
 
 # This LLM generates the title of the user's chat.
 LLM_CHAT_TITLE_MODEL = "anthropic.claude-3-7-sonnet-20250219-v1:0"
