@@ -170,6 +170,15 @@ def validate_chat_response(response_data, message=True):
             + str(response_data["use_gov_uk_search_api"])
         )
 
+        # check for use_smart_targets key and validate it
+        if "use_smart_targets" not in response_data:
+            fail_test("use_smart_targets key is missing in chat response data")
+        if not isinstance(response_data["use_smart_targets"], bool):
+            fail_test("use_smart_targets key is not of boolean type")
+        logger.debug(
+            "use_smart_targets key is present and is of boolean type : " + str(response_data["use_smart_targets"])
+        )
+
         if message:
             if "message" not in response_data:
                 fail_test("Message key is missing in response data")
@@ -463,6 +472,53 @@ class TestUserChatsV1:
             "chat_endpoint", async_client.post, url, json={"query": "hello", "use_rag": False}
         )
         validate_chat_response(response)
+
+    @pytest.mark.asyncio
+    async def test_post_chat_with_use_smart_targets(self, async_client, user_id, async_http_requester):
+        """
+        Test creating a chat with use_smart_targets=true and verify response contains the field.
+        """
+        logger.debug(f"Creating chat with use_smart_targets=true for user ID: {user_id}")
+        url = api.chats(user_uuid=user_id)
+        response = await async_http_requester(
+            "chat_endpoint_smart_targets",
+            async_client.post,
+            url,
+            json={"query": "hello", "use_rag": False, "use_smart_targets": True},
+        )
+        validate_chat_response(response)
+        assert response["use_smart_targets"] is True, "use_smart_targets should be True in response"
+
+    @pytest.mark.asyncio
+    async def test_get_chat_preserves_use_smart_targets(self, async_client, user_id, async_http_requester):
+        """
+        Test that use_smart_targets=true is persisted and returned when retrieving a chat via GET.
+
+        This verifies the fix for the Smart Targets checkbox persistence bug where:
+        1. Create chat with use_smart_targets=true
+        2. Retrieve chat via GET endpoint
+        3. Verify use_smart_targets is still true in the response
+        """
+        # Step 1: Create a chat with use_smart_targets=true
+        logger.debug(f"Creating chat with use_smart_targets=true for user ID: {user_id}")
+        create_url = api.chats(user_uuid=user_id)
+        create_response = await async_http_requester(
+            "create_chat_smart_targets",
+            async_client.post,
+            create_url,
+            json={"query": "hello", "use_rag": False, "use_smart_targets": True},
+        )
+        chat_uuid = create_response["uuid"]
+        assert create_response["use_smart_targets"] is True, "use_smart_targets should be True after creation"
+
+        # Step 2: Retrieve the chat via GET endpoint
+        logger.debug(f"Retrieving chat {chat_uuid} via GET endpoint")
+        get_url = api.get_chat_item(user_id, chat_uuid)
+        get_response = await async_http_requester("get_chat_smart_targets", async_client.get, get_url)
+
+        # Step 3: Verify use_smart_targets is persisted
+        validate_chat_response(get_response, message=False)
+        assert get_response["use_smart_targets"] is True, "use_smart_targets should be True when retrieved via GET"
 
     @pytest.mark.asyncio
     async def test_post_chat_unauthorised(self, async_client, user_id, async_http_requester):

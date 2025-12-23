@@ -205,6 +205,7 @@ class ChatBasicResponse(ItemTitleResponse):
     from_open_chat: bool
     use_rag: bool = True
     use_gov_uk_search_api: bool = False
+    use_smart_targets: bool = False
     documents: Optional[List[DocumentSchema]] = None
     favourite: bool = False
     share: bool = False

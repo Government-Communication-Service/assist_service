@@ -426,6 +426,7 @@ async def chat_get_messages(chat: Chat):
             from_open_chat=chat.from_open_chat,
             use_rag=chat.use_rag,
             use_gov_uk_search_api=chat.use_gov_uk_search_api,
+            use_smart_targets=chat.use_smart_targets,
             documents=[
                 DocumentSchema(
                     uuid=d.document_uuid,
