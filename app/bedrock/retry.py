@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import time
 from asyncio import iscoroutinefunction
 from functools import wraps
 from typing import TYPE_CHECKING, Callable
@@ -9,13 +11,17 @@ from app.bedrock.bedrock_types import (
     BedrockError,
     BedrockErrorType,
 )
-from app.config import AWS_BEDROCK_REGION1, AWS_BEDROCK_REGION2
+from app.config import (
+    AWS_BEDROCK_REGION1,
+    AWS_BEDROCK_REGION2,
+    AWS_BEDROCK_REGIONS_MAX_RETRIES,
+    STREAM_FIRST_CHUNK_TIMEOUT,
+)
 
 if TYPE_CHECKING:
     from app.bedrock.bedrock import BedrockHandler
 
 AWS_BEDROCK_REGIONS = (AWS_BEDROCK_REGION1, AWS_BEDROCK_REGION2)
-AWS_BEDROCK_REGIONS_MAX_RETRIES: int = 3
 
 logger = logging.getLogger()
 
@@ -78,7 +84,7 @@ def handle_region_failover_with_retries(func):
         retries = 0
         # reference to last exception in case retry attempts failed
         ex = None
-        while retries < AWS_BEDROCK_REGIONS_MAX_RETRIES:
+        while retries <= AWS_BEDROCK_REGIONS_MAX_RETRIES:
             try:
                 return func(bedrock_handler, *args, **kwargs)
             except Exception as e:
@@ -112,7 +118,7 @@ def handle_region_failover_with_retries(func):
         retries = 0
         # reference to last exception in case retry attempts failed
         ex = None
-        while retries < AWS_BEDROCK_REGIONS_MAX_RETRIES:
+        while retries <= AWS_BEDROCK_REGIONS_MAX_RETRIES:
             try:
                 return await func(bedrock_handler, *args, **kwargs)
             except Exception as e:
@@ -143,6 +149,9 @@ async def with_region_failover_for_streaming(
 
     If streaming encounters an error after it has started, on_error function is used to generate a custom error json msg
 
+    Implements a time-to-first-chunk timeout to detect when a stream opens but no data flows,
+    allowing fast failover instead of waiting for full read timeout.
+
     Args:
         bedrock_handler: The handler for AWS Bedrock API calls.
         func: The streaming Generator function that generates json strings
@@ -161,12 +170,51 @@ async def with_region_failover_for_streaming(
     retries = 0
     # reference to last exception in case retry attempts failed
     ex = None
-    while retries < AWS_BEDROCK_REGIONS_MAX_RETRIES:
+    while retries <= AWS_BEDROCK_REGIONS_MAX_RETRIES:
         streaming_started = False
         try:
-            async for item in func(*args, **kwargs):
-                yield item
+            # Get the async generator
+            async_gen = func(*args, **kwargs).__aiter__()
+
+            # Wait for first chunk with timeout to detect stalled streams
+            try:
+                start_time = time.monotonic()
+                first_chunk = await asyncio.wait_for(
+                    async_gen.__anext__(),
+                    timeout=STREAM_FIRST_CHUNK_TIMEOUT
+                )
+                elapsed_time = time.monotonic() - start_time
+                logger.info(
+                    "Stream first chunk received in %.2fs (timeout: %.1fs, region: %s)",
+                    elapsed_time,
+                    STREAM_FIRST_CHUNK_TIMEOUT,
+                    bedrock_handler.async_client.aws_region,
+                )
+                yield first_chunk
                 streaming_started = True
+            except asyncio.TimeoutError as err:
+                elapsed_time = time.monotonic() - start_time
+                logger.warning(
+                    "Stream first chunk timeout after %.2fs (timeout: %.1fs, region: %s)",
+                    elapsed_time,
+                    STREAM_FIRST_CHUNK_TIMEOUT,
+                    bedrock_handler.async_client.aws_region,
+                )
+                # No data received within timeout - close generator to prevent memory leak
+                try:
+                    await async_gen.aclose()
+                except Exception:
+                    pass  # Ignore cleanup errors
+                # Treat timeout as stream failure to trigger failover
+                raise BedrockError(
+                    f"Stream timed out waiting for first chunk after {STREAM_FIRST_CHUNK_TIMEOUT}s",
+                    BedrockErrorType.TIMEOUT
+                ) from err
+
+            # Stream the rest of the chunks normally
+            async for item in async_gen:
+                yield item
+
             # this is to exit while loop when streaming is completed.
             return
         except Exception as e:

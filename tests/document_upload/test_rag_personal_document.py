@@ -384,3 +384,4 @@ async def test_deleted_docs_not_used_in_chat(async_client, user_id, async_http_r
     assert document2["created_at"] is not None
     assert document2["expired_at"] > document2["created_at"]
     assert document2["deleted_at"] is not None
+

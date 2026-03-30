@@ -49,6 +49,7 @@ from app.chat.schemas import (
     RoleEnum,
     SmartTargetsSource,
     Sources,
+    StyleGuideSource,
     UserChatsResponse,
     UserDocumentSource,
 )
@@ -66,6 +67,7 @@ from app.database.models import (
     Document,
     DocumentUserMapping,
     Message,
+    UseCase,
     User,
 )
 from app.database.table import (
@@ -82,6 +84,7 @@ from app.error_messages import ErrorMessages
 from app.gov_uk_search.service import assess_if_next_message_should_use_gov_uk_search, enhance_user_prompt
 from app.logs.logs_handler import logger
 from app.smart_targets.service import SmartTargetsService
+from app.style_guide.service import check_content_against_style_guide
 
 
 async def get_all_user_chats(db_session: AsyncSession, user: User):
@@ -312,7 +315,7 @@ async def chat_add_message(chat: Chat, data):
 
 async def update_chat_title(db_session: AsyncSession, chat: Chat, data) -> ChatSuccessResponse:
     # update chat title
-    title = await chat_create_title(ChatTitleRequest(**data.to_dict()))
+    title = await chat_create_title(db_session, chat, ChatTitleRequest(**data.to_dict()))
     chat_result = await DbOperations.chat_update_title(db_session, chat, title)
 
     return ChatSuccessResponse(**chat_result.client_response())
@@ -506,27 +509,54 @@ async def chat_create(input_data: ChatCreateInput) -> ChatWithLatestMessage:
     return ChatWithLatestMessage(**chat_obj.dict(), message=message.dict())
 
 
-async def chat_create_title(data: ChatTitleRequest):
+async def chat_create_title(db_session: AsyncSession, chat: Chat, data: ChatTitleRequest):
     try:
-        system_prompt_title = """The assistant is a title generator called Title Bot. \
-Title Bot creates short titles with a maximum of 5 words. \
-Title Bot creates titles that are useful for identifying the subject of the provided human query. \
-The human query is provided between XML tags as shown: \
-<human-query>This is an example message from the human.</human-query>. \
-When responding, Title Bot only provides the title. \
-Title Bot does not provide ANY chain of thought in it's response. Title Bot ONLY provides the title. \
-Title Bot formats it's response using title case. Title Bot does not use a full stop at the end of the title. \
-Title Bot does not enclose the title in quotes. \
-If Title Bot does not have enough information to generate a title, Title Bot gives it's best attempt. \
-The next message received is the human's query.
+        system_prompt_title = """You are a title generator. \
+You create short titles with a maximum of 5 words. \
+You create titles that are useful for identifying the subject of the provided human query. \
+It is not your job to _respond_ to the human query, only to generate a title so that \
+the query can be easily identified in a list of other queries. \
+You do not have all of the context of the conversation, but \
+you can assume that all the needed context is in the conversation and just generate a title. \
+You may be provided with a list of names of uploaded documents \
+but that is all the context you will have about the documents. \
+Some useful context (do not include this context in the title, this is just to help you \
+understand the type of conversations you are generating titles for):
+   - The user is a government communications professional for UK government
+   - GCS is Government Communications Service
+   - OASIS refers to a framework for planning comms strategy
+   - MCOM is the Modern Communications Operating Model
+The human query is provided between XML tags as shown:
+<human-query>This is an example message from the human.</human-query>
+If the query is too long it will be truncated with ellipsis. \
+ When responding, you only provide the title. \
+Do not provide ANY chain of thought in your response. You ONLY provide the title. \
+Titles are in sentence case, with a capitalised first letter, proper nouns and acronyms. Not title case. \
+Do not use a full stop at the end of the title. \
+Do not enclose the title in quotes. \
+You always generate a title, even if the user query is vague or appears to be missing information. \
+Example query:
+<human-query>What can you do with this document?</human-query>
+Example good title: Request for document capabilities
+Example bad title: <wrong>The document is missing, so I cannot provide a title </wrong>.
     """
-
+        # Add doc names to system prompt if there are documents used in the chat
+        documents_used_in_chat = await DbOperations.fetch_undeleted_chat_documents(db_session, chat.user_id, chat.id)
+        document_names_used_in_chat = (
+            [f"- {doc.name}\n" for doc in documents_used_in_chat] if documents_used_in_chat else []
+        )
+        if document_names_used_in_chat:
+            system_prompt_title += "\nThe following documents are used in the chat:\n" + "".join(
+                document_names_used_in_chat
+            )
+        system_prompt_title += "\nThe following message is the human query for which you need to generate a title."
         logger.debug(f"Constructed title_system: {system_prompt_title}")
+
         llm_obj = LLMTable().get_by_model(LLM_CHAT_TITLE_MODEL)
         chat = BedrockHandler(system=system_prompt_title, mode=RunMode.ASYNC, llm=llm_obj)
 
         user_query_for_title_generation = (
-            data.query if len(data.query) < 200 else data.query[0:100] + data.query[-100:-1]
+            data.query if len(data.query) < 200 else data.query[0:100] + "... " + data.query[-96:-1]
         )
         logger.debug(f"Query extract for title generation: {user_query_for_title_generation}")
 
@@ -612,6 +642,7 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
     prompt_segment_document_upload = None
     prompt_segment_smart_targets = None
     prompt_segment_audience_segments = None
+    prompt_segment_style_guide = None
     rag_request = RagRequest(
         use_central_rag=input_data.use_rag,
         user_id=chat.user_id,
@@ -704,6 +735,28 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         )
         tasks.append(audience_segments_task)
 
+    # Condition for using style guide checker - derived from the theme title rather than a
+    # DB column, so no schema migration is required to activate this feature.
+    style_guide_task = None
+    should_use_style_guide = False
+    if input_data.use_case_id:
+        _uc_result = await db_session.execute(select(UseCase).where(UseCase.id == input_data.use_case_id))
+        _uc = _uc_result.scalars().first()
+        if _uc:
+            _theme = await DbOperations.theme_get_by_id(db_session, _uc.theme_id)
+            if _theme and _theme.title == "GOV.UK style guide checker":
+                should_use_style_guide = True
+    if should_use_style_guide:
+        style_guide_task = asyncio.create_task(
+            check_content_against_style_guide(
+                content=input_data.query,
+                messages=all_messages_pre_retrieval,
+                document_uuids=input_data.document_uuids,
+                user_id=chat.user_id,
+            )
+        )
+        tasks.append(style_guide_task)
+
     # Run tasks concurrently if any were created
     if tasks:
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -718,6 +771,7 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         )
         smart_targets_result_index = tasks.index(smart_targets_task) if smart_targets_task else -1
         audience_segments_result_index = tasks.index(audience_segments_task) if audience_segments_task else -1
+        style_guide_result_index = tasks.index(style_guide_task) if style_guide_task else -1
 
         if enhance_task and enhance_result_index != -1:
             enhance_res = results[enhance_result_index]
@@ -816,6 +870,23 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
                     for audience_segment in audience_segments_result
                 ]
 
+        if style_guide_task and style_guide_result_index != -1:
+            style_guide_result = results[style_guide_result_index]
+            if isinstance(style_guide_result, BaseException):
+                logger.exception(
+                    f"Error when running style guide checker - "
+                    f"{type(style_guide_result).__name__}: {str(style_guide_result)}",
+                    exc_info=style_guide_result,
+                )
+            elif style_guide_result is not None:
+                prompt_segment_style_guide = style_guide_result
+                # Add GOV.UK style guide as a source reference
+                sources.style_guide_sources = [
+                    StyleGuideSource(
+                        pretty_name="GOV.UK style guide", url="https://www.gov.uk/guidance/style-guide/a-to-z"
+                    )
+                ]
+
     # Compile the final query to be passed to the LLM
     query_parts = [input_data.query]
     # Add each segment only if it has content
@@ -829,6 +900,8 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         query_parts.append(prompt_segment_smart_targets)
     if prompt_segment_audience_segments:
         query_parts.append(prompt_segment_audience_segments)
+    if prompt_segment_style_guide:
+        query_parts.append(prompt_segment_style_guide)
 
     query_enhanced_with_rag = "\n\n".join(query_parts)
 

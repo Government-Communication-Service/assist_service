@@ -1,0 +1,7 @@
+Technical Infrastructure Update
+
+The new system will utilize cloud computing and AI technologies. Implementation will commence at 1730hrs on Friday, with completion expected by 00:00 on Monday morning.
+
+You'll need to use the new API endpoint which has been optimized for better performance; however, you should test it thoroughly before deploying to production; this is essential to avoid any service disruptions; we recommend running comprehensive tests in your staging environment first.
+
+Temperature settings should be maintained at .5 degrees celsius. The server room operates between 500-900 RPM for optimal cooling.

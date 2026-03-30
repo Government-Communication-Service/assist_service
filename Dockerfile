@@ -8,7 +8,7 @@ RUN dnf -y update && \
     dnf -y install \
     gzip \
     postgresql-devel \
-    python3.11  \
+    python3.12  \
     poppler-utils \
     tar \
     file \
@@ -22,13 +22,13 @@ RUN curl -L https://github.com/jgm/pandoc/releases/download/$PANDOC_VERSION/pand
     cp -r pandoc-$PANDOC_VERSION/bin/* /usr/local/bin/ && \
     rm -rf pandoc.tar.gz pandoc-$PANDOC_VERSION
 
-# configure python3.11 as the default python
-RUN ln -sf /usr/bin/python3.11 /usr/bin/python
+# configure python3.12 as the default python
+RUN ln -sf /usr/bin/python3.12 /usr/bin/python
 # Install pip using Python's ensurepip
 RUN python -m ensurepip --upgrade && \
     python -m pip install --upgrade pip
-# Set pip3.11 as the default pip
-RUN ln -sf /usr/bin/pip3.11 /usr/bin/pip
+# Set pip3.12 as the default pip
+RUN ln -sf /usr/bin/pip3.12 /usr/bin/pip
 
 
 

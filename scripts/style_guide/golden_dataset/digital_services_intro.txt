@@ -1,0 +1,9 @@
+Introduction to Digital Services
+
+The GDS (Government Digital Service) was established in 2011; it has transformed how government services are delivered online. The organization was created to streamline the delivery of digital services; this has resulted in significant improvements across all departments.
+
+The team utilizes advanced agile methodologies to facilitate robust solutions. Their key objective is to leverage modern technology in order to deploy cutting-edge services that will transform the digital landscape going forward.
+
+Between 2015-2020, the department saw unprecedented growth. Following this was a restful period. The team expanded from fifteen to over 200 employees, which demonstrates the organization's commitment to digital transformation.
+
+Academy converters (should not trigger a rule violation). Academy Order should trigger a rule violation, we will see. It's important generally for people to have access to work. Any APIs should follow the Restful architecture.

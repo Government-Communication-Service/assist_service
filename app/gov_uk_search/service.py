@@ -524,8 +524,8 @@ async def get_relevant_documents_from_gov_uk_search(
     search_cost.search_tool_cost = llm_cost
     search_cost.total_cost += llm_cost
 
-    # logger.info(f"GOV UK Search - LLM suggested search terms: {search_terms}")
-    # logger.info(f"GOV UK Search - LLM suggested search parameters: {search_params}")
+    logger.debug(f"GOV UK Search - LLM suggested search terms: {search_terms}")
+    logger.debug(f"GOV UK Search - LLM suggested search parameters: {search_params}")
 
     # Step 2: Execute searches and get relevant documents
     relevant_documents, irrelevant_documents, relevancy_cost = await execute_searches(
@@ -596,14 +596,37 @@ async def get_search_queries(
     llm_obj = LLMTable().get_by_model(model=LLM_GOVUK_QUERY_GENERATOR)
     llm = BedrockHandler(llm=llm_obj, mode=RunMode.ASYNC)
 
+    logger.debug(f"GOV UK Search - Query generator using model: {LLM_GOVUK_QUERY_GENERATOR}")
+
     # Ask the LLM to return a call_gov_uk_search_api function call object
     llm_response = await llm.invoke_async(message, tools=SEARCH_API_SEARCH_TERMS["tools"])
+
+    # Log the raw tool response structure for debugging
+    llm_response_content = llm_response.dict().get("content", [])
+    tool_use_items = [item for item in llm_response_content if item.get("type") == "tool_use"]
+    text_items = [item for item in llm_response_content if item.get("type") == "text"]
+
+    logger.debug(
+        f"GOV UK Search - LLM response stop_reason: {llm_response.dict().get('stop_reason', 'N/A')}, "
+        f"content blocks: {len(llm_response_content)} "
+        f"(tool_use: {len(tool_use_items)}, text: {len(text_items)})"
+    )
+    if text_items:
+        for text_item in text_items:
+            logger.debug(f"GOV UK Search - LLM text response: {text_item.get('text', '')[:200]}")
+    if tool_use_items:
+        for tool_item in tool_use_items:
+            logger.debug(f"GOV UK Search - Tool call: name={tool_item.get('name')}, input={tool_item.get('input')}")
+    else:
+        logger.warning("GOV UK Search - No tool_use blocks found in LLM response!")
 
     # Record the LLM transaction in the database
     llm_internal_response = await DbOperations.insert_llm_internal_response_id_query(
         db_session=db_session,
         web_browsing_llm=llm.llm,
-        content=llm_response.content[0].text,
+        content=llm_response.content[0].text
+        if llm_response.content[0].type == "text"
+        else str(llm_response.content[0].input),
         tokens_in=llm_response.usage.input_tokens,
         tokens_out=llm_response.usage.output_tokens,
         completion_cost=llm_response.usage.input_tokens * llm.llm.input_cost_per_token
@@ -648,17 +671,16 @@ async def get_search_queries(
                     if param in input_data:
                         search_params[param] = input_data[param]
 
-                # Log the LLM's tool usage details
-                # logger.info(f"GOV UK Search Tool Usage - Search terms: {terms}")
-                # logger.info(
-                #     "GOV UK Search Tool Usage - Search parameters: "
-                #     f"{json.dumps({k: v for k, v in input_data.items() if k != 'search_terms'})}"
-                # )
+                logger.debug(f"GOV UK Search - Parsed search terms from tool call: {terms}")
+                if search_params:
+                    logger.debug(f"GOV UK Search - Parsed search params from tool call: {search_params}")
     except Exception as e:
         logger.exception(f"Error parsing LLM response for search terms: {e}")
 
     # Deduplicate search terms
     search_terms = list(set(search_terms))
+
+    logger.debug(f"GOV UK Search - Final deduplicated search terms: {search_terms}")
 
     return search_terms, llm_response_id, search_params, cost
 
@@ -985,12 +1007,27 @@ async def assess_document_relevancy(
             tools=DOCUMENT_RELEVANCE_ASSESSMENT["tools"],
         )
 
+        # Log tool response for relevancy assessment
+        relevancy_content = document_relevancy.dict().get("content", [])
+        relevancy_tool_items = [item for item in relevancy_content if item.get("type") == "tool_use"]
+        if relevancy_tool_items:
+            for tool_item in relevancy_tool_items:
+                logger.debug(
+                    f"GOV UK Search - Relevancy tool call for '{title}': "
+                    f"is_relevant={tool_item.get('input', {}).get('is_relevant')}, "
+                    f"reason={tool_item.get('input', {}).get('reason', 'N/A')}"
+                )
+        else:
+            logger.warning(f"GOV UK Search - No tool_use in relevancy response for '{title}'")
+
         # Record the LLM transaction
 
         response = await DbOperations.insert_llm_internal_response_id_query(
             db_session=db_session,
             web_browsing_llm=llm.llm,
-            content=document_relevancy.content[0].text,
+            content=document_relevancy.content[0].text
+            if document_relevancy.content[0].type == "text"
+            else str(document_relevancy.content[0].input),
             tokens_in=document_relevancy.usage.input_tokens,
             tokens_out=document_relevancy.usage.output_tokens,
             completion_cost=document_relevancy.usage.input_tokens * llm.llm.input_cost_per_token

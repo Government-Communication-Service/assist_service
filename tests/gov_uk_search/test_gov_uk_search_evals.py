@@ -136,7 +136,7 @@ class LLMEvaluator:
 
     def evaluate(self, response: str) -> float:
         llm_response = self.client.messages.create(
-            model="anthropic.claude-3-5-haiku-20241022-v1:0",
+            model="anthropic.claude-haiku-4-5-20251001-v1:0",
             system=self.system_prompt,
             max_tokens=1000,
             messages=[

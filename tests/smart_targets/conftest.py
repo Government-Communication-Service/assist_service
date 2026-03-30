@@ -5,6 +5,15 @@ import pytest
 from app.bedrock.bedrock import ContentToolUse
 
 
+@pytest.fixture(autouse=True)
+def mock_llm_table(mocker):
+    mock_llm = Mock()
+    mock_llm.max_tokens = 4096
+    mocker.patch("app.smart_targets.service.LLMTable")
+    mocker.patch("app.smart_targets.service.LLMTable.return_value.get_by_model", return_value=mock_llm)
+    return mock_llm
+
+
 @pytest.fixture
 def mock_get_available_metrics(mocker):
     mock_response = {"no-metric-selected": {"id": "0", "name": "no-metric-selected", "uuid": None}}

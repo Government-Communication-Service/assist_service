@@ -207,11 +207,16 @@ async def test_slow_streaming_process_does_not_block_fastapi(
     mock_bedrock, chat, async_client, user_id, async_http_requester, caplog
 ):
     """
-    Simulates a slow streaming response and checks in  other requests that FastAPI is not blocked.
+    Simulates a slow streaming response and checks in other requests that FastAPI is not blocked.
+
+    Note: First chunk is yielded immediately to satisfy the region failover first-chunk timeout
+    (see STREAM_FIRST_CHUNK_TIMEOUT in app.bedrock.retry). The 10-second delay happens AFTER
+    the first chunk, which still tests that slow streaming doesn't block FastAPI.
     """
 
     async def _stream(*args, **kwargs):
-        await asyncio.sleep(10)
+        yield json.dumps({"status": "started"})  # First chunk - satisfies failover timeout
+        await asyncio.sleep(10)  # Slow streaming after first chunk
         yield json.dumps({"result": "success"})
 
     mock_bedrock.side_effect = _stream
@@ -239,8 +244,8 @@ async def test_slow_streaming_process_does_not_block_fastapi(
     ]
 
     results = await asyncio.gather(chat_stream_request, *chat_item_requests, return_exceptions=True)
-    # expect a string response
-    assert results[0] == b'{"result": "success"}'
+    # Response contains both chunks; verify final chunk is present
+    assert b'{"result": "success"}' in results[0]
     # assert no exceptions
     assert all(not isinstance(r, Exception) for r in results)
 

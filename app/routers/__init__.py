@@ -6,10 +6,12 @@ from fastapi import APIRouter
 import app.auth.routes as auth
 import app.central_guidance.routes as central_guidance
 import app.chat.routes as chat
+import app.document_upload.routes as document_upload
 import app.feedback.routes as feedback
 import app.healthcheck.routes as healthcheck
 import app.personal_prompts.routes as personal_prompts
 import app.routers.system as system
+import app.style_guide.routes as style_guide
 import app.themes_use_cases.themes_use_cases as themes_use_cases
 import app.user.user as user
 
@@ -31,4 +33,6 @@ routers = [
     RouterConfig(personal_prompts.router, "/v1", ["User Prompts"]),
     RouterConfig(themes_use_cases.router, "/v1", ["Themes / Use Cases"]),
     RouterConfig(central_guidance.router, "/v1", ["Central RAG"]),
+    RouterConfig(document_upload.router, "/v1", ["Document Management"]),
+    RouterConfig(style_guide.router, "/v1/style-guide", ["style guide"]),
 ]

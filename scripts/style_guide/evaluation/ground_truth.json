@@ -1,0 +1,3026 @@
+{
+  "document_violations": {
+    "pip_itlp_notice.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_003",
+          "rule_name": "Abbreviations, acronyms and initialisms"
+        },
+        {
+          "rule_id": "rule_014",
+          "rule_name": "Active voice"
+        },
+        {
+          "rule_id": "rule_015",
+          "rule_name": "Addresses in the UK"
+        },
+        {
+          "rule_id": "rule_016",
+          "rule_name": "Addressing the user"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "rule_id": "rule_037",
+          "rule_name": "Bank details"
+        },
+        {
+          "rule_id": "rule_042",
+          "rule_name": "billions"
+        },
+        {
+          "rule_id": "rule_055",
+          "rule_name": "Bullet points and steps"
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "rule_id": "rule_108",
+          "rule_name": "countries and territories"
+        },
+        {
+          "rule_id": "rule_125",
+          "rule_name": "Dates"
+        },
+        {
+          "rule_id": "rule_195",
+          "rule_name": "Gender"
+        },
+        {
+          "rule_id": "rule_230",
+          "rule_name": "Hyphenation"
+        },
+        {
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length"
+        },
+        {
+          "rule_id": "rule_521",
+          "rule_name": "USA"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "rule_id": "rule_099",
+          "rule_name": "contractions"
+        },
+        {
+          "rule_id": "rule_298",
+          "rule_name": "money"
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "rule_id": "rule_373",
+          "rule_name": "please"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "'Academy' should be lower case unless specific name",
+            "'Science, Technology, Engineering, and Mathematics' unnecessary capitals",
+            "'Main Building', 'Campus' unnecessary capitals",
+            "'Artificial Intelligence, Machine Learning, Data Analytics' unnecessary capitals",
+            "'Head of Department' unnecessary capitals",
+            "'Diploma in Advanced Technology Skills' incorrect capitalization"
+          ],
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "occurrences": [
+            "'eighteen to twenty-five' should be '18 to 25'"
+          ],
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "occurrences": [
+            "'If a student has questions, he should'",
+            "'Males and females' should be 'men and women'"
+          ],
+          "rule_id": "rule_195",
+          "rule_name": "Gender"
+        },
+        {
+          "rule_id": "rule_016",
+          "rule_name": "Addressing the user",
+          "occurrences": [
+            "If a student has questions, he should speak to his academic advisor."
+          ]
+        },
+        {
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length",
+          "occurrences": [
+            "'This is a really really...long sentence' at the end"
+          ]
+        },
+        {
+          "rule_id": "rule_521",
+          "rule_name": "USA",
+          "occurrences": [
+            "'long flight from America' — should be 'from the US'"
+          ]
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid",
+          "occurrences": [
+            "'Our phone services utilize real people' — 'utilize' should be 'use'"
+          ]
+        },
+        {
+          "rule_id": "rule_334",
+          "rule_name": "Numbers",
+          "occurrences": [
+            "'£0.4 billion pounds' — 'pounds' redundant after '£'",
+            "'£6b' should be '£6 billion'"
+          ]
+        },
+        {
+          "rule_id": "rule_099",
+          "rule_name": "contractions",
+          "occurrences": [
+            "'DONT FORGET' — missing apostrophe, should be 'Don't forget'"
+          ]
+        },
+        {
+          "rule_id": "rule_298",
+          "rule_name": "money",
+          "occurrences": [
+            "'£0.4 billion pounds' — redundant 'pounds' after '£'"
+          ]
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons",
+          "occurrences": [
+            "Semicolons used in bullet point list items"
+          ]
+        },
+        {
+          "rule_id": "rule_373",
+          "rule_name": "please",
+          "occurrences": [
+            "'please use these details' — 'please' before a mandatory action"
+          ]
+        }
+      ]
+    },
+    "home_secretary_guidance.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_250",
+          "rule_name": "Job titles"
+        },
+        {
+          "rule_id": "rule_258",
+          "rule_name": "Legal content"
+        },
+        {
+          "rule_id": "rule_262",
+          "rule_name": "Links"
+        },
+        {
+          "rule_id": "rule_263",
+          "rule_name": "Lists"
+        },
+        {
+          "rule_id": "rule_277",
+          "rule_name": "Maths content"
+        },
+        {
+          "rule_id": "rule_279",
+          "rule_name": "Measurements"
+        },
+        {
+          "rule_id": "rule_291",
+          "rule_name": "Millions"
+        },
+        {
+          "rule_id": "rule_292",
+          "rule_name": "minister"
+        },
+        {
+          "rule_id": "rule_310",
+          "rule_name": "Names and personal titles"
+        },
+        {
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "rule_id": "rule_345",
+          "rule_name": "Organisations"
+        },
+        {
+          "rule_id": "rule_348",
+          "rule_name": "Pages and screens"
+        },
+        {
+          "rule_id": "rule_371",
+          "rule_name": "plain English"
+        },
+        {
+          "rule_id": "rule_396",
+          "rule_name": "Quotes and speech marks"
+        },
+        {
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_083",
+          "rule_name": "click"
+        },
+        {
+          "rule_id": "rule_137",
+          "rule_name": "director"
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        }
+      ],
+      "violations": [
+        {
+          "rule_id": "rule_250",
+          "rule_name": "Job titles",
+          "occurrences": [
+            "'home secretary' should be 'Home Secretary' when referring to specific role title"
+          ]
+        },
+        {
+          "rule_id": "rule_258",
+          "rule_name": "Legal content",
+          "occurrences": [
+            "'bona vacantia' and 'escheatment protocols' - legal jargon without plain English explanation"
+          ]
+        },
+        {
+          "rule_id": "rule_262",
+          "rule_name": "Links",
+          "occurrences": [
+            "'clicking here' - not specific or front-loaded with relevant terms"
+          ]
+        },
+        {
+          "rule_id": "rule_263",
+          "rule_name": "Lists",
+          "occurrences": [
+            "Mixed bullet and number formatting: '- Cambridge', '1 - Leeds', '3 - Manchester'"
+          ]
+        },
+        {
+          "rule_id": "rule_277",
+          "rule_name": "Maths content",
+          "occurrences": [
+            "'x4' should use multiplication sign '×4'",
+            "'1 : 3' should have no spaces around colon '1:3'"
+          ]
+        },
+        {
+          "rule_id": "rule_279",
+          "rule_name": "Measurements",
+          "occurrences": [
+            "'-10C' should be '-10°C' with degree symbol",
+            "'10C' should be '10°C'"
+          ]
+        },
+        {
+          "rule_id": "rule_291",
+          "rule_name": "Millions",
+          "occurrences": [
+            "'£50m' should be '£50 million' - do not abbreviate million to m",
+            "'£0.5m' should be '£500,000' or '£0.5 million' in context"
+          ]
+        },
+        {
+          "rule_id": "rule_292",
+          "rule_name": "minister",
+          "occurrences": [
+            "'Minister Joe' - should not use shortened title with name"
+          ]
+        },
+        {
+          "rule_id": "rule_310",
+          "rule_name": "Names and personal titles",
+          "occurrences": [
+            "'Minister Joe works hard' - do not use shortened ministerial title with just first name"
+          ]
+        },
+        {
+          "rule_id": "rule_334",
+          "rule_name": "Numbers",
+          "occurrences": [
+            "'.75' should be '0.75' - use 0 where there's no digit before decimal point"
+          ]
+        },
+        {
+          "rule_id": "rule_345",
+          "rule_name": "Organisations",
+          "occurrences": [
+            "'The ministry for defence are' should use singular verb 'is'",
+            "'the ministry of defence have' should use singular verb 'has'"
+          ]
+        },
+        {
+          "rule_id": "rule_348",
+          "rule_name": "Pages and screens",
+          "occurrences": [
+            "'click the button to load the next window' and 'home view of the app' - use 'page' instead of 'screen'"
+          ]
+        },
+        {
+          "rule_id": "rule_371",
+          "rule_name": "plain English",
+          "occurrences": [
+            "'Plain english' should be 'plain English' - lower case 'plain', upper case 'English'"
+          ]
+        },
+        {
+          "rule_id": "rule_396",
+          "rule_name": "Quotes and speech marks",
+          "occurrences": [
+            "Multiple paragraphs of speech - check quote marks open at each new paragraph but close only at end"
+          ]
+        },
+        {
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length",
+          "occurrences": [
+            "Very long legal sentence: 'The party of the first part shall, notwithstanding...' far exceeds recommended length"
+          ]
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English",
+          "occurrences": [
+            "'authorized' should be 'authorised'",
+            "'endeavor' should be 'endeavour'"
+          ]
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation",
+          "occurrences": [
+            "'Facilitate', 'Dialogue', 'Deployment', 'Leverage', 'Advance', 'Agenda', 'Stakeholders' wrongly capitalised mid-sentence"
+          ]
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid",
+          "occurrences": [
+            "'facilitate', 'dialogue', 'leverage', 'advance', 'agenda', 'key', 'deploy' should all be avoided"
+          ]
+        },
+        {
+          "rule_id": "rule_083",
+          "rule_name": "click",
+          "occurrences": [
+            "'clicking here' — non-descriptive link text"
+          ]
+        },
+        {
+          "rule_id": "rule_137",
+          "rule_name": "director",
+          "occurrences": [
+            "'said the Director' — should be lowercase 'director' when not preceding a name"
+          ]
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons",
+          "occurrences": [
+            "Multiple semicolons used throughout"
+          ]
+        }
+      ]
+    },
+    "css_scheme_guide.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_421",
+          "rule_name": "school subjects"
+        },
+        {
+          "rule_id": "rule_425",
+          "rule_name": "Scientific names"
+        },
+        {
+          "rule_id": "rule_447",
+          "rule_name": "services"
+        },
+        {
+          "rule_id": "rule_481",
+          "rule_name": "Summaries"
+        },
+        {
+          "rule_id": "rule_495",
+          "rule_name": "technical terms"
+        },
+        {
+          "rule_id": "rule_496",
+          "rule_name": "Telephone numbers"
+        },
+        {
+          "rule_id": "rule_501",
+          "rule_name": "Titles"
+        },
+        {
+          "rule_id": "rule_502",
+          "rule_name": "Trade marks"
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_003",
+          "rule_name": "Abbreviations, acronyms and initialisms"
+        }
+      ],
+      "violations": [
+        {
+          "rule_id": "rule_421",
+          "rule_name": "school subjects",
+          "occurrences": [
+            "'Geography' should be lower case 'geography' unless part of qualification name"
+          ]
+        },
+        {
+          "rule_id": "rule_425",
+          "rule_name": "Scientific names",
+          "occurrences": [
+            "'Clostridium Difficile' should be 'Clostridium difficile' - only first part capitalized",
+            "'Staphylococcus Aureus' should be 'Staphylococcus aureus'"
+          ]
+        },
+        {
+          "rule_id": "rule_447",
+          "rule_name": "services",
+          "occurrences": [
+            "'Armed Forces Services' - in military contexts 'services' should be lower case"
+          ]
+        },
+        {
+          "rule_id": "rule_481",
+          "rule_name": "Summaries",
+          "occurrences": [
+            "Summary exceeds 160 characters and contains redundant information - not clear and specific"
+          ]
+        },
+        {
+          "rule_id": "rule_495",
+          "rule_name": "technical terms",
+          "occurrences": [
+            "Technical jargon without explanation: 'API', 'JSON payload', 'idempotency key', 'TLS handshake', 'SQL shards'"
+          ]
+        },
+        {
+          "rule_id": "rule_496",
+          "rule_name": "Telephone numbers",
+          "occurrences": [
+            "'447976123456' - lacks proper formatting with spaces and prefix label (Telephone: or Mobile phone:)"
+          ]
+        },
+        {
+          "rule_id": "rule_501",
+          "rule_name": "Titles",
+          "occurrences": [
+            "'How can I find out more information / details about the C.S.S. scheme - a guide' - contains slash and dash which violate title rules"
+          ]
+        },
+        {
+          "rule_id": "rule_502",
+          "rule_name": "Trade marks",
+          "occurrences": [
+            "'Hoover' should be 'vacuum cleaner'",
+            "'Google' should be 'search for'",
+            "'iPad' should be 'tablet'"
+          ]
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation",
+          "occurrences": [
+            "'Geography' should be lowercase mid-sentence",
+            "'Difficile' should be lowercase (species epithet)"
+          ]
+        },
+        {
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length",
+          "occurrences": [
+            "'In summary: Applying for a driving licence is a page...' — extremely long run-on sentence"
+          ]
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid",
+          "occurrences": [
+            "'utilizes' should be 'use'"
+          ]
+        },
+        {
+          "rule_id": "rule_003",
+          "rule_name": "Abbreviations, acronyms and initialisms",
+          "occurrences": [
+            "'C.S.S.' should be 'CSS'",
+            "'J.R.' should be 'JR'",
+            "'Int. J.' and 'Govt.' use informal abbreviations"
+          ]
+        }
+      ]
+    },
+    "digital_services_intro.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_007",
+          "rule_name": "academy order"
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "rule_id": "rule_409",
+          "rule_name": "RESTful"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_499",
+          "rule_name": "Times",
+          "occurrences": [
+            "Between 2015-2020"
+          ]
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "Semicolons used in: 'established in 2011; it has transformed'",
+            "Semicolons used in: 'digital services; this has resulted'"
+          ],
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "occurrences": [
+            "utilizes",
+            "facilitate",
+            "robust",
+            "leverage",
+            "deploy",
+            "transform",
+            "going forward",
+            "in order to"
+          ],
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "occurrences": [
+            "2015-2020 should use 'to' not hyphen",
+            "'fifteen' should be written as '15'"
+          ],
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "occurrences": [
+            "'utilizes' should be 'utilises' (UK spelling)"
+          ],
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        }
+      ]
+    },
+    "education_programs.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_195",
+          "rule_name": "Gender"
+        },
+        {
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_125",
+          "rule_name": "Dates"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "'males and females' should be 'men and women'"
+          ],
+          "rule_id": "rule_195",
+          "rule_name": "Gender"
+        },
+        {
+          "occurrences": [
+            "'midnight on the 31st December' is ambiguous",
+            "Should specify '11:59pm on 31 December' for clarity"
+          ],
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "occurrences": [
+            "Uses 'etc' instead of alternatives",
+            "Uses 'eg.' instead of 'for example'",
+            "Uses 'ie.' instead of 'that is' or 'meaning'"
+          ],
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "occurrences": [
+            "'Minister of Education' should be lower case 'minister'",
+            "'Technology Academy' should be title case only if proper name",
+            "'Certificate in Technology Skills' over-capitalized"
+          ],
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "occurrences": [
+            "'16-25 years' should be '16 to 25 years'"
+          ],
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "occurrences": [
+            "'program' should be 'programme' (UK spelling)"
+          ],
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_125",
+          "rule_name": "Dates",
+          "occurrences": [
+            "'the 31st December' — '31st' should be '31' (no ordinal)"
+          ]
+        }
+      ]
+    },
+    "staff_policy_update.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "rule_id": "rule_195",
+          "rule_name": "Gender"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_016",
+          "rule_name": "Addressing the user"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "BLOCK CAPITALS used for entire sections",
+            "'Government' should be lower case 'government'",
+            "'Departments' should be lower case unless specific department",
+            "'Prime Minister' should be lower case 'prime minister' (not a specific person's title)"
+          ],
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "occurrences": [
+            "'If he has' uses gendered pronouns",
+            "Should use 'they' instead of 'he'"
+          ],
+          "rule_id": "rule_195",
+          "rule_name": "Gender"
+        },
+        {
+          "occurrences": [
+            "'Portal' should be 'website' or 'service'"
+          ],
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English",
+          "occurrences": [
+            "Departments organize their operations"
+          ]
+        },
+        {
+          "rule_id": "rule_016",
+          "rule_name": "Addressing the user",
+          "confidence": 0.95,
+          "occurrences": [
+            "If he has any questions, he should contact his line manager immediately."
+          ]
+        }
+      ]
+    },
+    "community_engagement.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_166",
+          "rule_name": "ethnic minorities"
+        },
+        {
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_125",
+          "rule_name": "Dates"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "Uses 'BAME' which is explicitly banned",
+            "Should refer to ethnic minority groups individually"
+          ],
+          "rule_id": "rule_166",
+          "rule_name": "ethnic minorities"
+        },
+        {
+          "occurrences": [
+            "'9am-5pm' should be '9am to 5pm'",
+            "'midnight on Tuesday 15th March' is ambiguous"
+          ],
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English",
+          "occurrences": [
+            "'The program aims to engage' — 'program' should be 'programme'"
+          ]
+        },
+        {
+          "rule_id": "rule_125",
+          "rule_name": "Dates",
+          "occurrences": [
+            "'Tuesday 15th March' — '15th' should be '15' (no ordinal)"
+          ]
+        }
+      ]
+    },
+    "technical_infrastructure.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "'utilize' should be 'utilise' (UK spelling)"
+          ],
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "occurrences": [
+            "'1730hrs' should be '5:30pm'",
+            "'00:00' should be '11:59pm' to avoid midnight ambiguity"
+          ],
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "occurrences": [
+            "Multiple semicolons used throughout the second paragraph"
+          ],
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "occurrences": [
+            "'.5 degrees' should be '0.5 degrees'",
+            "'500-900 RPM' should be '500 to 900 RPM'"
+          ],
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid",
+          "occurrences": [
+            "utilize cloud computing"
+          ]
+        },
+        {
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length",
+          "occurrences": [
+            "You'll need to use the new API endpoint which has been optimized for better performance; however, you should test it thoroughly before deploying to production; this is essential to avoid any service disruptions; we recommend running comprehensive tests in your staging environment first."
+          ]
+        }
+      ]
+    },
+    "employment_opportunities.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_020",
+          "rule_name": "agile"
+        },
+        {
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "'collaborate' should be 'work with'",
+            "'leverage' should be 'use'",
+            "'deliver' should be more specific",
+            "'transformative' should be specific",
+            "'facilitate' should be more specific",
+            "'liaise' should be 'work with'",
+            "'streamline' should be 'simplify'",
+            "'drive' should be 'create' or 'cause'",
+            "'deploy' should be more specific",
+            "'impact' should be 'have an effect on'"
+          ],
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "occurrences": [
+            "'agile' should be capitalized as 'Agile' when referring to methodology"
+          ],
+          "rule_id": "rule_020",
+          "rule_name": "agile"
+        },
+        {
+          "occurrences": [
+            "'fifty thousand to seventy-five thousand' should be written as numerals: '50,000 to 75,000'"
+          ],
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        }
+      ]
+    },
+    "service_benefits.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_501",
+          "rule_name": "Titles"
+        },
+        {
+          "rule_id": "rule_003",
+          "rule_name": "Abbreviations, acronyms and initialisms"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "'What Are The Benefits Of This Service?' is a question - titles should not be questions",
+            "'This Guide Explains...' uses title case instead of sentence case"
+          ],
+          "rule_id": "rule_501",
+          "rule_name": "Titles"
+        },
+        {
+          "occurrences": [
+            "'GDP' not explained on first use",
+            "'NHS' and 'BBC' are acceptable but others need explanation"
+          ],
+          "rule_id": "rule_003",
+          "rule_name": "Abbreviations, acronyms and initialisms"
+        },
+        {
+          "occurrences": [
+            "'portal' should be 'website' or 'service'"
+          ],
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "occurrences": [
+            "'utilize' should be 'utilise' (UK spelling)"
+          ],
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "occurrences": [
+            "Uses 'eg.' instead of 'for example'",
+            "Uses 'etc' instead of alternatives"
+          ],
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "occurrences": [
+            "'10-11am' should be '10am to 11am'"
+          ],
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation",
+          "occurrences": [
+            "What Are The Benefits Of This Service?",
+            "This Guide Explains How To Access Government Services Online"
+          ]
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons",
+          "occurrences": [
+            "Semicolons used to connect independent clauses: 'continues to provide healthcare; the BBC broadcasts'"
+          ]
+        }
+      ]
+    },
+    "healthcare_services.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length"
+        },
+        {
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "rule_id": "rule_195",
+          "rule_name": "Gender"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_014",
+          "rule_name": "Active voice"
+        },
+        {
+          "rule_id": "rule_016",
+          "rule_name": "Addressing the user"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "First sentence is 89 words - way over 25 word recommendation"
+          ],
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length"
+        },
+        {
+          "occurrences": [
+            "'8am-6pm' should be '8am to 6pm'"
+          ],
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "occurrences": [
+            "'where he can view his test results' uses gendered pronouns"
+          ],
+          "rule_id": "rule_195",
+          "rule_name": "Gender"
+        },
+        {
+          "occurrences": [
+            "'impact' should be 'affect' or 'have an effect on'",
+            "'foster' should be 'encourage' or 'help'"
+          ],
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "occurrences": [
+            "'program' should be 'programme' (UK spelling)"
+          ],
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_014",
+          "rule_name": "Active voice",
+          "occurrences": [
+            "The new healthcare initiative was launched by the government",
+            "the program has been designed to address longstanding inequalities"
+          ]
+        },
+        {
+          "rule_id": "rule_016",
+          "rule_name": "Addressing the user",
+          "occurrences": [
+            "where he can view his test results and prescription history"
+          ]
+        }
+      ]
+    },
+    "financial_assistance.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "Uses 'etc' multiple times"
+          ],
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "occurrences": [
+            "'00:00' should be '11:59pm' to avoid midnight ambiguity",
+            "'12 noon' is redundant - use 'midday'"
+          ],
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "occurrences": [
+            "'organization' should be 'organisation'",
+            "'color' should be 'colour'",
+            "'labeled' should be 'labelled'"
+          ],
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "occurrences": [
+            "Multiple semicolons in the last paragraph"
+          ],
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        }
+      ]
+    },
+    "housing_local_services.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length"
+        },
+        {
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "BLOCK CAPITALS used in heading",
+            "'Minister for Housing' should be lower case unless part of title",
+            "'Housing Authority' incorrect capitalization"
+          ],
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "occurrences": [
+            "'tackle' should be 'solve' or 'deal with'",
+            "'deliver' should be more specific",
+            "'robust' should be more specific",
+            "'transform' should be specific",
+            "'empower' should be 'allow' or 'give permission'"
+          ],
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "occurrences": [
+            "'program' should be 'programme' (UK spelling)"
+          ],
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "occurrences": [
+            "Multiple semicolons in second paragraph"
+          ],
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "occurrences": [
+            "'9-5pm' should be '9am to 5pm'"
+          ],
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length",
+          "occurrences": [
+            "The program aims to deliver over 5000 new properties by 2027; these will include social housing, affordable rentals, and shared ownership schemes; the initiative represents a robust commitment to addressing housing needs; it will transform communities and empower local residents."
+          ]
+        },
+        {
+          "rule_id": "rule_334",
+          "rule_name": "Numbers",
+          "confidence": 0.9,
+          "occurrences": [
+            "over 5000 new properties"
+          ]
+        }
+      ]
+    },
+    "transport_infrastructure.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "'0600hrs' should be '6am'",
+            "'2200hrs' should be '10pm'",
+            "Time ranges use hyphens instead of 'to'"
+          ],
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "occurrences": [
+            "'streamline' should be 'simplify'",
+            "'leverage' should be 'use'",
+            "'deploy' should be more specific",
+            "'hub' should be 'website' or 'service'"
+          ],
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "occurrences": [
+            "Three semicolons used in third paragraph"
+          ],
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "occurrences": [
+            "'fifteen minute' should be '15-minute' or '15 minute'",
+            "'£1,200.00' unnecessary decimals for whole pounds"
+          ],
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        }
+      ]
+    },
+    "education_skills.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "rule_id": "rule_195",
+          "rule_name": "Gender"
+        },
+        {
+          "rule_id": "rule_016",
+          "rule_name": "Addressing the user"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_125",
+          "rule_name": "Dates"
+        },
+        {
+          "rule_id": "rule_130",
+          "rule_name": "department"
+        },
+        {
+          "rule_id": "rule_421",
+          "rule_name": "school subjects"
+        },
+        {
+          "rule_id": "rule_019",
+          "rule_name": "ages"
+        },
+        {
+          "rule_id": "rule_134",
+          "rule_name": "diploma"
+        },
+        {
+          "rule_id": "rule_018",
+          "rule_name": "adviser"
+        },
+        {
+          "rule_id": "rule_034",
+          "rule_name": "artificial intelligence"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "'Academy' should be lower case unless specific name",
+            "'Science, Technology, Engineering, and Mathematics' unnecessary capitals",
+            "'Main Building', 'Campus' unnecessary capitals",
+            "'Artificial Intelligence, Machine Learning, Data Analytics' unnecessary capitals",
+            "'Head of Department' unnecessary capitals",
+            "'Diploma in Advanced Technology Skills' incorrect capitalization"
+          ],
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "occurrences": [
+            "'eighteen to twenty-five' should be '18 to 25'"
+          ],
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "occurrences": [
+            "'If a student has questions, he should'",
+            "'Males and females' should be 'men and women'"
+          ],
+          "rule_id": "rule_195",
+          "rule_name": "Gender"
+        },
+        {
+          "rule_id": "rule_016",
+          "rule_name": "Addressing the user",
+          "occurrences": [
+            "If a student has questions, he should speak to his academic advisor."
+          ]
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English",
+          "occurrences": [
+            "'enroll' should be 'enrol' (UK spelling)"
+          ]
+        },
+        {
+          "rule_id": "rule_125",
+          "rule_name": "Dates",
+          "occurrences": [
+            "'the 30th September' should be '30 September' (no ordinal)"
+          ]
+        },
+        {
+          "rule_id": "rule_130",
+          "rule_name": "department",
+          "occurrences": [
+            "'Head of Department' should be 'head of department' (lowercase)"
+          ]
+        },
+        {
+          "rule_id": "rule_421",
+          "rule_name": "school subjects",
+          "occurrences": [
+            "'Science, Technology, Engineering, and Mathematics' should be lowercase"
+          ]
+        },
+        {
+          "rule_id": "rule_019",
+          "rule_name": "ages",
+          "occurrences": [
+            "'aged eighteen to twenty-five' — ages should be written as digits: '18 to 25'"
+          ]
+        },
+        {
+          "rule_id": "rule_134",
+          "rule_name": "diploma",
+          "occurrences": [
+            "'Diploma in Advanced Technology Skills' — generic qualification names should be lowercase"
+          ]
+        },
+        {
+          "rule_id": "rule_018",
+          "rule_name": "adviser",
+          "occurrences": [
+            "'academic advisor' should be 'adviser' per GOV.UK style"
+          ]
+        },
+        {
+          "rule_id": "rule_034",
+          "rule_name": "artificial intelligence",
+          "occurrences": [
+            "'Artificial Intelligence, Machine Learning, and Data Analytics' should be lowercase"
+          ]
+        }
+      ]
+    },
+    "business_support.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_003",
+          "rule_name": "Abbreviations, acronyms and initialisms"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "Uses 'eg.' instead of 'for example'",
+            "Uses 'etc' multiple times",
+            "Uses 'ie.' instead of 'that is'"
+          ],
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "occurrences": [
+            "'incentivize' should be 'encourage'",
+            "'facilitate' should be more specific",
+            "'leverage' should be 'use'",
+            "'deploy' should be more specific",
+            "'transform' should be specific",
+            "'going forward' should be avoided"
+          ],
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "occurrences": [
+            "'B.B.C.' uses full stops which shouldn't be there",
+            "'BBC' doesn't need full stops"
+          ],
+          "rule_id": "rule_003",
+          "rule_name": "Abbreviations, acronyms and initialisms"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English",
+          "confidence": 0.85,
+          "occurrences": [
+            "The program is designed to incentivize entrepreneurship"
+          ]
+        }
+      ]
+    },
+    "environmental_policy.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length"
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_200",
+          "rule_name": "government"
+        },
+        {
+          "rule_id": "rule_130",
+          "rule_name": "department"
+        },
+        {
+          "rule_id": "rule_042",
+          "rule_name": "billions"
+        },
+        {
+          "rule_id": "rule_014",
+          "rule_name": "Active voice"
+        },
+        {
+          "rule_id": "rule_277",
+          "rule_name": "Maths content"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "First sentence is 92 words - far exceeds 25 word guideline"
+          ],
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length"
+        },
+        {
+          "occurrences": [
+            "'Government' should be lower case",
+            "'Department for Environment' and 'Ministry of Energy' capitalization issues",
+            "'Secretary of State', 'Parliament' usage"
+          ],
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "occurrences": [
+            "'.5 degrees' should be '0.5 degrees'",
+            "'£2,500,000,000' should be written as '£2.5 billion'"
+          ],
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "occurrences": [
+            "'combat' should be 'solve' or 'fix'",
+            "'impact' should be 'affect' or 'have an effect on'"
+          ],
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English",
+          "confidence": 0.95,
+          "occurrences": [
+            "comprehensive program of initiatives"
+          ]
+        },
+        {
+          "rule_id": "rule_200",
+          "rule_name": "government",
+          "occurrences": [
+            "'The Government's environmental strategy' — 'Government' should be lowercase"
+          ]
+        },
+        {
+          "rule_id": "rule_130",
+          "rule_name": "department",
+          "occurrences": [
+            "'The Department for Environment is leading this work' — check official name"
+          ]
+        },
+        {
+          "rule_id": "rule_042",
+          "rule_name": "billions",
+          "occurrences": [
+            "'£2,500,000,000 over 5 years' should be '£2.5 billion over 5 years'"
+          ]
+        },
+        {
+          "rule_id": "rule_014",
+          "rule_name": "Active voice",
+          "occurrences": [
+            "'these measures are expected to have a significant impact' — passive voice"
+          ]
+        },
+        {
+          "rule_id": "rule_277",
+          "rule_name": "Maths content",
+          "occurrences": [
+            "'Implementation will begin at .5 degrees' — should be '0.5 degrees'"
+          ]
+        }
+      ]
+    },
+    "modernising_government.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_501",
+          "rule_name": "Titles"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "'How Can We Modernize Government Services?' is a question",
+            "Title uses title case instead of sentence case"
+          ],
+          "rule_id": "rule_501",
+          "rule_name": "Titles"
+        },
+        {
+          "occurrences": [
+            "'utilize' should be 'use'",
+            "'deliver' should be more specific",
+            "'tackle' should be 'solve'",
+            "'streamline' should be 'simplify'",
+            "'one-stop-shop' should be 'website' or 'service'",
+            "'portal' should be 'website'",
+            "'empower' should be 'allow'",
+            "'liaise' should be 'work with'"
+          ],
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "occurrences": [
+            "Uses 'eg.' instead of 'for example'",
+            "Uses 'etc' instead of alternatives"
+          ],
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "occurrences": [
+            "'9am-5pm' should be '9am to 5pm'"
+          ],
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English",
+          "confidence": 0.95,
+          "occurrences": [
+            "utilize cutting-edge technologies"
+          ]
+        }
+      ]
+    },
+    "social_care.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_166",
+          "rule_name": "ethnic minorities"
+        },
+        {
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "rule_id": "rule_016",
+          "rule_name": "Addressing the user"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_195",
+          "rule_name": "Gender"
+        },
+        {
+          "rule_id": "rule_019",
+          "rule_name": "ages"
+        },
+        {
+          "rule_id": "rule_496",
+          "rule_name": "Telephone numbers"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "Uses 'BAME' which is explicitly banned"
+          ],
+          "rule_id": "rule_166",
+          "rule_name": "ethnic minorities"
+        },
+        {
+          "occurrences": [
+            "'30mins' should be '30 minutes'"
+          ],
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "occurrences": [
+            "'National Care Academy' may be incorrect",
+            "'Director of Social Services' capitalization"
+          ],
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "occurrences": [
+            "'Two hundred' should be '200'"
+          ],
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "occurrences": [
+            "'foster' should be 'encourage'",
+            "'combat' should be 'prevent' or 'stop'"
+          ],
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "occurrences": [
+            "Multiple semicolons in final paragraph"
+          ],
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "rule_id": "rule_016",
+          "rule_name": "Addressing the user",
+          "confidence": 0.95,
+          "occurrences": [
+            "If someone needs assistance, he or she should call the helpline at 0800-123-4567."
+          ]
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English",
+          "occurrences": [
+            "'The program provides support' — 'program' should be 'programme'",
+            "'emphasized' should be 'emphasised'"
+          ]
+        },
+        {
+          "rule_id": "rule_195",
+          "rule_name": "Gender",
+          "occurrences": [
+            "'he or she should call the helpline' — should use 'they'"
+          ]
+        },
+        {
+          "rule_id": "rule_019",
+          "rule_name": "ages",
+          "occurrences": [
+            "'elderly people' should be 'older people' per GOV.UK inclusive language"
+          ]
+        },
+        {
+          "rule_id": "rule_496",
+          "rule_name": "Telephone numbers",
+          "occurrences": [
+            "'0800-123-4567' — should use spaces: '0800 123 4567'"
+          ]
+        }
+      ]
+    },
+    "public_health_announcement.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "rule_id": "rule_166",
+          "rule_name": "ethnic minorities"
+        },
+        {
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "BLOCK CAPITALS used throughout",
+            "'Department of Health' capitalization",
+            "'All Citizens' unnecessary capital",
+            "'Chief Medical Officer', 'Health Authority', 'Government Website' incorrect"
+          ],
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "occurrences": [
+            "Semicolon used in bullet list item"
+          ],
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "occurrences": [
+            "Uses 'BAME' which is banned"
+          ],
+          "rule_id": "rule_166",
+          "rule_name": "ethnic minorities"
+        },
+        {
+          "occurrences": [
+            "Uses 'etc' multiple times"
+          ],
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "occurrences": [
+            "'12 noon' should be 'midday'"
+          ],
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "occurrences": [
+            "'Hub' should be 'website' or 'service'"
+          ],
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        }
+      ]
+    },
+    "technology_innovation.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_003",
+          "rule_name": "Abbreviations, acronyms and initialisms"
+        },
+        {
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "rule_id": "rule_020",
+          "rule_name": "agile"
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_025",
+          "rule_name": "Ampersand"
+        },
+        {
+          "rule_id": "rule_261",
+          "rule_name": "life cycle"
+        },
+        {
+          "rule_id": "rule_291",
+          "rule_name": "Millions"
+        },
+        {
+          "rule_id": "rule_123",
+          "rule_name": "data set"
+        },
+        {
+          "rule_id": "rule_279",
+          "rule_name": "Measurements"
+        },
+        {
+          "rule_id": "rule_495",
+          "rule_name": "technical terms"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "'R&D' uses ampersand with full stops",
+            "'A.I.' and 'M.L.' use full stops",
+            "'NAO' not explained on first use"
+          ],
+          "rule_id": "rule_003",
+          "rule_name": "Abbreviations, acronyms and initialisms"
+        },
+        {
+          "occurrences": [
+            "Uses 'ie.' instead of 'that is'"
+          ],
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "occurrences": [
+            "'transform' should be more specific",
+            "'going forward' should be avoided"
+          ],
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "occurrences": [
+            "'£1500000' should be '£1,500,000' or '£1.5 million'",
+            "'500KB-900KB' should use 'to' not hyphen",
+            "'three years' should be '3 years'"
+          ],
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "occurrences": [
+            "'agile' should be 'Agile' when referring to methodology"
+          ],
+          "rule_id": "rule_020",
+          "rule_name": "agile"
+        },
+        {
+          "occurrences": [
+            "Multiple semicolons in last paragraph"
+          ],
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English",
+          "occurrences": [
+            "optimize"
+          ]
+        },
+        {
+          "rule_id": "rule_025",
+          "rule_name": "Ampersand",
+          "occurrences": [
+            "'R&D' uses & — should use 'and': 'R and D' or 'Research and Development'",
+            "'Research & Development' uses & — should use 'and'"
+          ]
+        },
+        {
+          "rule_id": "rule_261",
+          "rule_name": "life cycle",
+          "occurrences": [
+            "'lifecycle' should be 'life cycle' (two words, no hyphen)"
+          ]
+        },
+        {
+          "rule_id": "rule_291",
+          "rule_name": "Millions",
+          "occurrences": [
+            "'Development costs totaled £1500000' — should be '£1.5 million'"
+          ]
+        },
+        {
+          "rule_id": "rule_123",
+          "rule_name": "data set",
+          "occurrences": [
+            "'analyze large datasets' — GOV.UK style is 'data sets' (two words)"
+          ]
+        },
+        {
+          "rule_id": "rule_279",
+          "rule_name": "Measurements",
+          "occurrences": [
+            "'500KB-900KB of memory per transaction' — range should use 'to': '500KB to 900KB'"
+          ]
+        },
+        {
+          "rule_id": "rule_495",
+          "rule_name": "technical terms",
+          "occurrences": [
+            "Technical jargon: 'A.I.', 'M.L.', 'agile development methodology' without plain English context"
+          ]
+        }
+      ]
+    },
+    "employment_rights.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_195",
+          "rule_name": "Gender"
+        },
+        {
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "rule_id": "rule_166",
+          "rule_name": "ethnic minorities"
+        },
+        {
+          "rule_id": "rule_334",
+          "rule_name": "Numbers"
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "rule_id": "rule_228",
+          "rule_name": "human resources"
+        },
+        {
+          "rule_id": "rule_137",
+          "rule_name": "director"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "'males and females' should be 'men and women'"
+          ],
+          "rule_id": "rule_195",
+          "rule_name": "Gender"
+        },
+        {
+          "occurrences": [
+            "'9am-5pm' should be '9am to 5pm'",
+            "'one hour' should be '1 hour'"
+          ],
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "occurrences": [
+            "'Human Resources Director' unnecessary capitals",
+            "'Staff Meeting', 'Conference Room A' unnecessary capitals",
+            "'Line Manager', 'HR Department' unnecessary capitals"
+          ],
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "occurrences": [
+            "Generic reference to 'ethnic minorities' without being specific to groups"
+          ],
+          "rule_id": "rule_166",
+          "rule_name": "ethnic minorities"
+        },
+        {
+          "rule_id": "rule_334",
+          "rule_name": "Numbers",
+          "occurrences": [
+            "Employees can accrue up to thirty vacation days per year."
+          ]
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons",
+          "occurrences": [
+            "The company is committed to promoting diversity & inclusion; this includes supporting ethnic minorities and ensuring equal opportunities for all."
+          ]
+        },
+        {
+          "rule_id": "rule_228",
+          "rule_name": "human resources",
+          "occurrences": [
+            "'Human Resources Director' — 'Human Resources' should be lowercase: 'human resources'"
+          ]
+        },
+        {
+          "rule_id": "rule_137",
+          "rule_name": "director",
+          "occurrences": [
+            "'Human Resources Director' — 'Director' should be lowercase when not used with a person's name"
+          ]
+        }
+      ]
+    },
+    "legal_advice.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_501",
+          "rule_name": "Titles"
+        },
+        {
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length"
+        },
+        {
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        }
+      ],
+      "violations": [
+        {
+          "occurrences": [
+            "'Can You Get Free Legal Advice?' is a question - titles should not be questions"
+          ],
+          "rule_id": "rule_501",
+          "rule_name": "Titles"
+        },
+        {
+          "occurrences": [
+            "First full sentence is 78 words with multiple 'and' connectors",
+            "Second sentence also very long with multiple clauses"
+          ],
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length"
+        },
+        {
+          "occurrences": [
+            "Uses 'eg.' instead of 'for example'",
+            "Uses 'etc' multiple times"
+          ],
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "occurrences": [
+            "Multiple semicolons in second paragraph"
+          ],
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "occurrences": [
+            "'00:00' should be 'midnight' or '11:59pm'",
+            "'6-8wks' should be '6 to 8 weeks'"
+          ],
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        },
+        {
+          "occurrences": [
+            "'Portal' should be 'website' or 'service'"
+          ],
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English",
+          "confidence": 0.8,
+          "occurrences": [
+            "The program was reformed in 2012"
+          ]
+        }
+      ]
+    },
+    "public_services_transformation.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_081",
+          "rule_name": "civil servants"
+        },
+        {
+          "rule_id": "rule_110",
+          "rule_name": "coursework"
+        },
+        {
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "rule_id": "rule_077",
+          "rule_name": "childminder, childminding"
+        },
+        {
+          "rule_id": "rule_195",
+          "rule_name": "Gender"
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_053",
+          "rule_name": "British people"
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length"
+        },
+        {
+          "rule_id": "rule_016",
+          "rule_name": "Addressing the user"
+        },
+        {
+          "rule_id": "rule_204",
+          "rule_name": "GOV.UK"
+        },
+        {
+          "rule_id": "rule_200",
+          "rule_name": "government"
+        }
+      ],
+      "violations": [
+        {
+          "rule_id": "rule_081",
+          "rule_name": "civil servants",
+          "occurrences": [
+            "Should be lowercase 'civil servants' not 'Civil Servants'"
+          ]
+        },
+        {
+          "rule_id": "rule_110",
+          "rule_name": "coursework",
+          "occurrences": [
+            "'course work' should be one word: 'coursework'"
+          ]
+        },
+        {
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie",
+          "occurrences": [
+            "Use 'for example' or 'such as' instead of 'etc'"
+          ]
+        },
+        {
+          "rule_id": "rule_077",
+          "rule_name": "childminder, childminding",
+          "occurrences": [
+            "'child minders' should be one word: 'childminders'"
+          ]
+        },
+        {
+          "rule_id": "rule_195",
+          "rule_name": "Gender",
+          "occurrences": [
+            "Use 'men and women' instead of 'males and females'",
+            "Use 'they' instead of 'He or she'"
+          ]
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons",
+          "occurrences": [
+            "Semicolon in: 'announced new funding at 3pm today; this will help'"
+          ]
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid",
+          "occurrences": [
+            "facilitate",
+            "utilise",
+            "transform",
+            "going forward",
+            "leverage",
+            "deliver",
+            "key"
+          ]
+        },
+        {
+          "rule_id": "rule_053",
+          "rule_name": "British people",
+          "occurrences": [
+            "Context check needed - 'British citizens' usage in general sense"
+          ]
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation",
+          "occurrences": [
+            "'Government' should be lowercase when not referring to specific government",
+            "'Minister' should be lowercase 'minister' or specify which minister",
+            "'Department for Education' - check if referring to specific department"
+          ]
+        },
+        {
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length",
+          "occurrences": [
+            "Extremely long sentence: 'This is a really really really... long sentence.'"
+          ]
+        },
+        {
+          "rule_id": "rule_016",
+          "rule_name": "Addressing the user",
+          "occurrences": [
+            "'He or she can apply for additional support' — should use 'they can apply'"
+          ]
+        },
+        {
+          "rule_id": "rule_204",
+          "rule_name": "GOV.UK",
+          "occurrences": [
+            "'support via www.gov.uk' — should be 'gov.uk' not 'www.gov.uk'"
+          ]
+        },
+        {
+          "rule_id": "rule_200",
+          "rule_name": "government",
+          "occurrences": [
+            "'The Government is committed' — 'Government' should be lowercase"
+          ]
+        }
+      ]
+    },
+    "education_policy_update.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_001",
+          "rule_name": "A*, A*s"
+        },
+        {
+          "rule_id": "rule_002",
+          "rule_name": "A level"
+        },
+        {
+          "rule_id": "rule_064",
+          "rule_name": "care worker"
+        },
+        {
+          "rule_id": "rule_065",
+          "rule_name": "chair of governors"
+        },
+        {
+          "rule_id": "rule_132",
+          "rule_name": "devolved governments"
+        },
+        {
+          "rule_id": "rule_138",
+          "rule_name": "director general"
+        },
+        {
+          "rule_id": "rule_139",
+          "rule_name": "Disability Living Allowance"
+        },
+        {
+          "rule_id": "rule_140",
+          "rule_name": "disabled people"
+        },
+        {
+          "rule_id": "rule_158",
+          "rule_name": "email"
+        },
+        {
+          "rule_id": "rule_203",
+          "rule_name": "governor"
+        },
+        {
+          "rule_id": "rule_004",
+          "rule_name": "the academies programme"
+        },
+        {
+          "rule_id": "rule_008",
+          "rule_name": "academy trust"
+        },
+        {
+          "rule_id": "rule_058",
+          "rule_name": "business plan"
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English"
+        },
+        {
+          "rule_id": "rule_204",
+          "rule_name": "GOV.UK"
+        },
+        {
+          "rule_id": "rule_264",
+          "rule_name": "local authority"
+        },
+        {
+          "rule_id": "rule_266b",
+          "rule_name": "local council"
+        },
+        {
+          "rule_id": "rule_501",
+          "rule_name": "Titles"
+        },
+        {
+          "rule_id": "rule_200",
+          "rule_name": "government"
+        },
+        {
+          "rule_id": "rule_130",
+          "rule_name": "department"
+        },
+        {
+          "rule_id": "rule_137",
+          "rule_name": "director"
+        },
+        {
+          "rule_id": "rule_250",
+          "rule_name": "Job titles"
+        },
+        {
+          "rule_id": "rule_310",
+          "rule_name": "Names and personal titles"
+        }
+      ],
+      "violations": [
+        {
+          "rule_id": "rule_001",
+          "rule_name": "A*, A*s",
+          "occurrences": [
+            "'a-star grades' should be 'A* grades'"
+          ]
+        },
+        {
+          "rule_id": "rule_002",
+          "rule_name": "A level",
+          "occurrences": [
+            "'A-levels' should be 'A levels' (no hyphen)",
+            "'A-Level' should be 'A level'"
+          ]
+        },
+        {
+          "rule_id": "rule_064",
+          "rule_name": "care worker",
+          "occurrences": [
+            "'careworkers' should be 'care workers' (two words)"
+          ]
+        },
+        {
+          "rule_id": "rule_065",
+          "rule_name": "chair of governors",
+          "occurrences": [
+            "'Chair of Governors' should be lowercase: 'chair of governors'"
+          ]
+        },
+        {
+          "rule_id": "rule_132",
+          "rule_name": "devolved governments",
+          "occurrences": [
+            "'devolved Governments' — 'Governments' should be lowercase"
+          ]
+        },
+        {
+          "rule_id": "rule_138",
+          "rule_name": "director general",
+          "occurrences": [
+            "'Director General' should be lowercase: 'director general'",
+            "'director-general' should not be hyphenated: 'director general'"
+          ]
+        },
+        {
+          "rule_id": "rule_139",
+          "rule_name": "Disability Living Allowance",
+          "occurrences": [
+            "'Disability living allowance' should be 'Disability Living Allowance' (all caps)"
+          ]
+        },
+        {
+          "rule_id": "rule_140",
+          "rule_name": "disabled people",
+          "occurrences": [
+            "'the disabled' should be 'disabled people' or 'disabled students'"
+          ]
+        },
+        {
+          "rule_id": "rule_158",
+          "rule_name": "email",
+          "occurrences": [
+            "'e-mail' should be 'email' (no hyphen)"
+          ]
+        },
+        {
+          "rule_id": "rule_203",
+          "rule_name": "governor",
+          "occurrences": [
+            "'Governors' in 'Chair of Governors' should be lowercase"
+          ]
+        },
+        {
+          "rule_id": "rule_004",
+          "rule_name": "the academies programme",
+          "occurrences": [
+            "'Academies Programme' should be lowercase: 'academies programme'"
+          ]
+        },
+        {
+          "rule_id": "rule_008",
+          "rule_name": "academy trust",
+          "occurrences": [
+            "'Academy Trust' should be lowercase: 'academy trust'"
+          ]
+        },
+        {
+          "rule_id": "rule_058",
+          "rule_name": "business plan",
+          "occurrences": [
+            "'Business Plan' should be lowercase: 'business plan'"
+          ]
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation",
+          "occurrences": [
+            "'The Department For Education' — 'For' should be lowercase",
+            "'devolved Governments' — 'Governments' should be lowercase",
+            "'Local Authority' should be lowercase or 'local council'"
+          ]
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons",
+          "occurrences": [
+            "'progress towards our goals; we aim' — semicolon between independent clauses"
+          ]
+        },
+        {
+          "rule_id": "rule_444",
+          "rule_name": "Sentence length",
+          "occurrences": [
+            "Extremely long sentence: 'This is a really really really... long sentence.'"
+          ]
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid",
+          "occurrences": [
+            "'transform' should be more specific"
+          ]
+        },
+        {
+          "rule_id": "rule_024",
+          "rule_name": "American and UK English",
+          "occurrences": [
+            "'the director-general emphasized' — 'emphasized' should be 'emphasised'"
+          ]
+        },
+        {
+          "rule_id": "rule_204",
+          "rule_name": "GOV.UK",
+          "occurrences": [
+            "'Gov.Uk' is wrong — should be 'GOV.UK' or 'gov.uk' in running text"
+          ]
+        },
+        {
+          "rule_id": "rule_264",
+          "rule_name": "local authority",
+          "occurrences": [
+            "'Contact your Local Authority' — should use 'local council' not 'local authority'"
+          ]
+        },
+        {
+          "rule_id": "rule_266b",
+          "rule_name": "local council",
+          "occurrences": [
+            "'Local Authority' should be replaced with 'local council' where possible"
+          ]
+        },
+        {
+          "rule_id": "rule_501",
+          "rule_name": "Titles",
+          "occurrences": [
+            "'Education Policy Update 2025' uses title case — GOV.UK requires sentence case"
+          ]
+        },
+        {
+          "rule_id": "rule_200",
+          "rule_name": "government",
+          "occurrences": [
+            "'The devolved Governments have agreed' — 'Governments' should be lowercase"
+          ]
+        },
+        {
+          "rule_id": "rule_130",
+          "rule_name": "department",
+          "occurrences": [
+            "'The Department For Education' — 'For' should be lowercase 'for'"
+          ]
+        },
+        {
+          "rule_id": "rule_137",
+          "rule_name": "director",
+          "occurrences": [
+            "'The Director General met' — job titles should be lowercase without a preceding name"
+          ]
+        },
+        {
+          "rule_id": "rule_250",
+          "rule_name": "Job titles",
+          "occurrences": [
+            "'Director General' and 'Chair of Governors' should be lowercase"
+          ]
+        },
+        {
+          "rule_id": "rule_310",
+          "rule_name": "Names and personal titles",
+          "occurrences": [
+            "Titles used without names should be lowercase: 'director general', 'chair of governors'"
+          ]
+        }
+      ]
+    }
+  },
+  "rule_coverage_summary": {
+    "Abbreviations, acronyms and initialisms": [
+      "document_13.txt",
+      "document_18.txt"
+    ],
+    "Active voice": [
+      "Note: Passive voice violations are implicit in several documents but not explicitly called out"
+    ],
+    "agile": [
+      "document_06.txt",
+      "document_18.txt"
+    ],
+    "American and UK English": [
+      "document_01.txt",
+      "document_02.txt",
+      "document_05.txt",
+      "document_07.txt",
+      "document_08.txt",
+      "document_09.txt",
+      "document_10.txt"
+    ],
+    "Banned words": [
+      "document_01.txt",
+      "document_03.txt",
+      "document_04.txt",
+      "document_06.txt",
+      "document_07.txt",
+      "document_08.txt",
+      "document_10.txt",
+      "document_11.txt",
+      "document_13.txt",
+      "document_14.txt",
+      "document_15.txt",
+      "document_16.txt",
+      "document_17.txt",
+      "document_18.txt",
+      "document_20.txt"
+    ],
+    "Numbers": [
+      "document_01.txt",
+      "document_02.txt",
+      "document_05.txt",
+      "document_06.txt",
+      "document_11.txt",
+      "document_14.txt",
+      "document_16.txt",
+      "document_18.txt"
+    ],
+    "semicolons": [
+      "document_01.txt",
+      "document_05.txt",
+      "document_09.txt",
+      "document_10.txt",
+      "document_11.txt",
+      "document_16.txt",
+      "document_17.txt",
+      "document_18.txt",
+      "document_20.txt"
+    ],
+    "Sentence length": [
+      "document_08.txt",
+      "document_14.txt",
+      "document_20.txt"
+    ],
+    "Capitalisation": [
+      "document_02.txt",
+      "document_03.txt",
+      "document_10.txt",
+      "document_12.txt",
+      "document_14.txt",
+      "document_16.txt",
+      "document_17.txt",
+      "document_19.txt"
+    ],
+    "eg, etc and ie": [
+      "document_02.txt",
+      "document_07.txt",
+      "document_09.txt",
+      "document_13.txt",
+      "document_15.txt",
+      "document_17.txt",
+      "document_18.txt",
+      "document_20.txt"
+    ],
+    "ethnic minorities": [
+      "document_04.txt",
+      "document_16.txt",
+      "document_17.txt",
+      "document_19.txt"
+    ],
+    "Gender": [
+      "document_02.txt",
+      "document_03.txt",
+      "document_08.txt",
+      "document_12.txt",
+      "document_19.txt"
+    ],
+    "Times": [
+      "document_02.txt",
+      "document_04.txt",
+      "document_05.txt",
+      "document_07.txt",
+      "document_08.txt",
+      "document_09.txt",
+      "document_10.txt",
+      "document_11.txt",
+      "document_15.txt",
+      "document_16.txt",
+      "document_17.txt",
+      "document_19.txt",
+      "document_20.txt"
+    ],
+    "Titles": [
+      "document_07.txt",
+      "document_15.txt",
+      "document_20.txt"
+    ],
+    "document_21.txt": {
+      "rules_broken": [
+        {
+          "rule_id": "rule_080",
+          "rule_name": "Civil Service"
+        },
+        {
+          "rule_id": "rule_081",
+          "rule_name": "civil servants"
+        },
+        {
+          "rule_id": "rule_110",
+          "rule_name": "coursework"
+        },
+        {
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie"
+        },
+        {
+          "rule_id": "rule_077",
+          "rule_name": "childminder, childminding"
+        },
+        {
+          "rule_id": "rule_195",
+          "rule_name": "Gender"
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons"
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid"
+        },
+        {
+          "rule_id": "rule_053",
+          "rule_name": "British people"
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation"
+        },
+        {
+          "rule_id": "rule_499",
+          "rule_name": "Times"
+        }
+      ],
+      "violations": [
+        {
+          "rule_id": "rule_080",
+          "rule_name": "Civil Service",
+          "occurrences": [
+            "Should be 'Civil Service' not 'civil service' - incorrectly lowercase in 'The civil service has been working'"
+          ]
+        },
+        {
+          "rule_id": "rule_081",
+          "rule_name": "civil servants",
+          "occurrences": [
+            "Should be lowercase 'civil servants' not 'Civil Servants'"
+          ]
+        },
+        {
+          "rule_id": "rule_110",
+          "rule_name": "coursework",
+          "occurrences": [
+            "'course work' should be one word: 'coursework'"
+          ]
+        },
+        {
+          "rule_id": "rule_157",
+          "rule_name": "eg, etc and ie",
+          "occurrences": [
+            "Use 'for example' or 'such as' instead of 'etc'"
+          ]
+        },
+        {
+          "rule_id": "rule_077",
+          "rule_name": "childminder, childminding",
+          "occurrences": [
+            "'child minders' should be one word: 'childminders'"
+          ]
+        },
+        {
+          "rule_id": "rule_195",
+          "rule_name": "Gender",
+          "occurrences": [
+            "Use 'men and women' instead of 'males and females'",
+            "Use 'they' instead of 'He or she'"
+          ]
+        },
+        {
+          "rule_id": "rule_442",
+          "rule_name": "semicolons",
+          "occurrences": [
+            "Semicolon in: 'announced new funding at 3pm today; this will help'"
+          ]
+        },
+        {
+          "rule_id": "rule_547",
+          "rule_name": "Words to avoid",
+          "occurrences": [
+            "facilitate",
+            "utilise",
+            "transform",
+            "going forward",
+            "leverage",
+            "deliver",
+            "key"
+          ]
+        },
+        {
+          "rule_id": "rule_053",
+          "rule_name": "British people",
+          "occurrences": [
+            "Context check needed - 'British citizens' usage in general sense"
+          ]
+        },
+        {
+          "rule_id": "rule_063",
+          "rule_name": "Capitalisation",
+          "occurrences": [
+            "'Government' should be lowercase when not referring to specific government",
+            "'Minister' should be lowercase 'minister' or specify which minister",
+            "'Department for Education' - check if referring to specific department"
+          ]
+        },
+        {
+          "rule_id": "rule_499",
+          "rule_name": "Times",
+          "occurrences": [
+            "'3pm' should be '3pm' with correct formatting or '3:00pm'"
+          ]
+        }
+      ]
+    }
+  },
+  "statistics": {
+    "total_documents": 21,
+    "total_rule_categories": 14,
+    "all_rules_covered": true,
+    "average_violations_per_document": 3.6,
+    "most_violated_rule": "Banned words (16 documents)",
+    "least_violated_rule": "Abbreviations and agile (2 documents each)"
+  }
+}

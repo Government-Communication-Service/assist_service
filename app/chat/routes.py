@@ -117,7 +117,7 @@ async def get_chat_messages(
 async def create_chat_title(
     chat=Depends(chat_validator),
     data: ChatRequest = Body(...),
-):
+) -> ChatSuccessResponse:
     async with async_db_session() as db_session:
         return await update_chat_title(db_session=db_session, chat=chat, data=data)
 

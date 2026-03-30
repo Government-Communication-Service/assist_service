@@ -1,5 +1,18 @@
 [
     {
+        "theme.uuid": "6d983359-b053-430e-b1c3-57973439ad5a",
+        "theme.title": "GOV.UK style guide checker",
+        "theme.subtitle": "Check your content against the GOV.UK style guide",
+        "use_cases": [
+            {
+                "use_case.uuid": "4c3f52fc-7d31-46df-acf4-73187e1d91c3",
+                "use_case.title": "I want to check my content against the GOV.UK style guide",
+                "use_case.instruction": "Check the provided content against the GOV.UK style guide. Identify any violations of GOV.UK style guide rules including capitalisation, punctuation, word choice, formatting and terminology. For each violation found, explain what the issue is, which rule it breaks, and suggest a correction.",
+                "use_case.user_input_form": "Content to check: [Paste your content here]"
+            }
+        ]
+    },
+    {
         "theme.uuid": "dad4e410-169d-41ce-b289-ba46c2f58249",
         "theme.title": "Recruitment",
         "theme.subtitle": "Test, adapt job descriptions for audiences",

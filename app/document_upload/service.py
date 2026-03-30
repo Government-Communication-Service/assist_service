@@ -1,9 +1,11 @@
 from logging import getLogger
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 
+from app import config
 from app.central_guidance.schemas import RagRequest, RetrievalResult
+from app.database.db_operations import DbOperations
 from app.database.models import (
     Document,
     DocumentChunk,
@@ -12,7 +14,9 @@ from app.database.models import (
     SearchIndex,
 )
 from app.database.table import async_db_session
+from app.document_upload.constants import PERSONAL_DOCUMENTS_INDEX_NAME
 from app.document_upload.personal_document_rag import personal_document_rag
+from app.opensearch.service import AsyncOpenSearchOperations
 
 logger = getLogger(__name__)
 
@@ -125,3 +129,75 @@ async def compile_document_upload_prompt_segments(
             prompt_segment_user_retrieval += "\n</uploaded-documents-search-results>"
 
         return (prompt_segment_user_retrieval, citation_message)
+
+
+async def clean_expired_documents(db_session: AsyncSession):
+    """
+    Delete expired documents from OpenSearch first, then from the database.
+
+    Key improvement:
+    - OpenSearch deletion happens BEFORE DB mutation
+    - Partial failures are tracked; only successful deletes update DB
+    - Failed chunks remain in DB for retry
+    """
+    try:
+        # 1) Getting expired chunks from DB
+        expired_chunks = await DbOperations.get_expired_chunks_for_cleanup(db_session)
+
+        if not expired_chunks:
+            logger.info("Marked 0 expired document chunk(s) as deleted.")
+            logger.info("No opensearch ids found for deletion from opensearch.")
+            return {"deleted_count": 0, "failed_count": 0}
+
+        # Build lookup maps
+        chunk_id_by_os_id = {os_id: chunk_id for chunk_id, doc_id, os_id in expired_chunks}
+        doc_id_by_chunk_id = {chunk_id: doc_id for chunk_id, doc_id, os_id in expired_chunks}
+        opensearch_ids = list(chunk_id_by_os_id.keys())
+        logger.info("Marked %s expired document chunk(s) as deleted.", len(opensearch_ids))
+
+        deleted_os_ids: list[str] = []
+        failed_os_ids: list[str] = []
+
+        # 2) Delete from OpenSearch first (in batches)
+        opensearch_delete_batch_size = config.OPENSEARCH_DELETE_BATCH_SIZE
+        for i in range(0, len(opensearch_ids), opensearch_delete_batch_size):
+            batch = opensearch_ids[i : i + opensearch_delete_batch_size]
+            try:
+                await AsyncOpenSearchOperations.delete_document_chunks(
+                    PERSONAL_DOCUMENTS_INDEX_NAME,
+                    batch,
+                )
+                deleted_os_ids.extend(batch)
+                logger.info("Deleted batch of %s chunk(s) from OpenSearch.", len(batch))
+            except Exception:
+                logger.exception("OpenSearch delete failed for batch starting at index %s", i)
+                failed_os_ids.extend(batch)
+
+        # 3) update DB only for successfully deleted OpenSearch docs
+        deleted_chunk_ids = [chunk_id_by_os_id[os_id] for os_id in deleted_os_ids]
+        deleted_doc_ids = [doc_id_by_chunk_id[chunk_id] for chunk_id in deleted_chunk_ids]
+        batch_size = config.DOCUMENT_CLEANUP_BATCH_SIZE
+        if deleted_chunk_ids:
+            try:
+                await DbOperations.mark_chunks_as_deleted(db_session, deleted_chunk_ids, batch_size)
+                await DbOperations.mark_documents_as_deleted(db_session, deleted_doc_ids, batch_size)
+                logger.info("Successfully deleted %s document chunk(s) from OpenSearch.", len(opensearch_ids))
+            except Exception as e:
+                logger.exception("Database update failed after OpenSearch deletion.")
+                raise Exception(f"Database update failed after OpenSearch deletion: {e}") from e
+
+        # 4) Log failures (chunks remain in DB for future retry)
+        if failed_os_ids:
+            logger.warning(
+                "%s chunk(s) failed OpenSearch deletion and will be retried later.",
+                len(failed_os_ids),
+            )
+
+        return {
+            "deleted_count": len(deleted_chunk_ids),
+            "failed_count": len(failed_os_ids),
+        }
+
+    except Exception:
+        logger.exception("Error during document cleanup")
+        raise

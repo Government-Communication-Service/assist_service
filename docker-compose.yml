@@ -43,7 +43,7 @@ services:
         echo 'Debug mode is enabled. Installing debugpy...' && \
         pip install debugpy==1.6.7 && \
         echo 'Starting debugpy server...' && \
-        python -Xfrozen_modules=off -m debugpy --wait-for-client --listen 0.0.0.0:5678 -m uvicorn app.main:app --host 0.0.0.0 --port 5312 --reload --log-config logging.ini
+        python -Xfrozen_modules=off -m debugpy --wait-for-client --listen 0.0.0.0:5678 -m uvicorn app.main:app --host 0.0.0.0 --port 5312 --reload --log-config logging.dev.ini
       else
         uvicorn app.main:app --host 0.0.0.0 --port 5312 --reload --log-config logging.ini
       fi

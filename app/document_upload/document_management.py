@@ -1,10 +1,8 @@
 import asyncio
 import logging
 
-from app.database.db_operations import DbOperations
 from app.database.table import async_db_session
-from app.document_upload.constants import PERSONAL_DOCUMENTS_INDEX_NAME
-from app.opensearch.service import AsyncOpenSearchOperations
+from app.document_upload.service import clean_expired_documents
 
 logger = logging.getLogger(__name__)
 
@@ -16,13 +14,8 @@ async def _delete_expired_files():
     Delete expired files from the database and OpenSearch.
     """
     async with async_db_session() as db_session:
-        opensearch_ids = await DbOperations.delete_expired_documents(db_session)
-        logger.info("Marked %s expired document chunk(s) as deleted.", len(opensearch_ids))
-        if opensearch_ids:
-            await AsyncOpenSearchOperations.delete_document_chunks(PERSONAL_DOCUMENTS_INDEX_NAME, opensearch_ids)
-            logger.info("Successfully deleted %s document chunk(s) from OpenSearch.", len(opensearch_ids))
-        else:
-            logger.info("No opensearch ids found for deletion from opensearch.")
+        await clean_expired_documents(db_session)
+        await db_session.commit()
 
 
 async def schedule_expired_files_deletion():

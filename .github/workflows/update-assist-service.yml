@@ -1,6 +1,7 @@
 name: Update Assist Service
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - dev-main
@@ -22,7 +23,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/assist_service
-          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          token: ${{ secrets.PAT_FOR_GIT_LFS }}
           path: target
           ref: main
           fetch-depth: 0

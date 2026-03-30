@@ -111,6 +111,27 @@ def set_env_vars():
     os.environ["DISABLE_BUGSNAG_LOGGING"] = "True"
 
 
+@pytest.fixture(autouse=True)
+def clear_bedrock_provider_cache():
+    """
+    Clear the AsyncAnthropicBedrockProvider client cache before each test.
+
+    This ensures that region failover doesn't reuse stale or improperly mocked clients
+    from previous tests. Each test starts with a fresh provider cache.
+    """
+    from app.bedrock.bedrock_types import AnthropicBedrockProvider, AsyncAnthropicBedrockProvider
+
+    # Clear both sync and async provider caches
+    AsyncAnthropicBedrockProvider._AsyncAnthropicBedrockProvider__clients.clear()
+    AnthropicBedrockProvider._AnthropicBedrockProvider__clients.clear()
+
+    yield
+
+    # Clean up after the test as well
+    AsyncAnthropicBedrockProvider._AsyncAnthropicBedrockProvider__clients.clear()
+    AnthropicBedrockProvider._AnthropicBedrockProvider__clients.clear()
+
+
 @pytest.fixture(name="user_id")
 def user_id():
     return str(uuid4())

@@ -160,6 +160,12 @@ Be explicit and specific when importing from other packages:
 from app.auth.utils import verify_and_parse_uuid
 ```
 
+#### Style Guide Checks (GOV.UK)
+The style guide feature lives in `app/style_guide/` and integrates into chat flows via
+`app/style_guide/service.py`. Rules are defined in `app/style_guide/rule_mapping.json`, with
+deterministic checks in `style_guide_checker.py` and LLM-assisted summaries in the service layer.
+When adjusting rules or behavior, update the relevant tests in `tests/style_guide/`.
+
 ### LLM Configuration
 The system uses multiple Claude models via AWS Bedrock for different purposes:
 - **Chat Response**: `claude-sonnet-4-20250514-v1:0` (highest quality)

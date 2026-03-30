@@ -12,6 +12,7 @@ BEDROCK_API_CONNECT_TIMEOUT_SECS = 3
 class BedrockErrorType(str, Enum):
     INPUT_TOO_LONG = auto()
     BEDROCK_AGENT_EXCEPTION = auto()
+    TIMEOUT = auto()
 
 
 class BedrockError(Exception):

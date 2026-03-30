@@ -110,7 +110,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -n logical --dist loadscope --cov --cov-report=term-missing --junit-xml=test-output/test-output.xml --cov-report xml:test-output/coverage.xml
+          pytest --ignore=scripts/api_tests -n logical --dist loadscope --cov --cov-report=term-missing --junit-xml=test-output/test-output.xml --cov-report xml:test-output/coverage.xml
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: password

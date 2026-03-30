@@ -1,5 +1,8 @@
 __pycache__
 .env
+.env.*
+!.env.local
+!.env.example
 .venv
 _test
 Pipfile
@@ -21,3 +24,15 @@ app/copilot_api.egg-info/*
 psql
 thoughts/
 .claude/
+.coverage
+
+# Local test/debug artifacts from style guide development
+app/style_guide/llm_summary_response.txt
+app/style_guide/test_docs/*_FIXED.txt
+app/style_guide/test_docs/*_SUMMARY.json
+
+# Generated outputs from style guide scripts
+scripts/style_guide/evaluation/outputs/
+scripts/style_guide/golden_dataset/output/
+scripts/style_guide/web_scraper/output/
+data/create_database.sql

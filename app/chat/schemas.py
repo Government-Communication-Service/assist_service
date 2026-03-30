@@ -282,6 +282,9 @@ class SmartTargetsSource(Source): ...
 class AudienceSegmentsSource(Source): ...
 
 
+class StyleGuideSource(Source): ...
+
+
 class Sources(BaseModel):
     """Used in the main message response to provide structured citation information."""
 
@@ -290,3 +293,4 @@ class Sources(BaseModel):
     gov_uk_search_sources: list[GovUkSearchSource] | None = None
     smart_targets_sources: list[SmartTargetsSource] | None = None
     audience_segments_sources: list[AudienceSegmentsSource] | None = None
+    style_guide_sources: list[StyleGuideSource] | None = None

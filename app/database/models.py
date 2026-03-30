@@ -277,7 +277,11 @@ class Theme(Base):
     # This is to avoid a situation where themes / use cases are shown in a random order on the frontend.
 
     def client_response(self):
-        return super().client_response({"title": self.title, "subtitle": self.subtitle, "position": self.position})
+        return super().client_response({
+            "title": self.title,
+            "subtitle": self.subtitle,
+            "position": self.position,
+        })
 
     def __str__(self):
         return f"title: {self.title}; subtitle: {self.subtitle}; position: {self.position}"

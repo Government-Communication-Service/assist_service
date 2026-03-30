@@ -33,7 +33,7 @@ dependencies = {file = ["requirements.txt"]}
 
 [tool.ruff]
 line-length = 120
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.params.Depends", "fastapi.Query", "fastapi.params.Query"]
@@ -62,3 +62,4 @@ line-ending = "auto"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+norecursedirs = ["scripts/api_tests"]

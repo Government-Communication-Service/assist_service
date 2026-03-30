@@ -80,6 +80,7 @@ async def test_delete_expired_documents_when_no_expired_documents_found(
     Asserts:
         No document, chunks and opensearch documents are deleted.
     """
+    caplog.set_level(logging.INFO)
     # trigger document deletion process
     await _delete_expired_files()
 

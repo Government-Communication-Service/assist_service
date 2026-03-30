@@ -669,7 +669,12 @@ class DbOperations:
                 # Revive the existing record by setting deleted_at to None
                 # use_case.deleted_at = None
                 # stmt = update(UseCase).where(UseCase.id == use_case.id).values(deleted_at=use_case.deleted_at)
-                stmt = update(UseCase).where(UseCase.id == use_case.id).values(deleted_at=None).returning(UseCase)
+                stmt = (
+                    update(UseCase)
+                    .where(UseCase.id == use_case.id)
+                    .values(deleted_at=None)
+                    .returning(UseCase)
+                )
                 use_case = await LogsHandler.with_logging(Action.DB_REVIVE_THEME, db_session.execute(stmt))
                 return use_case.scalars().first()
         else:
@@ -1434,3 +1439,75 @@ class DbOperations:
         gov_uk_search_result = response.scalars().unique().one()
 
         return gov_uk_search_result
+
+    @staticmethod
+    async def get_expired_chunks_for_cleanup(db_session: AsyncSession) -> List[Tuple[int, int, str]]:
+        """
+        SELECT expired document chunks.
+
+        Returns:
+            List of tuples: (document_user_mapping_id, document_id, chunk_id, id_opensearch)
+        """
+        current_date = datetime.now()
+
+        chunks_query = (
+            select(DocumentChunk.id, DocumentChunk.document_id, DocumentChunk.id_opensearch)
+            .distinct()
+            .join(DocumentUserMapping, DocumentUserMapping.document_id == DocumentChunk.document_id)
+            .where(DocumentUserMapping.expired_at < current_date)
+            .where(DocumentUserMapping.deleted_at.is_(None))
+            .where(DocumentChunk.deleted_at.is_(None))
+            .where(DocumentChunk.id_opensearch.isnot(None))
+        )
+        result = await db_session.execute(chunks_query)
+        chunks = result.all()
+
+        return [(chunk.id, chunk.document_id, chunk.id_opensearch) for chunk in chunks]
+
+    @staticmethod
+    async def mark_chunks_as_deleted(
+        db_session: AsyncSession, chunk_ids: List[int], batch_size: int = 1000
+    ) -> None:
+        """
+        Soft-delete specific chunks by their ids.
+        """
+        if not chunk_ids:
+            return
+
+        current_date = datetime.now()
+        for i in range(0, len(chunk_ids), batch_size):
+            batch = chunk_ids[i : i + batch_size]
+            await db_session.execute(
+                update(DocumentChunk)
+                .where(DocumentChunk.id.in_(batch))
+                .values(deleted_at=current_date)
+            )
+
+    @staticmethod
+    async def mark_documents_as_deleted(
+        db_session: AsyncSession, document_ids: List[int], batch_size: int = 1000
+    ) -> None:
+        """
+        Soft-delete documents and their document user mappings.
+        """
+        if not document_ids:
+            return
+
+        current_date = datetime.now()
+        unique_doc_ids = list(set(document_ids))
+
+        for i in range(0, len(unique_doc_ids), batch_size):
+            batch = unique_doc_ids[i : i + batch_size]
+            # Mark user mappings deleted
+            await db_session.execute(
+                update(DocumentUserMapping)
+                .where(DocumentUserMapping.document_id.in_(batch))
+                .where(DocumentUserMapping.deleted_at.is_(None))
+                .values(deleted_at=current_date)
+            )
+            # Mark documents deleted
+            await db_session.execute(
+                update(Document)
+                .where(Document.id.in_(batch))
+                .values(deleted_at=current_date)
+            )

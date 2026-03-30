@@ -32,7 +32,7 @@ async def success_response():
 
 
 # CRUD operations on themes
-async def create_theme(db_session: AsyncSession, theme_input: ThemeInput) -> ThemeResponse:
+async def create_theme(db_session: AsyncSession, theme_input: ThemeInput) -> ThemeResponse | Response:
     """
     Creates a new theme or revives a soft-deleted theme with the given details.
 
@@ -52,10 +52,12 @@ async def create_theme(db_session: AsyncSession, theme_input: ThemeInput) -> The
     theme = await DbOperations.theme_create_or_revive(db_session=db_session, theme_input=theme_input)
     logger.info(f"Theme created or revived with title: {theme_input.title}")
     theme_read = await DbOperations.get_theme(db_session=db_session, theme_uuid=theme.uuid)
-    if theme:
-        return ThemeResponse(**theme_read.client_response())
-    logger.info(f"Failed to created or revive theme with title: {theme_input.title}")
-    return Response(status_code=HTTP_404_NOT_FOUND)
+    if theme_read is None:
+        logger.info(f"Failed to created or revive theme with title: {theme_input.title}")
+        return Response(status_code=HTTP_404_NOT_FOUND)
+
+    logger.info(f"Fetched theme after creation/revival with UUID: {theme_read.uuid}")
+    return ThemeResponse(**theme_read.client_response())
 
 
 async def fetch_theme(db_session: AsyncSession, theme_uuid: UUID) -> ThemeResponse | Response:
@@ -75,12 +77,11 @@ async def fetch_theme(db_session: AsyncSession, theme_uuid: UUID) -> ThemeRespon
     if theme is None:
         logger.info(f"Fail to fetch theme with UUID: {theme_uuid}")
         return Response(status_code=HTTP_404_NOT_FOUND)
-
     logger.info(f"Fetched theme with UUID: {theme_uuid}")
     return ThemeResponse(**theme.client_response())
 
 
-async def update_theme(db_session: AsyncSession, theme_uuid: UUID, theme_input: ThemeInput) -> ThemeResponse:
+async def update_theme(db_session: AsyncSession, theme_uuid: UUID, theme_input: ThemeInput) -> ThemeResponse | Response:
     """
     Updates an existing theme's details.
 
@@ -93,17 +94,17 @@ async def update_theme(db_session: AsyncSession, theme_uuid: UUID, theme_input: 
             - position: New display position
 
     Returns:
-        ThemeResponse containing the updated theme details
-
-    Raises:
-        DatabaseError: If theme not found
+        ThemeResponse containing the updated theme details or 404 if theme not found
     """
     theme = await DbOperations.theme_update(db_session=db_session, theme_uuid=theme_uuid, theme_input=theme_input)
+    if theme is None:
+        logger.info(f"Theme not found with UUID: {theme_uuid}")
+        return Response(status_code=HTTP_404_NOT_FOUND)
     logger.info(f"Updated theme with UUID: {theme_uuid}")
     return ThemeResponse(**theme.client_response())
 
 
-async def soft_delete_theme(db_session: AsyncSession, theme_uuid: UUID) -> SuccessResponse:
+async def soft_delete_theme(db_session: AsyncSession, theme_uuid: UUID) -> SuccessResponse | Response:
     """
     Marks a theme as deleted without removing it from the database.
 
@@ -112,11 +113,12 @@ async def soft_delete_theme(db_session: AsyncSession, theme_uuid: UUID) -> Succe
         theme_uuid: UUID of the theme to soft delete
 
     Returns:
-        SuccessResponse indicating successful deletion
-
-    Raises:
-        DatabaseError: If theme not found
+        SuccessResponse indicating successful deletion or 404 if theme not found
     """
+    theme = await DbOperations.get_theme(db_session=db_session, theme_uuid=theme_uuid, include_deleted_records=False)
+    if theme is None:
+        logger.info(f"Theme not found with UUID: {theme_uuid}")
+        return Response(status_code=HTTP_404_NOT_FOUND)
     await DbOperations.theme_soft_delete_by_uuid(db_session=db_session, theme_uuid=theme_uuid)
     logger.info(f"Soft deleted theme with UUID: {theme_uuid}")
     return SuccessResponse()
@@ -252,7 +254,7 @@ async def fetch_use_cases(db_session: AsyncSession, theme_uuid: UUID) -> UseCase
 
 async def update_use_case(
     db_session: AsyncSession, theme_uuid: UUID, use_case_uuid: UUID, use_case_input: UseCaseInputPut
-) -> UseCaseResponse:
+) -> UseCaseResponse | Response:
     """
     Updates an existing use case's details.
 
@@ -267,7 +269,7 @@ async def update_use_case(
             - position: New display position
 
     Returns:
-        UseCaseResponse containing the updated use case details
+        UseCaseResponse containing the updated use case details or 404 if not found
 
     Raises:
         DatabaseError: If use case not found or doesn't belong to theme
@@ -275,7 +277,14 @@ async def update_use_case(
     # Verify that the use case belongs to this theme UUID
 
     use_case = await DbOperations.use_case_get_by_uuid_no_theme(db_session=db_session, use_case_uuid=use_case_uuid)
+    if use_case is None:
+        logger.info(f"Use case not found with UUID: {use_case_uuid}")
+        return Response(status_code=HTTP_404_NOT_FOUND)
+
     theme = await DbOperations.get_theme(db_session=db_session, theme_uuid=theme_uuid)
+    if theme is None:
+        logger.info(f"Theme not found with UUID: {theme_uuid}")
+        return Response(status_code=HTTP_404_NOT_FOUND)
 
     if use_case.theme_id != theme.id:
         raise DatabaseError(
@@ -284,17 +293,26 @@ async def update_use_case(
         )
 
     theme_to_update_to = await DbOperations.get_theme(db_session=db_session, theme_uuid=use_case_input.theme_uuid)
+    if theme_to_update_to is None:
+        logger.info(f"Target theme not found with UUID: {use_case_input.theme_uuid}")
+        return Response(status_code=HTTP_404_NOT_FOUND)
 
     # db_session: AsyncSession, theme: Theme, use_case_uuid: UUID, use_case_input: UseCaseInputPut
-    use_case = await DbOperations.use_case_update_by_uuid(
+    updated_use_case = await DbOperations.use_case_update_by_uuid(
         db_session=db_session, theme=theme_to_update_to, use_case_uuid=use_case.uuid, use_case_input=use_case_input
     )
 
+    if updated_use_case is None:
+        logger.info(f"Failed to update use case with UUID: {use_case_uuid}")
+        return Response(status_code=HTTP_404_NOT_FOUND)
+
     logger.info(f"Updated use case with UUID: {use_case_uuid}")
-    return UseCaseResponse(**use_case.client_response(), theme_uuid=theme_to_update_to.uuid)
+    return UseCaseResponse(**updated_use_case.client_response(), theme_uuid=theme_to_update_to.uuid)
 
 
-async def soft_delete_use_case(db_session: AsyncSession, theme_uuid: UUID, use_case_uuid: UUID) -> SuccessResponse:
+async def soft_delete_use_case(
+    db_session: AsyncSession, theme_uuid: UUID, use_case_uuid: UUID
+) -> SuccessResponse | Response:
     """
     Marks a use case as deleted without removing it from the database.
 
@@ -303,15 +321,22 @@ async def soft_delete_use_case(db_session: AsyncSession, theme_uuid: UUID, use_c
         use_case_uuid: UUID of the use case to soft delete
 
     Returns:
-        SuccessResponse indicating successful deletion
+        SuccessResponse indicating successful deletion or 404 if use case/theme not found
 
     Raises:
-        DatabaseError: If use case not found or doesn't belong to theme
+        DatabaseError: If use case doesn't belong to theme
     """
     # Verify that the use case belongs to this theme UUID
 
     use_case = await DbOperations.use_case_get_by_uuid_no_theme(db_session=db_session, use_case_uuid=use_case_uuid)
+    if use_case is None:
+        logger.info(f"Use case not found with UUID: {use_case_uuid}")
+        return Response(status_code=HTTP_404_NOT_FOUND)
+
     theme = await DbOperations.get_theme(db_session=db_session, theme_uuid=theme_uuid)
+    if theme is None:
+        logger.info(f"Theme not found with UUID: {theme_uuid}")
+        return Response(status_code=HTTP_404_NOT_FOUND)
 
     if use_case.theme_id != theme.id:
         raise DatabaseError(

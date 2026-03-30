@@ -7,7 +7,9 @@ from httpx import AsyncClient, HTTPError, HTTPStatusError
 
 from app.bedrock.bedrock import BedrockHandler, RunMode
 from app.chat.utils import prepare_message_objects_for_llm
+from app.config import LLM_SMART_TARGETS_MODEL
 from app.database.models import Message
+from app.database.table import LLMTable
 from app.smart_targets.constants import (
     URL_SMART_TARGETS_FILTERS,
     URL_SMART_TARGETS_HEALTHCHECK,
@@ -39,7 +41,8 @@ logger = getLogger(__name__)
 class SmartTargetsService:
     def __init__(self):
         self.async_client: AsyncClient = AsyncClient()
-        self.bedrock_handler: BedrockHandler = BedrockHandler(mode=RunMode.ASYNC)
+        llm = LLMTable().get_by_model(LLM_SMART_TARGETS_MODEL)
+        self.bedrock_handler: BedrockHandler = BedrockHandler(llm=llm, mode=RunMode.ASYNC)
 
     async def verify_connection(self):
         try:

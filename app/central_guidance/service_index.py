@@ -53,6 +53,20 @@ async def sync_central_index(session: AsyncSession) -> bool:
     try:
         opensearch_client.indices.create(index=CENTRAL_RAG_INDEX_NAME)
         logger.debug(f"Created index: {CENTRAL_RAG_INDEX_NAME}")
+        # OpenSearch can take a short moment to apply cluster state.
+        # Wait until the index is available before attempting to index documents.
+        try:
+            opensearch_client.cluster.health(
+                index=CENTRAL_RAG_INDEX_NAME,
+                wait_for_status="yellow",
+                request_timeout=30,
+            )
+        except Exception as e:
+            logger.warning(
+                "Index %s created but health check did not confirm readiness: %s",
+                CENTRAL_RAG_INDEX_NAME,
+                str(e),
+            )
     except Exception as e:
         logger.error(f"Failed to create index {CENTRAL_RAG_INDEX_NAME}: {str(e)}")
         raise
@@ -100,7 +114,25 @@ async def sync_central_index(session: AsyncSession) -> bool:
 
             try:
                 # Index in OpenSearch
-                response = opensearch_client.index(index=CENTRAL_RAG_INDEX_NAME, body=record.to_opensearch_dict())
+                try:
+                    response = opensearch_client.index(index=CENTRAL_RAG_INDEX_NAME, body=record.to_opensearch_dict())
+                except NotFoundError:
+                    # In rare cases (startup/concurrent updates), the index may not be visible yet.
+                    # Recreate and retry once.
+                    logger.warning(
+                        "OpenSearch index %s not found while indexing; recreating and retrying once",
+                        CENTRAL_RAG_INDEX_NAME,
+                    )
+                    opensearch_client.indices.create(index=CENTRAL_RAG_INDEX_NAME)
+                    try:
+                        opensearch_client.cluster.health(
+                            index=CENTRAL_RAG_INDEX_NAME,
+                            wait_for_status="yellow",
+                            request_timeout=30,
+                        )
+                    except Exception:
+                        pass
+                    response = opensearch_client.index(index=CENTRAL_RAG_INDEX_NAME, body=record.to_opensearch_dict())
 
                 # Update PostgreSQL with new OpenSearch ID
                 chunk.id_opensearch = response["_id"]

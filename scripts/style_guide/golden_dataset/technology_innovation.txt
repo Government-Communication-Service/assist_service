@@ -1,0 +1,9 @@
+Technology and Innovation
+
+The R&D (Research & Development) department has developed innovative solutions using A.I. and M.L. technologies. The NAO reviewed the project and found it to be highly effective.
+
+The system can analyze large datasets, optimize workflows, and provide real-time insights, ie. it offers comprehensive business intelligence capabilities that will transform decision-making processes going forward.
+
+Development costs totaled £1500000 over three years. The project runs on servers consuming 500KB-900KB of memory per transaction.
+
+The agile development methodology was used throughout the project lifecycle; teams collaborated across multiple locations; the results demonstrate the value of this approach.

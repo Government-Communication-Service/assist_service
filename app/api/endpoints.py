@@ -32,6 +32,8 @@ class ENDPOINTS:
     USER_GET_CHATS = "/chats/users/{user_uuid}/chats"
     USER_DOCUMENTS = "/users/{user_uuid}/documents"
     USER_DOCUMENT = "/users/{user_uuid}/documents/{document_uuid}"
+    # Add new endpoint for cleaning up expired documents
+    DOCUMENT_CLEANUP_EXPIRED = "/documents/expired"
 
     #
     USER_PROMPTS = "/users/{user_uuid}/prompts"
@@ -52,6 +54,7 @@ class ENDPOINTS:
 
     # Add new endpoint for cleaning up expired message content
     CHAT_CLEANUP_EXPIRED_CONTENT = "/chats/messages/content/expired"
+
 
     def build_url(self, pattern: str, **kwargs) -> str:
         """Builds a URL from a pattern and keyword arguments to replace placeholders."""

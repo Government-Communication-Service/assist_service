@@ -16,7 +16,9 @@ from unstructured.partition.auto import partition
 from unstructured.partition.pdf import partition_pdf
 from unstructured.partition.ppt import partition_ppt
 from unstructured.partition.pptx import partition_pptx
+from unstructured.partition.xlsx import partition_xlsx
 
+from app.config import DOCUMENT_PROCESSING_TIMEOUT_SECONDS
 from app.database.models import AuthSession, Document, DocumentChunk, DocumentUserMapping, SearchIndex, User
 from app.database.table import async_db_session
 from app.document_upload.constants import PERSONAL_DOCUMENTS_INDEX_NAME
@@ -44,7 +46,7 @@ class FileInfo:
     content: BinaryIO
 
 
-_SUPPORTED_TYPES = [".txt", ".pdf", ".docx", ".csv", ".pptx", ".ppt", ".odt", ".doc", ".xlsx", ".xls", ".html", ".htm"]
+_SUPPORTED_TYPES = [".txt", ".pdf", ".docx", ".csv", ".pptx", ".ppt", ".odt", ".doc", ".xlsx", ".html", ".htm"]
 
 _UTF8_INVALID_CHARS_PATTERN = re.compile(
     r"[\x80-\x9F]|"  # Control characters
@@ -57,7 +59,7 @@ class PersonalDocumentParser:
     Parses file document provided and saves it in the database and opensearch personal_document_uploads index.
     """
 
-    _PROCESSING_TIME_IN_SECS = 118
+    _PROCESSING_TIME_IN_SECS = DOCUMENT_PROCESSING_TIMEOUT_SECONDS
     """
     The maximum time in seconds for processing uploaded file,
     set lower than network timeout value, which is 120 seconds.
@@ -93,6 +95,10 @@ class PersonalDocumentParser:
             )
         if file_extension == ".ppt":
             return partition_ppt(
+                file=file_info.content, metadata_filename=file_info.filename, **self._PARTITION_DEFAULT_PARAMETERS
+            )
+        if file_extension == ".xlsx":
+            return partition_xlsx(
                 file=file_info.content, metadata_filename=file_info.filename, **self._PARTITION_DEFAULT_PARAMETERS
             )
         return partition(
