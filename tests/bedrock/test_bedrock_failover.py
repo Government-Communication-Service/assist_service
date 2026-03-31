@@ -271,7 +271,8 @@ async def test_aws_region_failover_for_llm_invoke_async_success(mock_invoke, cap
 
 
 @patch("app.bedrock.bedrock.BedrockHandler._stream")
-async def test_aws_region_failover_llm_stream_success(mock_bedrock_stream, caplog):
+async def test_aws_region_failover_llm_stream_success(mock_bedrock_stream, caplog, monkeypatch):
+    monkeypatch.setattr("app.bedrock.retry.STREAM_FIRST_CHUNK_TIMEOUT", 60.0)
     bedrock = BedrockHandler(mode=RunMode.ASYNC)
     messages = [{"role": "user", "content": "hello"}]
     system_message = "Respond only with Hi"
