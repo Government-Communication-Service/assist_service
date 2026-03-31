@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bmdb.exceptions import GetBenchmarkDatabaseEditionError
 from app.bmdb.services import BmdbEditionService
+from app.config import SMART_TARGETS_SERVICE_DISABLED
 from app.smart_targets.exceptions import GetSmartTargetsMetricsError
 from app.smart_targets.service import SmartTargetsService
 
@@ -37,37 +38,41 @@ async def get_response_system_prompt(db_session: AsyncSession) -> str:
         ORDER BY position
     """)
 
-    # Get smart targets metrics
-    try:
-        smart_targets_metrics_prompt_segment = (
-            " The metrics available in the Smart Targets tool are "
-            + f"{list(await SmartTargetsService().get_available_metrics())}"
-        )
-    except GetSmartTargetsMetricsError as e:
-        logger.error(
-            "Failed to get Smart Targets metrics when building the system prompt; "
-            + f"continuing to build system prompt without metric information. Error: {e}"
-        )
-        smart_targets_metrics_prompt_segment = ""
+    # Get smart targets metrics (only if Smart Targets is enabled)
+    smart_targets_metrics_prompt_segment = ""
+    smart_targets_edition_prompt_segment = ""
 
-    # Get Smart Targets Edition information
-    try:
-        edition = await BmdbEditionService.get_latest_edition()
-        smart_targets_edition_prompt_segment = (
-            f" The latest edition of the Benchmark Database is {edition.version_number}, received at {edition.date_received}."
-            f" The latest campaign in the database finished on {edition.latest_campaign_end_date}."
-            f" The earliest campaign in the database finished on {edition.earliest_campaign_end_date}."
-            f" The number of campaigns in the database is {edition.n_campaigns}."
-            f" The max campaign media spend in the database is {edition.max_media_spend}."
-            f" The min campaign media spend in the database is {edition.min_media_spend}."
-        )
+    if not SMART_TARGETS_SERVICE_DISABLED:
+        try:
+            smart_targets_metrics_prompt_segment = (
+                " The metrics available in the Smart Targets tool are "
+                + f"{list(await SmartTargetsService().get_available_metrics())}"
+            )
+        except GetSmartTargetsMetricsError as e:
+            logger.error(
+                "Failed to get Smart Targets metrics when building the system prompt; "
+                + f"continuing to build system prompt without metric information. Error: {e}"
+            )
+            smart_targets_metrics_prompt_segment = ""
 
-    except GetBenchmarkDatabaseEditionError as e:
-        logger.error(
-            "Failed to get Smart Targets edition when building the system prompt; "
-            + f"continuing to build system prompt without metric information. Error: {e}"
-        )
-        smart_targets_edition_prompt_segment = ""
+        # Get Smart Targets Edition information
+        try:
+            edition = await BmdbEditionService.get_latest_edition()
+            smart_targets_edition_prompt_segment = (
+                f" The latest edition of the Benchmark Database is {edition.version_number}, received at {edition.date_received}."
+                f" The latest campaign in the database finished on {edition.latest_campaign_end_date}."
+                f" The earliest campaign in the database finished on {edition.earliest_campaign_end_date}."
+                f" The number of campaigns in the database is {edition.n_campaigns}."
+                f" The max campaign media spend in the database is {edition.max_media_spend}."
+                f" The min campaign media spend in the database is {edition.min_media_spend}."
+            )
+
+        except GetBenchmarkDatabaseEditionError as e:
+            logger.error(
+                "Failed to get Smart Targets edition when building the system prompt; "
+                + f"continuing to build system prompt without metric information. Error: {e}"
+            )
+            smart_targets_edition_prompt_segment = ""
 
     result = await db_session.execute(theme_query)
     themes = result.fetchall()

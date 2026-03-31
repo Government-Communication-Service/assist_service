@@ -58,6 +58,7 @@ from app.compaction.service import trigger_compaction_if_needed
 from app.config import (
     LLM_CHAT_RESPONSE_MODEL,
     LLM_CHAT_TITLE_MODEL,
+    SMART_TARGETS_SERVICE_DISABLED,
 )
 from app.database.db_operations import DbOperations
 from app.database.models import (
@@ -719,9 +720,9 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         search_uploaded_documents_task = asyncio.create_task(search_uploaded_documents(rag_request, m_user, db_session))
         tasks.append(search_uploaded_documents_task)
 
-    # Condition for using Smart Targets
+    # Condition for using Smart Targets (only if enabled globally and in the request)
     smart_targets_task = None
-    if input_data.use_smart_targets:
+    if not SMART_TARGETS_SERVICE_DISABLED and input_data.use_smart_targets:
         smart_targets_task = asyncio.create_task(
             SmartTargetsService().use_smart_targets_tool(messages=all_messages_pre_retrieval)
         )

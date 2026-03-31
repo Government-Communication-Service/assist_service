@@ -1,5 +1,5 @@
 import logging
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
 import pytest
@@ -212,3 +212,91 @@ def test_nested_source_objects_round_trip():
     # Verify the round-trip preserves all fields
     json_str_2 = deserialized.model_dump_json(exclude_none=True)
     assert json_str == json_str_2
+
+
+# Tests for Smart Targets disable functionality
+
+@pytest.mark.asyncio
+async def test_smart_targets_disabled_skips_services():
+    """Test that services are not called when Smart Targets is disabled."""
+    # Use context managers for clarity and to avoid pytest patch parameter issues in CI
+    with patch("app.chat.actions.get_response_system_prompt.SMART_TARGETS_SERVICE_DISABLED", True):
+        with patch("app.chat.actions.get_response_system_prompt.SmartTargetsService") as mock_smart:
+            with patch("app.chat.actions.get_response_system_prompt.BmdbEditionService") as mock_bmdb:
+                async with async_db_session() as db_session:
+                    response = await get_response_system_prompt(db_session)
+
+    mock_smart.return_value.get_available_metrics.assert_not_called()
+    mock_bmdb.get_latest_edition.assert_not_called()
+    assert isinstance(response, str)
+    assert len(response) > 0
+
+
+@pytest.mark.asyncio
+async def test_smart_targets_enabled_calls_services():
+    """Test that services are called when Smart Targets is enabled."""
+    with patch("app.chat.actions.get_response_system_prompt.SMART_TARGETS_SERVICE_DISABLED", False):
+        with patch("app.chat.actions.get_response_system_prompt.SmartTargetsService") as mock_smart:
+            with patch("app.chat.actions.get_response_system_prompt.BmdbEditionService") as mock_bmdb:
+                mock_smart.return_value.get_available_metrics = AsyncMock(return_value=["metric1", "metric2"])
+
+                mock_edition = AsyncMock()
+                mock_edition.version_number = "1.0"
+                mock_edition.date_received = "2026-03-01"
+                mock_edition.latest_campaign_end_date = "2026-02-28"
+                mock_edition.earliest_campaign_end_date = "2024-01-01"
+                mock_edition.n_campaigns = 50
+                mock_edition.max_media_spend = 100000
+                mock_edition.min_media_spend = 1000
+                mock_bmdb.get_latest_edition = AsyncMock(return_value=mock_edition)
+
+                async with async_db_session() as db_session:
+                    response = await get_response_system_prompt(db_session)
+
+    mock_smart.return_value.get_available_metrics.assert_called_once()
+    mock_bmdb.get_latest_edition.assert_called_once()
+    assert "Smart Targets" in response
+    assert "metric1" in response
+
+
+@pytest.mark.asyncio
+async def test_smart_targets_error_continues_gracefully():
+    """Test that system prompt builds even if Smart Targets service fails."""
+    from app.smart_targets.exceptions import GetSmartTargetsMetricsError
+
+    with patch("app.chat.actions.get_response_system_prompt.SMART_TARGETS_SERVICE_DISABLED", False):
+        with patch("app.chat.actions.get_response_system_prompt.SmartTargetsService") as mock_smart:
+            with patch("app.chat.actions.get_response_system_prompt.BmdbEditionService") as mock_bmdb:
+                mock_smart.return_value.get_available_metrics = AsyncMock(
+                    side_effect=GetSmartTargetsMetricsError("Connection failed")
+                )
+
+                mock_edition = AsyncMock()
+                mock_edition.version_number = "1.0"
+                mock_bmdb.get_latest_edition = AsyncMock(return_value=mock_edition)
+
+                async with async_db_session() as db_session:
+                    response = await get_response_system_prompt(db_session)
+
+    assert isinstance(response, str)
+    assert len(response) > 0
+
+
+@pytest.mark.asyncio
+async def test_bmdb_error_continues_gracefully():
+    """Test that system prompt builds even if BMDB service fails."""
+    from app.bmdb.exceptions import GetBenchmarkDatabaseEditionError
+
+    with patch("app.chat.actions.get_response_system_prompt.SMART_TARGETS_SERVICE_DISABLED", False):
+        with patch("app.chat.actions.get_response_system_prompt.SmartTargetsService") as mock_smart:
+            with patch("app.chat.actions.get_response_system_prompt.BmdbEditionService") as mock_bmdb:
+                mock_smart.return_value.get_available_metrics = AsyncMock(return_value=["metric1"])
+                mock_bmdb.get_latest_edition = AsyncMock(
+                    side_effect=GetBenchmarkDatabaseEditionError("API unavailable")
+                )
+
+                async with async_db_session() as db_session:
+                    response = await get_response_system_prompt(db_session)
+
+    assert isinstance(response, str)
+    assert "metric1" in response
