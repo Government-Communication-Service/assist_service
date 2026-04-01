@@ -63,7 +63,7 @@ LLM_CHAT_TITLE_MODEL = "anthropic.claude-haiku-4-5-20251001-v1:0"
 
 # This LLM determines if the user query should be enriched
 # by the central guidance, or not.
-LLM_INDEX_ROUTER = "anthropic.claude-3-5-haiku-20241022-v1:0"
+LLM_INDEX_ROUTER = "anthropic.claude-haiku-4-5-20251001-v1:0"
 
 # This LLM takes a user's message and returns a set of OpenSearch queries
 LLM_OPENSEARCH_QUERY_GENERATOR = "anthropic.claude-sonnet-4-5-20250929-v1:0"
