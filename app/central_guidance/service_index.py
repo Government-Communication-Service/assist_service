@@ -225,9 +225,17 @@ async def load_chunks_to_central_rag(
 
 
 async def list_chunks_in_central_rag(
-    db_session: AsyncSession, show_deleted_chunks: bool = False
+    db_session: AsyncSession,
+    show_deleted_chunks: bool = False,
+    chunk_title: str | None = None,
+    doc_title: str | None = None,
 ) -> List[DocumentChunk]:
-    """Lists all active DocumentChunk instances in the PostgreSQL database."""
+    """Lists all active DocumentChunk instances in the PostgreSQL database.
+
+    Args:
+        chunk_title: Optional case-insensitive substring filter on chunk name.
+        doc_title: Optional case-insensitive substring filter on document name.
+    """
 
     # Get all central documents first
     central_documents = await DbOperations.get_central_documents(db_session)
@@ -260,6 +268,13 @@ async def list_chunks_in_central_rag(
         )
         for chunk in chunks
     ]
+
+    if chunk_title:
+        chunks_formatted = [c for c in chunks_formatted if chunk_title.lower() in c.chunk_name.lower()]
+    if doc_title:
+        chunks_formatted = [
+            c for c in chunks_formatted if c.document_name and doc_title.lower() in c.document_name.lower()
+        ]
 
     return ListDocumentChunkResponse(document_chunks=chunks_formatted)
 

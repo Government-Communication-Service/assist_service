@@ -1,8 +1,9 @@
 # ruff: noqa: B008
 
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, Query
 
 from app.api.endpoints import ENDPOINTS
 from app.auth.verify_service import verify_auth_token
@@ -20,10 +21,17 @@ router = APIRouter()
 
 
 @router.get(ENDPOINTS.CENTRAL_RAG_DOCUMENT_CHUNKS, dependencies=[Depends(verify_auth_token)])
-async def get_chunks() -> ListDocumentChunkResponse:
+async def get_chunks(
+    chunk_title: Annotated[
+        str | None, Query(description="Filter chunks by case-insensitive substring match on chunk name")
+    ] = None,
+    doc_title: Annotated[
+        str | None, Query(description="Filter chunks by case-insensitive substring match on document name")
+    ] = None,
+) -> ListDocumentChunkResponse:
     """Lists all the document chunks stored in the PostgreSQL database."""
     async with async_db_session() as db_session:
-        return await list_chunks_in_central_rag(db_session)
+        return await list_chunks_in_central_rag(db_session, chunk_title=chunk_title, doc_title=doc_title)
 
 
 @router.post(

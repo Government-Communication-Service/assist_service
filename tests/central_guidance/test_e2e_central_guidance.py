@@ -71,6 +71,106 @@ async def test_list_document_chunks(async_client, async_http_requester, db_sessi
 
 
 @pytest.mark.asyncio
+async def test_list_document_chunks_filtered_by_chunk_title(async_client, async_http_requester, db_session):
+    """
+    Uploads two documents with distinct chunk names, then verifies that ?chunk_title=
+    returns only the chunks whose names contain the filter string (case-insensitive),
+    and that an unmatched filter returns an empty list.
+    """
+    doc_name = "Test chunk_title filter doc"
+    doc_url = "https://gcs.civilservice.gov.uk/test-chunk-title-filter"
+    base = [
+        {
+            "document_name": doc_name,
+            "document_url": doc_url,
+            "document_description": "desc",
+            "chunk_name": "AlphaChunk unique",
+            "chunk_content": "content alpha",
+        },
+        {
+            "document_name": doc_name,
+            "document_url": doc_url,
+            "document_description": "desc",
+            "chunk_name": "BetaChunk unique",
+            "chunk_content": "content beta",
+        },
+    ]
+    await async_http_requester(
+        "POST to /v1/central-rag/document-chunks", async_client.post, url=ENDPOINTS().document_chunks(), json=base
+    )
+
+    # Filter by 'alphachunk' — case-insensitive
+    response = await async_http_requester(
+        "GET with chunk_title filter",
+        async_client.get,
+        url=ENDPOINTS().document_chunks(),
+        params={"chunk_title": "alphachunk"},
+    )
+    returned_names = [c["chunk_name"] for c in response["document_chunks"]]
+    assert "AlphaChunk unique" in returned_names
+    assert "BetaChunk unique" not in returned_names
+
+    # Non-matching filter returns empty
+    response = await async_http_requester(
+        "GET with non-matching chunk_title",
+        async_client.get,
+        url=ENDPOINTS().document_chunks(),
+        params={"chunk_title": "zzz_no_match_zzz"},
+    )
+    assert response["document_chunks"] == []
+
+
+@pytest.mark.asyncio
+async def test_list_document_chunks_filtered_by_doc_title(async_client, async_http_requester, db_session):
+    """
+    Uploads two documents with distinct names, then verifies that ?doc_title=
+    returns only chunks belonging to the matching document (case-insensitive),
+    and that an unmatched filter returns an empty list.
+    """
+    unique = "DocTitleFilterUniq"
+    docs = [
+        {
+            "document_name": f"{unique} Alpha Doc",
+            "document_url": "https://gcs.civilservice.gov.uk/test-doc-title-alpha",
+            "document_description": "desc",
+            "chunk_name": "some chunk",
+            "chunk_content": "content",
+        },
+        {
+            "document_name": f"{unique} Beta Doc",
+            "document_url": "https://gcs.civilservice.gov.uk/test-doc-title-beta",
+            "document_description": "desc",
+            "chunk_name": "another chunk",
+            "chunk_content": "content",
+        },
+    ]
+    for doc in docs:
+        await async_http_requester(
+            "POST to /v1/central-rag/document-chunks", async_client.post, url=ENDPOINTS().document_chunks(), json=[doc]
+        )
+
+    # Filter to just the Alpha doc — case-insensitive substring on 'alpha'
+    response = await async_http_requester(
+        "GET with doc_title filter",
+        async_client.get,
+        url=ENDPOINTS().document_chunks(),
+        params={"doc_title": f"{unique} alpha"},
+    )
+    doc_names = {c["document_name"] for c in response["document_chunks"]}
+    assert f"{unique} Alpha Doc" in doc_names
+    assert f"{unique} Beta Doc" not in doc_names
+
+    # Non-matching filter returns empty
+    response = await async_http_requester(
+        "GET with non-matching doc_title",
+        async_client.get,
+        url=ENDPOINTS().document_chunks(),
+        params={"doc_title": "zzz_no_match_zzz"},
+    )
+    assert response["document_chunks"] == []
+
+
+@pytest.mark.asyncio
 async def test_upload_new_document_to_central_rag(
     async_client, async_http_requester, db_session, async_opensearch_client
 ):
