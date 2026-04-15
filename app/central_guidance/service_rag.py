@@ -320,7 +320,9 @@ async def evaluate_chunk_relevance(
     for block in response.content:
         if isinstance(block, ToolUseBlock):
             tool_input = block.input
-            use_chunk = tool_input.get("is_relevant", False)
+            is_relevant_raw = tool_input.get("is_relevant", False)
+            # If the LLM returns a texty 'True'/'False' value here we need to coerce to boolean
+            use_chunk = is_relevant_raw is True or str(is_relevant_raw).lower() == "true"
             reasoning = tool_input.get("reasoning", "No reasoning provided")
             break
 

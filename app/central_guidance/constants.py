@@ -114,8 +114,10 @@ TOOL_CHUNK_RELEVANCE_EVALUATOR = {
             "is_relevant": {
                 "type": "boolean",
                 "description": (
-                    "True if the document chunk contains information relevant to the user's query. "
-                    "False if the chunk is not relevant or useful for answering the user's question. "
+                    "Set to true (JSON boolean) if the document chunk contains information relevant "
+                    "to the user's query. Set to false (JSON boolean) if the chunk is not relevant "
+                    "or useful for answering the user's question. "
+                    "Do not use the strings 'true' or 'false' — use JSON boolean values only."
                 ),
             },
         },
