@@ -8,6 +8,7 @@ _test
 Pipfile
 data/vector_db
 data/postgres
+data/ignored
 *.log
 *.code-workspace
 .idea
