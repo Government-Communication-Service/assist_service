@@ -276,12 +276,22 @@ class Theme(Base):
     )  # The 'position' column is to ensure that the order of records is explicit.
     # This is to avoid a situation where themes / use cases are shown in a random order on the frontend.
 
+    # Banner fields for showing "new" or "updated" banners
+    show_update_banner = Column(Boolean, nullable=False, server_default="false")
+    banner_type = Column(String(20), nullable=True)  # "new" or "updated"
+    banner_until = Column(DateTime, nullable=True)
+
     def client_response(self):
-        return super().client_response({
-            "title": self.title,
-            "subtitle": self.subtitle,
-            "position": self.position,
-        })
+        return super().client_response(
+            {
+                "title": self.title,
+                "subtitle": self.subtitle,
+                "position": self.position,
+                "show_update_banner": self.show_update_banner,
+                "banner_type": self.banner_type,
+                "banner_until": str(self.banner_until) if self.banner_until else None,
+            }
+        )
 
     def __str__(self):
         return f"title: {self.title}; subtitle: {self.subtitle}; position: {self.position}"
@@ -299,6 +309,11 @@ class UseCase(Base):
     )  # The 'position' column is to ensure that the order of records is explicit.
     # This is to avoid a situation where themes / use cases are shown in a random order on the frontend.
 
+    # Banner fields for showing "new" or "updated" banners
+    show_update_banner = Column(Boolean, nullable=False, server_default="false")
+    banner_type = Column(String(20), nullable=True)  # "new" or "updated"
+    banner_until = Column(DateTime, nullable=True)
+
     def client_response(self, theme_uuid=None):
         return super().client_response(
             {
@@ -307,6 +322,9 @@ class UseCase(Base):
                 "instruction": self.instruction,
                 "user_input_form": self.user_input_form,
                 "position": self.position,
+                "show_update_banner": self.show_update_banner,
+                "banner_type": self.banner_type,
+                "banner_until": str(self.banner_until) if self.banner_until else None,
             }
         )
 

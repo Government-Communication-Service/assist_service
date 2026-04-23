@@ -7,7 +7,7 @@ from fastapi import HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 
 from app.request_schemas import RequestModel, RequestStandard
-from app.themes_use_cases.schemas import PrebuiltPrompt
+from app.themes_use_cases.schemas import BannerType, PrebuiltPrompt
 from app.user.schemas import DocumentSchema
 
 
@@ -161,6 +161,9 @@ class ItemTitleResponse(ItemResponse):
 class ThemeResponseData(ItemTitleResponse):
     subtitle: str
     position: Optional[int] = None
+    show_update_banner: bool = False
+    banner_type: Optional[BannerType] = None
+    banner_until: Optional[datetime] = None
 
 
 class UseCaseResponseData(ItemTitleResponse):
@@ -168,6 +171,9 @@ class UseCaseResponseData(ItemTitleResponse):
     instruction: str
     user_input_form: str
     position: Optional[int] = None
+    show_update_banner: bool = False
+    banner_type: Optional[BannerType] = None
+    banner_until: Optional[datetime] = None
 
 
 class ThemeResponse(SuccessResponse, ThemeResponseData):

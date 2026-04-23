@@ -404,7 +404,17 @@ class DbOperations:
             # If an existing record is found, check if it is deleted
             if theme.deleted_at is not None:
                 # Revive the existing record by setting deleted_at to None
-                stmt = update(Theme).where(Theme.id == theme.id).values(deleted_at=None).returning(Theme)
+                stmt = (
+                    update(Theme)
+                    .where(Theme.id == theme.id)
+                    .values(
+                        deleted_at=None,
+                        show_update_banner=theme_input.show_update_banner,
+                        banner_type=theme_input.banner_type,
+                        banner_until=theme_input.banner_until,
+                    )
+                    .returning(Theme)
+                )
                 result = await LogsHandler.with_logging(Action.DB_REVIVE_THEME, db_session.execute(stmt))
                 theme = result.scalars().first()
 
@@ -412,7 +422,14 @@ class DbOperations:
             # If no existing record is found, create a new one
             stmt = (
                 insert(Theme)
-                .values(title=theme_input.title, subtitle=theme_input.subtitle, position=theme_input.position)
+                .values(
+                    title=theme_input.title,
+                    subtitle=theme_input.subtitle,
+                    position=theme_input.position,
+                    show_update_banner=theme_input.show_update_banner,
+                    banner_type=theme_input.banner_type,
+                    banner_until=theme_input.banner_until,
+                )
                 .returning(Theme)
             )
             result = await LogsHandler.with_logging(Action.DB_REVIVE_THEME, db_session.execute(stmt))
@@ -635,7 +652,14 @@ class DbOperations:
         stmt = (
             update(Theme)
             .where(Theme.uuid == theme_uuid)
-            .values(title=theme_input.title, subtitle=theme_input.subtitle, position=theme_input.position)
+            .values(
+                title=theme_input.title,
+                subtitle=theme_input.subtitle,
+                position=theme_input.position,
+                show_update_banner=theme_input.show_update_banner,
+                banner_type=theme_input.banner_type,
+                banner_until=theme_input.banner_until,
+            )
             .returning(Theme)
         )
         result = await LogsHandler.with_logging(Action.DB_REVIVE_THEME, db_session.execute(stmt))
@@ -672,7 +696,12 @@ class DbOperations:
                 stmt = (
                     update(UseCase)
                     .where(UseCase.id == use_case.id)
-                    .values(deleted_at=None)
+                    .values(
+                        deleted_at=None,
+                        show_update_banner=use_case_input.show_update_banner,
+                        banner_type=use_case_input.banner_type,
+                        banner_until=use_case_input.banner_until,
+                    )
                     .returning(UseCase)
                 )
                 use_case = await LogsHandler.with_logging(Action.DB_REVIVE_THEME, db_session.execute(stmt))
@@ -687,6 +716,9 @@ class DbOperations:
                     user_input_form=use_case_input.user_input_form,
                     theme_id=theme.id,
                     position=use_case_input.position,
+                    show_update_banner=use_case_input.show_update_banner,
+                    banner_type=use_case_input.banner_type,
+                    banner_until=use_case_input.banner_until,
                 )
                 .returning(UseCase)
             )
@@ -757,6 +789,9 @@ class DbOperations:
                 instruction=use_case_input.instruction,
                 user_input_form=use_case_input.user_input_form,
                 position=use_case_input.position,
+                show_update_banner=use_case_input.show_update_banner,
+                banner_type=use_case_input.banner_type,
+                banner_until=use_case_input.banner_until,
             )
         )
         _ = await LogsHandler.with_logging(Action.DB_REVIVE_THEME, db_session.execute(stmt))
@@ -1465,9 +1500,7 @@ class DbOperations:
         return [(chunk.id, chunk.document_id, chunk.id_opensearch) for chunk in chunks]
 
     @staticmethod
-    async def mark_chunks_as_deleted(
-        db_session: AsyncSession, chunk_ids: List[int], batch_size: int = 1000
-    ) -> None:
+    async def mark_chunks_as_deleted(db_session: AsyncSession, chunk_ids: List[int], batch_size: int = 1000) -> None:
         """
         Soft-delete specific chunks by their ids.
         """
@@ -1478,9 +1511,7 @@ class DbOperations:
         for i in range(0, len(chunk_ids), batch_size):
             batch = chunk_ids[i : i + batch_size]
             await db_session.execute(
-                update(DocumentChunk)
-                .where(DocumentChunk.id.in_(batch))
-                .values(deleted_at=current_date)
+                update(DocumentChunk).where(DocumentChunk.id.in_(batch)).values(deleted_at=current_date)
             )
 
     @staticmethod
@@ -1506,8 +1537,4 @@ class DbOperations:
                 .values(deleted_at=current_date)
             )
             # Mark documents deleted
-            await db_session.execute(
-                update(Document)
-                .where(Document.id.in_(batch))
-                .values(deleted_at=current_date)
-            )
+            await db_session.execute(update(Document).where(Document.id.in_(batch)).values(deleted_at=current_date))

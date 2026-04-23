@@ -1,4 +1,5 @@
-from typing import List
+from datetime import datetime
+from typing import List, Optional
 from uuid import UUID
 
 from fastapi.responses import Response
@@ -29,6 +30,84 @@ from app.themes_use_cases.schemas import (
 async def success_response():
     response = SuccessResponse()
     return response
+
+
+async def _propagate_banner_to_theme(
+    db_session: AsyncSession,
+    theme,
+    use_case_banner_type: str,
+    use_case_banner_until: Optional[datetime],
+) -> None:
+    """
+    Propagate a use case banner to its parent theme.
+
+    Rules:
+    - Theme has no banner → set it
+    - Theme has 'new' banner, use case has 'updated' → don't override
+    - Theme has 'new' banner, use case has 'new' → only extend expiry
+    - Theme has 'updated' banner → only extend expiry
+    """
+    should_update = False
+    new_banner_type = use_case_banner_type
+    new_banner_until = use_case_banner_until
+
+    if not theme.show_update_banner:
+        # Theme has no banner — propagate everything
+        should_update = True
+        logger.info("Parent theme has no banner, propagating")
+
+    elif theme.banner_type == "new" and use_case_banner_type == "updated":
+        # Don't override "new" with "updated"
+        logger.info("Parent theme has 'new' banner, not overriding with 'updated'")
+        should_update = False
+
+    elif theme.banner_type == "new" and use_case_banner_type == "new":
+        # Both "new" — only extend expiry if new date is later
+        if use_case_banner_until and theme.banner_until and use_case_banner_until > theme.banner_until:
+            should_update = True
+            new_banner_type = "new"
+            new_banner_until = use_case_banner_until
+            logger.info("Extending parent theme 'new' banner expiry")
+        elif use_case_banner_until and not theme.banner_until:
+            should_update = True
+            new_banner_type = "new"
+            new_banner_until = use_case_banner_until
+            logger.info("Setting parent theme 'new' banner expiry")
+        else:
+            logger.info("Parent theme 'new' banner expiry is already later, skipping")
+            should_update = False
+
+    elif theme.banner_type == "updated":
+        # Theme has "updated" — only extend expiry if new date is later
+        if use_case_banner_until and theme.banner_until and use_case_banner_until > theme.banner_until:
+            should_update = True
+            new_banner_type = "updated"
+            new_banner_until = use_case_banner_until
+            logger.info("Extending parent theme 'updated' banner expiry")
+        elif use_case_banner_until and not theme.banner_until:
+            should_update = True
+            new_banner_type = "updated"
+            new_banner_until = use_case_banner_until
+            logger.info("Setting parent theme 'updated' banner expiry")
+        else:
+            logger.info("Parent theme 'updated' banner expiry is already later, skipping")
+            should_update = False
+
+    if should_update:
+        banner_theme_input = ThemeInput(
+            title=theme.title,
+            subtitle=theme.subtitle,
+            position=theme.position,
+            show_update_banner=True,
+            banner_type=new_banner_type,
+            banner_until=new_banner_until,
+        )
+        await DbOperations.theme_update(
+            db_session=db_session,
+            theme_uuid=theme.uuid,
+            theme_input=banner_theme_input,
+        )
+        logger.info(f"Propagated banner to parent theme UUID: {theme.uuid}")
 
 
 # CRUD operations on themes
@@ -167,6 +246,16 @@ async def create_use_case(
     use_case_new = await DbOperations.get_use_case(
         db_session=db_session, theme_uuid=theme_uuid, use_case_uuid=use_case.uuid
     )
+
+    # Propagate banner to parent theme when new use case banner is enabled
+    if use_case_input.show_update_banner:
+        await _propagate_banner_to_theme(
+            db_session=db_session,
+            theme=theme,
+            use_case_banner_type=use_case_input.banner_type,
+            use_case_banner_until=use_case_input.banner_until,
+        )
+
     response = UseCaseResponse(
         theme_uuid=theme.uuid,
         **use_case_new[1].client_response(),
@@ -306,6 +395,15 @@ async def update_use_case(
         logger.info(f"Failed to update use case with UUID: {use_case_uuid}")
         return Response(status_code=HTTP_404_NOT_FOUND)
 
+    # Propagate banner to parent theme when use case banner is enabled
+    if use_case_input.show_update_banner:
+        await _propagate_banner_to_theme(
+            db_session=db_session,
+            theme=theme_to_update_to,
+            use_case_banner_type=use_case_input.banner_type,
+            use_case_banner_until=use_case_input.banner_until,
+        )
+
     logger.info(f"Updated use case with UUID: {use_case_uuid}")
     return UseCaseResponse(**updated_use_case.client_response(), theme_uuid=theme_to_update_to.uuid)
 
@@ -386,6 +484,9 @@ async def upload_prompts_in_bulk(db_session: AsyncSession, prompts: List[Prebuil
             title=prompt.theme_title,
             subtitle=prompt.theme_subtitle,
             position=prompt.theme_position,
+            show_update_banner=prompt.theme_show_update_banner,
+            banner_type=prompt.theme_banner_type,
+            banner_until=prompt.theme_banner_until,
         )
         # theme_input.title = prompt.theme_title
         # theme_input.subtitle = prompt.theme_subtitle
@@ -398,6 +499,9 @@ async def upload_prompts_in_bulk(db_session: AsyncSession, prompts: List[Prebuil
             user_input_form=prompt.use_case_user_input_form,
             theme_id=theme.id,
             position=prompt.use_case_position,
+            show_update_banner=prompt.use_case_show_update_banner,
+            banner_type=prompt.use_case_banner_type,
+            banner_until=prompt.use_case_banner_until,
         )
         await DbOperations.use_case_create_or_revive(
             db_session=db_session, theme_uuid=theme.uuid, use_case_input=use_case_input
@@ -426,10 +530,16 @@ async def fetch_all_prompts(db_session: AsyncSession) -> PrebuiltPromptsResponse
                 theme_title=theme.title,
                 theme_subtitle=theme.subtitle,
                 theme_position=theme.position,
+                theme_show_update_banner=theme.show_update_banner,
+                theme_banner_type=theme.banner_type,
+                theme_banner_until=theme.banner_until,
                 use_case_title=use_case.title,
                 use_case_instruction=use_case.instruction,
                 use_case_user_input_form=use_case.user_input_form,
                 use_case_position=use_case.position,
+                use_case_show_update_banner=use_case.show_update_banner,
+                use_case_banner_type=use_case.banner_type,
+                use_case_banner_until=use_case.banner_until,
             )
             theme_use_cases.append(theme_use_case)
 
