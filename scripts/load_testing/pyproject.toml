@@ -1,0 +1,8 @@
+[project]
+name = "copilot-api-load-testing"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "locust>=2.20.0",
+    "python-dotenv>=1.0.0",
+]
