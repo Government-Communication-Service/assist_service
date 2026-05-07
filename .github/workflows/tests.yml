@@ -49,12 +49,12 @@ jobs:
 
     steps:
       - name: Clone repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           lfs: true
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version-file: .python-version
           cache: "pip"
@@ -124,7 +124,7 @@ jobs:
           AUTH_SECRET_KEY_2: ${{ secrets.AUTH_SECRET_KEY_2 }}
           BUGSNAG_API_KEY: ${{ secrets.BUGSNAG_API_KEY }}
           BUGSNAG_RELEASE_STAGE: copilot-dev-github-actions
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'eu-west-2' }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION_NAME: ${{ secrets.AWS_REGION_NAME }}
@@ -139,7 +139,7 @@ jobs:
           OPENSEARCH_PORT: ${{ secrets.OPENSEARCH_PORT }}
 
       - name: Persist test reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-reports
           path: ./test-output/
