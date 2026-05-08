@@ -11,3 +11,16 @@ updates:
       actions:
         patterns:
           - "*"
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+    target-branch: "dev-main"
+    labels:
+      - dependencies
+      - docker
+    groups:
+      docker:
+        patterns:
+          - "*"
