@@ -17,7 +17,30 @@ jobs:
     name: Run tests
     runs-on: ubuntu-22.04
     env:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: test_db
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      OPENSEARCH_USER: ${{ secrets.OPENSEARCH_USER }}
+      OPENSEARCH_PASSWORD: ${{ secrets.OPENSEARCH_PASSWORD }}
+      OPENSEARCH_HOST: localhost
+      OPENSEARCH_PORT: ${{ secrets.OPENSEARCH_PORT }}
+      OPENSEARCH_DISABLE_SSL: "true"
       OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${{ secrets.OPENSEARCH_INITIAL_ADMIN_PASSWORD }}
+      AUTH_SECRET_KEY: ${{ secrets.AUTH_SECRET_KEY }}
+      AUTH_SECRET_KEY_2: ${{ secrets.AUTH_SECRET_KEY_2 }}
+      BUGSNAG_API_KEY: ${{ secrets.BUGSNAG_API_KEY }}
+      BUGSNAG_RELEASE_STAGE: copilot-dev-github-actions
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'eu-west-2' }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION_NAME: ${{ secrets.AWS_REGION_NAME }}
+      CLOUDWATCH_LOG_GROUP: ${{ secrets.CLOUDWATCH_LOG_GROUP }}
+      CLOUDWATCH_LOG_STREAM: ${{ secrets.CLOUDWATCH_LOG_STREAM }}
+      USE_RAG: ${{ secrets.USE_RAG }}
+      LLM_USE_BEDROCK: "true"
+      SHOW_DETAILED_ERROR_MESSAGES: "true"
 
     services:
       postgres:
@@ -76,12 +99,6 @@ jobs:
         run: |
           cd app/alembic
           alembic upgrade head
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: test_db
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
 
       - name: Wait for OpenSearch to be ready
         run: |
@@ -96,47 +113,10 @@ jobs:
           echo 'Synchronising central RAG...'
           python scripts/sync_opensearch/sync_central_rag.py
           echo 'Synchronisation of central RAG completed'
-        env:
-          OPENSEARCH_USER: ${{ secrets.OPENSEARCH_USER }}
-          OPENSEARCH_PASSWORD: ${{ secrets.OPENSEARCH_PASSWORD }}
-          OPENSEARCH_HOST: localhost
-          OPENSEARCH_PORT: 9200
-          OPENSEARCH_DISABLE_SSL: True
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: test_db
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
 
       - name: Run tests
         run: |
           pytest --ignore=scripts/api_tests -n logical --dist loadscope --cov --cov-report=term-missing --junit-xml=test-output/test-output.xml --cov-report xml:test-output/coverage.xml
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: test_db
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
-          SHOW_DETAILED_ERROR_MESSAGES: True
-          LLM_USE_BEDROCK: True
-          OPENSEARCH_DISABLE_SSL: True
-          AUTH_SECRET_KEY: ${{ secrets.AUTH_SECRET_KEY }}
-          AUTH_SECRET_KEY_2: ${{ secrets.AUTH_SECRET_KEY_2 }}
-          BUGSNAG_API_KEY: ${{ secrets.BUGSNAG_API_KEY }}
-          BUGSNAG_RELEASE_STAGE: copilot-dev-github-actions
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'eu-west-2' }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION_NAME: ${{ secrets.AWS_REGION_NAME }}
-          CLOUDWATCH_LOG_GROUP: ${{ secrets.CLOUDWATCH_LOG_GROUP }}
-          CLOUDWATCH_LOG_STREAM: ${{ secrets.CLOUDWATCH_LOG_STREAM }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          USE_RAG: ${{ secrets.USE_RAG }}
-          OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${{ secrets.OPENSEARCH_INITIAL_ADMIN_PASSWORD }}
-          OPENSEARCH_USER: ${{ secrets.OPENSEARCH_USER }}
-          OPENSEARCH_PASSWORD: ${{ secrets.OPENSEARCH_PASSWORD }}
-          OPENSEARCH_HOST: localhost
-          OPENSEARCH_PORT: ${{ secrets.OPENSEARCH_PORT }}
 
       - name: Persist test reports
         uses: actions/upload-artifact@v7

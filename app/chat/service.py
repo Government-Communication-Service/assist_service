@@ -1,7 +1,6 @@
 # ruff: noqa: B008
 import asyncio
 import json
-import os
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 
@@ -59,6 +58,7 @@ from app.config import (
     LLM_CHAT_RESPONSE_MODEL,
     LLM_CHAT_TITLE_MODEL,
     SMART_TARGETS_SERVICE_DISABLED,
+    TEST_USER_GROUPS,
 )
 from app.database.db_operations import DbOperations
 from app.database.models import (
@@ -215,7 +215,7 @@ def chat_save_llm_output(
 
 def get_user_groups(
     user_groups_string=Header(
-        default=os.getenv("TEST_USER_GROUPS", ""),
+        default=TEST_USER_GROUPS,
         alias=USER_GROUPS_ALIAS,
         description="A comma-separated list of groups assigned to the user from GCS Connect which can be used to "
         "filter queries.",

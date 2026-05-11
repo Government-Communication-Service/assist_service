@@ -1,30 +1,17 @@
 import logging
-import os
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-def database_url():
-    db_name = os.getenv("POSTGRES_DB")
-    user = os.getenv("POSTGRES_USER")
-    password = os.getenv("POSTGRES_PASSWORD")
-    host = os.getenv("POSTGRES_HOST")
-    port = os.getenv("POSTGRES_PORT", 5432)
-
-    url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db_name}"
-    logger.debug(f"Using sync database url: {url}")
-
-    return url
+def database_url() -> str:
+    pw = settings.postgres_password.get_secret_value()
+    logger.debug("Using sync database url")
+    return f"postgresql+psycopg2://{settings.postgres_user}:{pw}@{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"
 
 
-def async_database_url():
-    db_name = os.getenv("POSTGRES_DB")
-    user = os.getenv("POSTGRES_USER")
-    password = os.getenv("POSTGRES_PASSWORD")
-    host = os.getenv("POSTGRES_HOST")
-    port = os.getenv("POSTGRES_PORT", 5432)
-
-    url = f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{db_name}"
-    logger.debug(f"Using async database url: {url}")
-
-    return url
+def async_database_url() -> str:
+    pw = settings.postgres_password.get_secret_value()
+    logger.debug("Using async database url")
+    return f"postgresql+asyncpg://{settings.postgres_user}:{pw}@{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"

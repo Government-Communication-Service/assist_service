@@ -1,22 +1,18 @@
 import logging
-import os
 import re
 import traceback
 from typing import Dict, List, Optional
 
-from dotenv import load_dotenv
 from opensearchpy import AsyncOpenSearch, OpenSearch
 from opensearchpy.exceptions import RequestError, TransportError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import env_variable
+from app.config import OPENSEARCH_DISABLE_SSL, OPENSEARCH_HOST, OPENSEARCH_PORT, OPENSEARCH_USER, settings
 from app.database.db_operations import DbOperations
 from app.database.models import SearchIndex
 from app.document_upload.constants import PERSONAL_DOCUMENTS_INDEX_NAME
 from app.logs import Action, LogsHandler
 from app.opensearch.exceptions import DocumentOperationError
-
-load_dotenv()
 
 logging.getLogger("opensearch").setLevel(logging.ERROR)
 
@@ -73,18 +69,10 @@ class OpenSearchClient:
     @classmethod
     def get_client(cls):
         if cls._instance is None:
-            username = os.getenv("OPENSEARCH_USER")
-            password = os.getenv("OPENSEARCH_PASSWORD")
-            host = os.getenv("OPENSEARCH_HOST")
-            port = os.getenv("OPENSEARCH_PORT")
-            use_ssl = True
-            if env_variable("OPENSEARCH_DISABLE_SSL", False):
-                use_ssl = False
-
             cls._instance = OpenSearch(
-                hosts=[{"host": host, "port": port}],
-                http_auth=(username, password),
-                use_ssl=use_ssl,
+                hosts=[{"host": OPENSEARCH_HOST, "port": OPENSEARCH_PORT}],
+                http_auth=(OPENSEARCH_USER, settings.opensearch_password.get_secret_value()),
+                use_ssl=not OPENSEARCH_DISABLE_SSL,
                 verify_certs=False,
                 ssl_assert_hostname=False,
                 ssl_show_warn=False,
@@ -99,25 +87,14 @@ def create_client():
 
 def create_async_client():
     """Creates an AsyncOpenSearch client."""
-
-    username = os.getenv("OPENSEARCH_USER")
-    password = os.getenv("OPENSEARCH_PASSWORD")
-    host = os.getenv("OPENSEARCH_HOST")
-    port = os.getenv("OPENSEARCH_PORT")
-    use_ssl = True
-    if env_variable("OPENSEARCH_DISABLE_SSL", False):
-        use_ssl = False
-
-    client = AsyncOpenSearch(
-        hosts=[{"host": host, "port": int(port)}],
-        http_auth=(username, password),
-        use_ssl=use_ssl,
+    return AsyncOpenSearch(
+        hosts=[{"host": OPENSEARCH_HOST, "port": int(OPENSEARCH_PORT)}],
+        http_auth=(OPENSEARCH_USER, settings.opensearch_password.get_secret_value()),
+        use_ssl=not OPENSEARCH_DISABLE_SSL,
         verify_certs=False,
         ssl_assert_hostname=False,
         ssl_show_warn=False,
     )
-
-    return client
 
 
 async def list_indexes(db_session: AsyncSession, include_personal_document_index: bool = False) -> List[SearchIndex]:

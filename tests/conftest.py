@@ -107,8 +107,9 @@ def mock_llm_response(mocker):
 
 
 @pytest.fixture(autouse=True)
-def set_env_vars():
-    os.environ["DISABLE_BUGSNAG_LOGGING"] = "True"
+def disable_bugsnag(monkeypatch):
+    monkeypatch.setattr("app.logs.BUGSNAG_ENABLED", False)
+    monkeypatch.setattr("app.logs.DISABLE_BUGSNAG_LOGGING", True)
 
 
 @pytest.fixture(autouse=True)

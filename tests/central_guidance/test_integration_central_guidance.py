@@ -52,7 +52,7 @@ async def create_test_message(db_session, query_content: str) -> int:
 
 @pytest.mark.asyncio
 async def test_chat_create_message_no_rag(monkeypatch, mocker, mock_message_table, mock_bedrock_handler, db_session):
-    monkeypatch.setenv("USE_RAG", "true")
+    monkeypatch.setattr("app.config.settings.use_rag", True)
 
     input_data = ChatCreateMessageInput(
         query="hey",

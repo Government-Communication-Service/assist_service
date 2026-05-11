@@ -1,130 +1,232 @@
 import os
-from typing import Union
 
-from dotenv import load_dotenv
-
-
-def load_environment_variables():
-    if os.path.exists("../.env"):
-        load_dotenv("../.env")
-        # print("Loaded environment variables from .env file.")
-
-
-def env_variable(name: str, default=None) -> Union[str, bool]:
-    value = os.getenv(name, default)
-    if value and str(value).lower() == "false":
-        return False
-    if value and str(value).lower() == "true":
-        return True
-    return value
+from pydantic import SecretStr, field_validator, model_validator
+from pydantic_settings import (
+    AWSSecretsManagerSettingsSource,
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 
-### --- Environment Configuration --- ###
+class AppSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        env_ignore_empty=True,  # treat empty string env vars as unset (use field default)
+    )
 
-IS_DEV = env_variable("IS_DEV")
-URL_HOSTNAME = os.getenv("URL_HOSTNAME", "http://localhost:" + os.getenv("PORT", "5312"))
+    # --- secrets ---
+    auth_secret_key: SecretStr
+    auth_secret_key_2: SecretStr | None = None
+    postgres_password: SecretStr
+    opensearch_password: SecretStr
+    bugsnag_api_key: SecretStr | None = None
+
+    # --- database ---
+    postgres_db: str = "copilot"
+    postgres_user: str = "postgres"
+    postgres_host: str = "postgres"
+    postgres_port: int = 5432
+
+    # --- opensearch ---
+    opensearch_user: str = "admin"
+    opensearch_host: str = "opensearch-node1"
+    opensearch_port: int = 9200
+    opensearch_disable_ssl: bool = False
+    sync_central_indexes_on_startup: bool = False
+
+    # --- server ---
+    port: int = 5312
+    url_hostname: str | None = None
+
+    @model_validator(mode="after")
+    def set_url_hostname_default(self) -> "AppSettings":
+        if self.url_hostname is None:
+            self.url_hostname = f"http://localhost:{self.port}"
+        return self
+
+    # --- AWS / infra ---
+    aws_default_region: str = "eu-west-2"
+    aws_bedrock_region1: str = "us-west-2"
+    aws_bedrock_region2: str = "us-east-1"
+    aws_bedrock_regions_max_retries: int = 3
+    s3_errordocs_bucket: str = "assist-error-docs"
+    cloudwatch_log_group: str | None = None
+    cloudwatch_log_stream: str | None = None
+
+    # --- GCS ---
+    gcs_data_api_url: str | None = None
+
+    # --- feature flags ---
+    is_dev: bool = False
+    use_jwt_token: bool = False
+    show_auth_token_generator: bool = False
+    show_detailed_error_messages: bool = False
+    show_header_params_in_docs: bool = False
+    show_developer_endpoints_in_docs: bool = False
+    use_rag: bool = True
+    use_default_llm_response: bool = False
+    smart_targets_service_disabled: bool = False
+    debug_mode: bool = False
+    debug_logging: bool = False
+    litellm_logging: bool = False
+
+    # --- monitoring ---
+    bugsnag_release_stage: str | None = None
+    disable_bugsnag_logging: bool = False
+    disable_cloudwatch_logging: bool = False
+
+    # --- LLM / Bedrock ---
+    llm_default_provider: str = "bedrock"
+    llm_default_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    llm_chat_response_model: str = "anthropic.claude-sonnet-4-6"
+    llm_chat_title_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
+    llm_index_router: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
+    llm_opensearch_query_generator: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    llm_chunk_reviewer: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
+    llm_govuk_query_generator: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    llm_document_relevancy_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
+    llm_gov_uk_search_followup_assessment: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
+    llm_smart_targets_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    llm_compaction_summarisation_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
+    llm_style_guide_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+    # --- style guide ---
+    style_guide_llm_batch_size: int = 10
+    style_guide_max_document_chars: int = 100000
+    style_guide_max_chunk_chars: int = 50000
+
+    # --- timeouts / batch sizes ---
+    stream_first_chunk_timeout: float = 20.0
+    opensearch_delete_batch_size: int = 100
+    document_cleanup_batch_size: int = 1000
+    document_processing_timeout_seconds: int = 118
+    compaction_token_threshold: int = 160000
+
+    # --- gov.uk ---
+    whitelisted_urls: list[str] = ["https://www.gov.uk"]
+    blacklisted_urls: list[str] = ["https://www.gov.uk/publications"]
+    web_browsing_timeout: int = 300
+    gov_uk_base_url: str = "https://www.gov.uk"
+    gov_uk_search_max_count: int = 10
+
+    # --- test helpers ---
+    test_user_groups: str = ""
+    test_session_uuid: str | None = None
+    test_user_uuid: str | None = None
+    test_chat_uuid: str | None = None
+    default_user_key_uuid: str | None = None
+
+    @field_validator("postgres_port", "opensearch_port", "port")
+    @classmethod
+    def valid_port(cls, v: int) -> int:
+        if not (1 <= v <= 65535):
+            raise ValueError(f"port must be between 1 and 65535, got {v}")
+        return v
+
+    @field_validator(
+        "stream_first_chunk_timeout",
+        "web_browsing_timeout",
+        "document_processing_timeout_seconds",
+        "opensearch_delete_batch_size",
+        "document_cleanup_batch_size",
+        "compaction_token_threshold",
+        "style_guide_max_document_chars",
+        "style_guide_max_chunk_chars",
+        "style_guide_llm_batch_size",
+        "gov_uk_search_max_count",
+        "aws_bedrock_regions_max_retries",
+        mode="after",
+    )
+    @classmethod
+    def positive(cls, v: int | float) -> int | float:
+        if v <= 0:
+            raise ValueError(f"value must be positive, got {v}")
+        return v
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        **kwargs: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        sources = list(super().settings_customise_sources(settings_cls, **kwargs))
+        secret_name = os.environ.get("APP_SECRET_NAME")
+        if secret_name:
+            region = os.environ.get("AWS_DEFAULT_REGION", "eu-west-2")
+            sources.append(
+                AWSSecretsManagerSettingsSource(
+                    settings_cls,
+                    secret_id=secret_name,
+                    region_name=region,
+                )
+            )
+        return tuple(sources)
+
+
+settings = AppSettings()
+
+# ── Module-level exports — existing importers unchanged ──────────────────────
+
 DATA_DIR = "data"
+IS_DEV = settings.is_dev
+URL_HOSTNAME = settings.url_hostname
 
-### --- AWS Configuration --- ###
+# AWS
+AWS_DEFAULT_REGION = settings.aws_default_region
+S3_ERRORDOCS_BUCKET = settings.s3_errordocs_bucket
 
-AWS_DEFAULT_REGION = os.getenv("AWS_DEFAULT_REGION", "eu-west-2")
+# GCS
+GCS_DATA_API_URL = settings.gcs_data_api_url
 
-### --- S3 Configuration --- ###
+# Feature flags
+SMART_TARGETS_SERVICE_DISABLED = settings.smart_targets_service_disabled
 
-S3_ERRORDOCS_BUCKET = os.getenv("S3_ERRORDOCS_BUCKET", "assist-error-docs")
+# OpenSearch (non-secret)
+OPENSEARCH_USER = settings.opensearch_user
+OPENSEARCH_HOST = settings.opensearch_host
+OPENSEARCH_PORT = settings.opensearch_port
+OPENSEARCH_DISABLE_SSL = settings.opensearch_disable_ssl
+SYNC_CENTRAL_INDEXES_ON_STARTUP = settings.sync_central_indexes_on_startup
 
-### --- LLM / Bedrock Configuration --- ###
+# LLM / Bedrock
+LLM_DEFAULT_PROVIDER = settings.llm_default_provider
+AWS_BEDROCK_REGION1 = settings.aws_bedrock_region1
+AWS_BEDROCK_REGION2 = settings.aws_bedrock_region2
+AWS_BEDROCK_REGIONS_MAX_RETRIES = settings.aws_bedrock_regions_max_retries
+STREAM_FIRST_CHUNK_TIMEOUT = settings.stream_first_chunk_timeout
+LLM_DEFAULT_MODEL = settings.llm_default_model
+LLM_CHAT_RESPONSE_MODEL = settings.llm_chat_response_model
+LLM_CHAT_TITLE_MODEL = settings.llm_chat_title_model
+LLM_INDEX_ROUTER = settings.llm_index_router
+LLM_OPENSEARCH_QUERY_GENERATOR = settings.llm_opensearch_query_generator
+LLM_CHUNK_REVIEWER = settings.llm_chunk_reviewer
+LLM_GOVUK_QUERY_GENERATOR = settings.llm_govuk_query_generator
+LLM_DOCUMENT_RELEVANCY_MODEL = settings.llm_document_relevancy_model
+LLM_GOV_UK_SEARCH_FOLLOWUP_ASSESSMENT = settings.llm_gov_uk_search_followup_assessment
+LLM_SMART_TARGETS_MODEL = settings.llm_smart_targets_model
+LLM_COMPACTION_SUMMARISATION_MODEL = settings.llm_compaction_summarisation_model
+COMPACTION_TOKEN_THRESHOLD = settings.compaction_token_threshold
 
-LLM_DEFAULT_PROVIDER = "bedrock"
-AWS_BEDROCK_REGION1 = "us-west-2"
-AWS_BEDROCK_REGION2 = "us-east-1"
-AWS_BEDROCK_REGIONS_MAX_RETRIES: int = 3
-# Timeout in seconds to wait for the first chunk when streaming
-# If no data arrives within this time, trigger failover
-STREAM_FIRST_CHUNK_TIMEOUT: float = float(os.getenv("STREAM_FIRST_CHUNK_TIMEOUT", "10.0"))
+# Style guide
+STYLE_GUIDE_LLM_BATCH_SIZE = settings.style_guide_llm_batch_size
+STYLE_GUIDE_LLM_MODEL = settings.llm_style_guide_model
+STYLE_GUIDE_MAX_DOCUMENT_CHARS = settings.style_guide_max_document_chars
+STYLE_GUIDE_MAX_CHUNK_CHARS = settings.style_guide_max_chunk_chars
 
-# The default LLM used by BedrockHandler
-# Note that, when building an instance of BedrockHandler, a region prefix is added
-# E.g. if the region is 'us', a 'us.' prefix is added to the model name.
-# This is necessary to handle cross-region inference, which we use as a failover mechanism
-# anthropic.claude-sonnet-4-5-20250929-v1:0
-LLM_DEFAULT_MODEL = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+# Document cleanup
+OPENSEARCH_DELETE_BATCH_SIZE = settings.opensearch_delete_batch_size
+DOCUMENT_CLEANUP_BATCH_SIZE = settings.document_cleanup_batch_size
+DOCUMENT_PROCESSING_TIMEOUT_SECONDS = settings.document_processing_timeout_seconds
 
-### --- Chat Configuration --- ###
+# Gov.uk
+WHITELISTED_URLS = settings.whitelisted_urls
+BLACKLISTED_URLS = settings.blacklisted_urls
+WEB_BROWSING_TIMEOUT = settings.web_browsing_timeout
+GOV_UK_BASE_URL = settings.gov_uk_base_url
+GOV_UK_SEARCH_MAX_COUNT = settings.gov_uk_search_max_count
 
-# This LLM generates the final response to the user's query.
-# This model should ideally be of thie highest quality.
-LLM_CHAT_RESPONSE_MODEL = "anthropic.claude-sonnet-4-6"
-
-# This LLM generates the title of the user's chat.
-LLM_CHAT_TITLE_MODEL = "anthropic.claude-haiku-4-5-20251001-v1:0"
-
-### --- Central Guidance Configuration --- ###
-
-# This LLM determines if the user query should be enriched
-# by the central guidance, or not.
-LLM_INDEX_ROUTER = "anthropic.claude-haiku-4-5-20251001-v1:0"
-
-# This LLM takes a user's message and returns a set of OpenSearch queries
-LLM_OPENSEARCH_QUERY_GENERATOR = "anthropic.claude-sonnet-4-5-20250929-v1:0"
-
-# This LLM determines if the retrieved document chunk
-# should be included in the main LLM context.
-LLM_CHUNK_REVIEWER = "anthropic.claude-haiku-4-5-20251001-v1:0"
-
-
-### --- GOV.UK Configuration --- ###
-
-LLM_GOVUK_QUERY_GENERATOR = "anthropic.claude-sonnet-4-5-20250929-v1:0"
-LLM_DOCUMENT_RELEVANCY_MODEL = "anthropic.claude-haiku-4-5-20251001-v1:0"
-LLM_GOV_UK_SEARCH_FOLLOWUP_ASSESMENT = "anthropic.claude-haiku-4-5-20251001-v1:0"
-
-
-### --- GCS Data API Configuration --- ###
-GCS_DATA_API_URL = os.getenv("GCS_DATA_API_URL")
-
-### --- Smart Targets Configuration --- ###
-SMART_TARGETS_SERVICE_DISABLED = env_variable("SMART_TARGETS_SERVICE_DISABLED", False)
-LLM_SMART_TARGETS_MODEL = "anthropic.claude-sonnet-4-5-20250929-v1:0"
-
-
-### --- Compaction Configuration --- ###
-
-# This LLM generates summaries of messages for compaction
-LLM_COMPACTION_SUMMARISATION_MODEL = "anthropic.claude-haiku-4-5-20251001-v1:0"
-
-# Token threshold for triggering compaction (160k tokens)
-COMPACTION_TOKEN_THRESHOLD = 160000
-
-if env_variable("LLM_DEFAULT_MODEL"):
-    LLM_DEFAULT_MODEL = env_variable("LLM_DEFAULT_MODEL")
-
-WHITELISTED_URLS = ["https://www.gov.uk"]
-BLACKLISTED_URLS = ["https://www.gov.uk/publications"]
-WEB_BROWSING_TIMEOUT = 300
-GOV_UK_BASE_URL = "https://www.gov.uk"
-GOV_UK_SEARCH_MAX_COUNT = 10
-
-### --- style guide configuration --- ###
-
-# Number of rules to batch together for LLM validation
-STYLE_GUIDE_LLM_BATCH_SIZE = 10
-
-# Default LLM model for style guide checking
-STYLE_GUIDE_LLM_MODEL = "anthropic.claude-sonnet-4-5-20250929-v1:0"
-
-# Maximum number of characters in a document before rejecting with an error message
-STYLE_GUIDE_MAX_DOCUMENT_CHARS = int(os.getenv("STYLE_GUIDE_MAX_DOCUMENT_CHARS", "100000"))
-
-# Maximum number of characters per chunk when splitting large documents for LLM calls
-STYLE_GUIDE_MAX_CHUNK_CHARS = int(os.getenv("STYLE_GUIDE_MAX_CHUNK_CHARS", "50000"))
-
-### --- Document Cleanup Configuration --- ###
-
-# Number of documents to delete in each batch when cleaning up expired documents from OpenSearch
-OPENSEARCH_DELETE_BATCH_SIZE = int(os.getenv("OPENSEARCH_DELETE_BATCH_SIZE", "100"))
-# Number of documents to delete in each batch when cleaning up expired documents from the database
-DOCUMENT_CLEANUP_BATCH_SIZE = int(os.getenv("DOCUMENT_CLEANUP_BATCH_SIZE", "1000"))
-
-# Document parsing timeout (seconds) for personal uploads
-DOCUMENT_PROCESSING_TIMEOUT_SECONDS = int(os.getenv("DOCUMENT_PROCESSING_TIMEOUT_SECONDS", "118"))
+# Test helpers
+TEST_USER_GROUPS = settings.test_user_groups

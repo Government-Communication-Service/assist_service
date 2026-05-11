@@ -1,10 +1,10 @@
-from app.config import IS_DEV, env_variable
+from app.config import IS_DEV, settings
 
 
 class ErrorMessages:
     @staticmethod
     def default(task: str, e: Exception):
-        if IS_DEV and env_variable("SHOW_DETAILED_ERROR_MESSAGES"):
+        if IS_DEV and settings.show_detailed_error_messages:
             return f"ERROR {task}: {str(e)}"
 
         return f"An error occurred during {task}. Please try again later."

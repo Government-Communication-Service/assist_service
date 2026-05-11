@@ -37,3 +37,4 @@ scripts/style_guide/evaluation/outputs/
 scripts/style_guide/golden_dataset/output/
 scripts/style_guide/web_scraper/output/
 data/create_database.sql
+.envrc

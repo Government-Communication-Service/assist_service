@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.config import IS_DEV, SMART_TARGETS_SERVICE_DISABLED, URL_HOSTNAME, load_environment_variables
+from app.config import IS_DEV, SMART_TARGETS_SERVICE_DISABLED, URL_HOSTNAME
 from app.database.table import AsyncEngineProvider
 from app.exceptions.handlers import register_exception_handlers
 from app.logs import BUGSNAG_ENABLED, BugsnagLogger
@@ -48,8 +48,6 @@ async def lifespan(app: FastAPI):
     logger.info("Closing DB connections")
     await AsyncEngineProvider.get().dispose()
 
-
-load_environment_variables()
 
 app = FastAPI(title="GCS Assist API", version="0.1.0", lifespan=lifespan)
 app.openapi_version = "3.0.2"

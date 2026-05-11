@@ -26,7 +26,7 @@ from app.chat.schemas import ChatCreateMessageInput, RoleEnum
 from app.config import (
     GOV_UK_SEARCH_MAX_COUNT,
     LLM_DOCUMENT_RELEVANCY_MODEL,
-    LLM_GOV_UK_SEARCH_FOLLOWUP_ASSESMENT,
+    LLM_GOV_UK_SEARCH_FOLLOWUP_ASSESSMENT,
     LLM_GOVUK_QUERY_GENERATOR,
 )
 from app.database.db_operations import DbOperations
@@ -1137,7 +1137,7 @@ async def assess_if_next_message_should_use_gov_uk_search(
     messages: list[Message], new_user_message_content: str, new_user_message_id: int, db_session: AsyncSession
 ) -> bool:
     """ """
-    llm_obj = LLMTable().get_by_model(LLM_GOV_UK_SEARCH_FOLLOWUP_ASSESMENT)
+    llm_obj = LLMTable().get_by_model(LLM_GOV_UK_SEARCH_FOLLOWUP_ASSESSMENT)
     llm = BedrockHandler(llm=llm_obj, mode=RunMode.ASYNC)
 
     # Get citations for all messages

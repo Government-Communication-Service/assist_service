@@ -1,5 +1,4 @@
 import logging
-import os
 
 import bugsnag
 import bugsnag.handlers
@@ -8,6 +7,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+import app.logs
 from app.auth.constants import USER_KEY_UUID_ALIAS
 
 logger = logging.getLogger(__name__)
@@ -23,16 +23,9 @@ class BugsnagLogger:
     """
 
     def __init__(self):
-        """
-        Initialize the BugsnagLogger class by loading the Bugsnag API key, release stage, and
-        other configurations from environment variables.
-
-        Raises:
-            Exception: If BUGSNAG_API_KEY or BUGSNAG_RELEASE_STAGE is not set in the environment.
-        """
-        self.BUGSNAG_API_KEY = os.getenv("BUGSNAG_API_KEY")
-        self.BUGSNAG_RELEASE_STAGE = os.getenv("BUGSNAG_RELEASE_STAGE")
-        self.DISABLE_BUGSNAG_LOGGING = os.getenv("DISABLE_BUGSNAG_LOGGING", False)
+        self.BUGSNAG_API_KEY = app.logs.BUGSNAG_API_KEY
+        self.BUGSNAG_RELEASE_STAGE = app.logs.BUGSNAG_RELEASE_STAGE
+        self.DISABLE_BUGSNAG_LOGGING = app.logs.DISABLE_BUGSNAG_LOGGING
 
         if not self.BUGSNAG_API_KEY:
             raise Exception("BUGSNAG_API_KEY is required")

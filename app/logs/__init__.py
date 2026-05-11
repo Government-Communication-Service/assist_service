@@ -1,12 +1,12 @@
-import os
+from app.config import settings
 
 from .bugsnag_logger import BugsnagLogger
 from .logs_handler import *
 
 __all__ = ["BugsnagLogger"]
 
-BUGSNAG_API_KEY = os.getenv("BUGSNAG_API_KEY")
-BUGSNAG_RELEASE_STAGE = os.getenv("BUGSNAG_RELEASE_STAGE")
-DISABLE_BUGSNAG_LOGGING = os.getenv("DISABLE_BUGSNAG_LOGGING", False)
+BUGSNAG_API_KEY: str | None = settings.bugsnag_api_key.get_secret_value() if settings.bugsnag_api_key else None
+BUGSNAG_RELEASE_STAGE = settings.bugsnag_release_stage
+DISABLE_BUGSNAG_LOGGING = settings.disable_bugsnag_logging
 
 BUGSNAG_ENABLED = bool(not DISABLE_BUGSNAG_LOGGING and BUGSNAG_API_KEY and BUGSNAG_RELEASE_STAGE)
