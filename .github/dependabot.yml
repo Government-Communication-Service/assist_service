@@ -24,3 +24,25 @@ updates:
       docker:
         patterns:
           - "*"
+
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: monthly
+    target-branch: "dev-main"
+    labels:
+      - dependencies
+      - python
+    groups:
+      python-production:
+        applies-to: version-updates
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+      python-development:
+        applies-to: version-updates
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
