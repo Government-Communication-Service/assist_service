@@ -303,18 +303,30 @@ class TestChatArchive:
 
     @pytest.mark.asyncio
     async def test_archived_chat_not_accessible(self, chat, user_id, async_client, async_http_requester):
-        """Test that archived chat cannot be accessed via get_chat_messages"""
-        # First archive the chat
+        """Test that archived chat returns 404 from get_chat_item endpoint"""
         archive_endpoint = f"/v1/chats/users/{user_id}/chats/{chat.uuid}/archive"
         await async_http_requester("archive chat for access test", async_client.patch, archive_endpoint)
 
-        # Then try to access the archived chat
         get_endpoint = f"/v1/chats/users/{user_id}/chats/{chat.uuid}"
         await async_http_requester(
             "get archived chat",
             async_client.get,
             get_endpoint,
-            response_code=500,
+            response_code=404,
+        )
+
+    @pytest.mark.asyncio
+    async def test_archived_chat_messages_not_accessible(self, chat, user_id, async_client, async_http_requester):
+        """Test that fetching messages for an archived chat returns 404"""
+        archive_endpoint = f"/v1/chats/users/{user_id}/chats/{chat.uuid}/archive"
+        await async_http_requester("archive chat", async_client.patch, archive_endpoint)
+
+        messages_endpoint = f"/v1/chats/users/{user_id}/chats/{chat.uuid}/messages"
+        await async_http_requester(
+            "get messages for archived chat",
+            async_client.get,
+            messages_endpoint,
+            response_code=404,
         )
 
 

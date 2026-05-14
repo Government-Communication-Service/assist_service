@@ -71,13 +71,13 @@ def handle_document_access_error(request: Request, ex: DocumentAccessError) -> R
 
 
 async def database_exception_handler(request: Request, exc: DatabaseError) -> Response:
-    logger.error(f"Database Error: code={exc.code}, message={exc.message}")
-    bugsnag.notify(exc)
-
+    # 404s are expected API behaviour — no logging or Bugsnag noise
     if exc.code == DatabaseExceptionErrorCode.GET_BY_UUID_ERROR:
         return JSONResponse(content="Record not found", status_code=404)
     if exc.code == DatabaseExceptionErrorCode.USE_CASE_NOT_UNDER_THIS_THEME_ERROR:
         return JSONResponse(content=f"{exc.message}", status_code=404)
+    logger.error(f"Database Error: code={exc.code}, message={exc.message}")
+    bugsnag.notify(exc)
     return JSONResponse(content="An internal error occurred.", status_code=500)
 
 

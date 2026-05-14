@@ -240,7 +240,7 @@ class DbOperations:
         chat_result = result.scalars().unique().first()
         if not chat_result:
             raise DatabaseError(
-                code=DatabaseExceptionErrorCode.GET_ERROR,
+                code=DatabaseExceptionErrorCode.GET_BY_UUID_ERROR,
                 message="Chat not found or has been archived",
             )
         return chat_result
