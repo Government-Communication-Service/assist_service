@@ -6,7 +6,7 @@ torch==2.11.0+cpu
 starlette==0.49.1
 fastapi==0.136.1
 uvicorn[standard]==0.46.0
-gunicorn~=23.0
+gunicorn~=26.0
 pydantic>=2.11.0
 pydantic-settings[aws-secrets-manager]>=2.11.0
 uuid~=1.30
@@ -30,6 +30,14 @@ SQLAlchemy[asyncpg]==2.0.49
 # Document parsing
 pdfminer.six>=20251230
 unstructured[pdf,docx,pptx,xlsx]==0.22.27
+# spaCy model required by unstructured for document partitioning.
+# unstructured pulls in spaCy but not the model, so pin it here to install at
+# build time instead of lazily downloading at runtime (fails on read-only
+# site-packages, e.g. the non-root user on Elastic Beanstalk).
+# Version must track the installed spaCy minor line (currently 3.8.x ->
+# en_core_web_sm 3.8.x). After a spaCy bump, run `python -m spacy validate`
+# and update this URL to the version it reports as compatible.
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
 #needed for odt file format processing.
 pypandoc~=1.13
 # File type detection
