@@ -114,14 +114,16 @@ class TestStyleGuideE2E:
         assert "message_streamed" in final_packet
         message_data = final_packet["message_streamed"]
 
-        # Verify content contains style guide analysis
+        # Verify response content was streamed.
         content = message_data.get("content", "")
         assert len(content) > 0
-        assert "GOV.UK Style Guide" in content or "style guide" in content.lower()
 
-        # Verify sources (may be empty for initial bypass mode)
+        # Verify the style guide flow ran. Do not assert on exact generated wording;
+        # the final streamed content is model-generated and can phrase the analysis differently.
         sources_json = message_data.get("sources", "{}")
-        _ = json.loads(sources_json) if isinstance(sources_json, str) else sources_json
+        sources = json.loads(sources_json) if isinstance(sources_json, str) else sources_json
+        assert "style_guide_sources" in sources
+        assert sources["style_guide_sources"][0]["pretty_name"] == "GOV.UK style guide"
 
         logger.info(f"Style guide initial check completed: {len(content)} chars in response")
 

@@ -11,9 +11,12 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: Prepare requirements for pip-audit
+        run: grep -v '^en_core_web_sm\|^torch\|^--extra-index-url' requirements.txt > requirements-audit.txt
+
       - uses: pypa/gh-action-pip-audit@v1.1.0
         with:
-          inputs: requirements.txt
+          inputs: requirements-audit.txt
           ignore-vulns: |
             CVE-2025-14009
             CVE-2026-28500
@@ -22,6 +25,32 @@ jobs:
             CVE-2026-33231
             CVE-2026-4539
             CVE-2025-71176
+            # torch/onnx/transformers are transitive deps of unstructured (ML-based document
+            # parsing). These CVEs do not apply: torch CVEs require the attacker to already
+            # have code execution on the server; transformers CVEs require loading
+            # attacker-controlled model checkpoints (we use AWS Bedrock, never local
+            # HuggingFace models); onnx CVE is a path traversal in model export
+            # (we only parse documents, never export models).
+            PYSEC-2025-148
+            PYSEC-2025-210
+            PYSEC-2025-194
+            PYSEC-2025-196
+            PYSEC-2025-195
+            PYSEC-2025-193
+            PYSEC-2025-192
+            PYSEC-2026-139
+            PYSEC-2025-191
+            PYSEC-2025-197
+            PYSEC-2025-189
+            PYSEC-2025-190
+            PYSEC-2025-217
+            PYSEC-2025-214
+            PYSEC-2025-218
+            PYSEC-2025-211
+            PYSEC-2025-212
+            PYSEC-2025-213
+            PYSEC-2025-215
+            PYSEC-2025-216
 
       - name: Install Bandit
         run: pip install bandit
