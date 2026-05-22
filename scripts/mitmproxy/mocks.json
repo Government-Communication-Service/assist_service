@@ -1,0 +1,19 @@
+{
+  "POST /v1/chats/users/[^/]+": {
+    "status": 200,
+    "body": {
+      "uuid": "mock",
+      "created_at": "2024-01-01T00:00:00",
+      "updated_at": "2024-01-01T00:00:00",
+      "title": "Mock chat",
+      "from_open_chat": false,
+      "message": {
+        "uuid": "mock",
+        "created_at": "2024-01-01T00:00:00",
+        "updated_at": "2024-01-01T00:00:00",
+        "content": "You've been hit by, you've been struck by, mitmproxy!",
+        "role": "assistant"
+      }
+    }
+  }
+}

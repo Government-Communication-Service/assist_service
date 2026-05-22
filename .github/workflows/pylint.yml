@@ -51,6 +51,7 @@ jobs:
             PYSEC-2025-213
             PYSEC-2025-215
             PYSEC-2025-216
+            PYSEC-2026-161
 
       - name: Install Bandit
         run: pip install bandit

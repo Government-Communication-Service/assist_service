@@ -1,5 +1,5 @@
 DOCKER_COMPOSE_FILE = docker-compose.yml
-DOCKER_COMPOSE_LOCAL_FILE = docker-compose.local.yml
+DOCKER_COMPOSE_PROXY_FILE = docker-compose.proxy.yml
 POSTGRES_DB = copilot
 TEST_POSTGRES_DB = testcopilot
 
@@ -213,3 +213,15 @@ local:
 	cd app/alembic && alembic upgrade head && \
 	cd ../ && \
 	uvicorn app.main:app --host 0.0.0.0 --port 3520 --reload
+
+# Proxy targets — intercept API traffic via mitmproxy for dev/debugging
+# API shifts to :5313, mitmproxy sits at :5312 (transparent to the frontend)
+# See scripts/mitmproxy/README.md for details
+up-proxy:
+	docker compose -f $(DOCKER_COMPOSE_PROXY_FILE) up -d --remove-orphans
+
+down-proxy:
+	docker compose -f $(DOCKER_COMPOSE_PROXY_FILE) down
+
+logs-proxy:
+	docker logs -f mitmproxy
