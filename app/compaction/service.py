@@ -82,7 +82,6 @@ async def summarise_message(message: Message, db_session: AsyncSession) -> Optio
         # Call the LLM to generate summary
         response = await bedrock_handler.invoke_async(
             max_tokens=llm.max_tokens,
-            model=f"us.{llm.model}",
             system=compaction_config.SUMMARISATION_SYSTEM_PROMPT,
             messages=messages,
         )

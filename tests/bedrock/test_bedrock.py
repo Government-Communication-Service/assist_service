@@ -10,7 +10,7 @@ from app.api.endpoints import ENDPOINTS
 from app.bedrock import BedrockHandler, RunMode
 from app.bedrock.bedrock_types import BedrockError
 from app.bedrock.service import calculate_completion_cost
-from app.config import LLM_CHAT_RESPONSE_MODEL, LLM_DEFAULT_MODEL
+from app.config import AWS_BEDROCK_REGION1, LLM_CHAT_RESPONSE_MODEL, LLM_DEFAULT_MODEL
 from app.database.models import LLM
 
 api = ENDPOINTS()
@@ -22,7 +22,8 @@ def test_bedrock_service_with_cross_region_inference_with_selected_llm_model():
     llm.model = LLM_CHAT_RESPONSE_MODEL
     bedrock = BedrockHandler(llm=llm)
 
-    assert bedrock.model == f"us.{LLM_CHAT_RESPONSE_MODEL}"
+    expected_prefix = AWS_BEDROCK_REGION1.split("-")[0]
+    assert bedrock.model == f"{expected_prefix}.{LLM_CHAT_RESPONSE_MODEL}"
 
 
 def test_bedrock_service_with_no_cross_region_inference_with_selected_llm_model():

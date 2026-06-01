@@ -40,7 +40,6 @@ async def rewrite_user_query(
     bedrock_handler = BedrockHandler(llm, mode=RunMode.ASYNC)
     response = await bedrock_handler.invoke_async(
         max_tokens=llm.max_tokens,
-        model=f"us.{llm.model}",
         system=SYSTEM_PROMPT_OPENSEARCH_QUERY_GENERATOR,
         messages=[{"role": "user", "content": user_message}],
         tools=[TOOL_OPENSEARCH_QUERY_GENERATOR],

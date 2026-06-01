@@ -49,8 +49,8 @@ class AppSettings(BaseSettings):
 
     # --- AWS / infra ---
     aws_default_region: str = "eu-west-2"
-    aws_bedrock_region1: str = "us-west-2"
-    aws_bedrock_region2: str = "us-east-1"
+    aws_bedrock_region1: str = "eu-west-2"
+    aws_bedrock_region2: str = "eu-west-1"
     aws_bedrock_regions_max_retries: int = 3
     s3_errordocs_bucket: str = "assist-error-docs"
     cloudwatch_log_group: str | None = None

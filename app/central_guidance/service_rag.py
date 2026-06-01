@@ -112,7 +112,6 @@ async def check_index_relevance(
 
         response = await bedrock_handler.invoke_async(
             max_tokens=llm.max_tokens,
-            model=f"us.{llm.model}",
             system=SYSTEM_PROMPT_INDEX_RELEVANCE_EVALUATOR,
             messages=[{"role": "user", "content": evaluation_message}],
             tools=[TOOL_INDEX_RELEVANCE_EVALUATOR],
@@ -239,7 +238,6 @@ async def generate_rewritten_queries(
     bedrock_handler = BedrockHandler(llm, mode=RunMode.ASYNC)
     response = await bedrock_handler.invoke_async(
         max_tokens=llm.max_tokens,
-        model=f"us.{llm.model}",
         system=SYSTEM_PROMPT_OPENSEARCH_QUERY_GENERATOR,
         messages=[{"role": "user", "content": query}],
         tools=[TOOL_OPENSEARCH_QUERY_GENERATOR],
@@ -303,7 +301,6 @@ async def evaluate_chunk_relevance(
     try:
         response = await bedrock_handler.invoke_async(
             max_tokens=llm.max_tokens,
-            model=f"us.{llm.model}",
             system=SYSTEM_PROMPT_CHUNK_RELEVANCE_EVALUATOR,
             messages=[{"role": "user", "content": evaluation_message}],
             tools=[TOOL_CHUNK_RELEVANCE_EVALUATOR],
