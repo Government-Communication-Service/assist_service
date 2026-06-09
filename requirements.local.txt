@@ -1,1 +1,1 @@
-debugpy==1.8.20
+debugpy==1.8.21

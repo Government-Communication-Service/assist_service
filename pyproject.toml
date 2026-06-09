@@ -21,7 +21,7 @@ dev = [
     "pytest-xdist==3.6.*",
     "streamlit==1.57.0",
     "plotly==6.7.0",
-    "moto[s3]==5.2.1"
+    "moto[s3]==5.2.2"
 ]
 
 [tool.setuptools]

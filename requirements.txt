@@ -1,17 +1,17 @@
 # this is needed to install torch cpu flavor so that huge nvidia gpu libs are not installed
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.11.0+cpu
+torch==2.12.0
 
 # API / General
 starlette==0.49.1
-fastapi==0.136.1
-uvicorn[standard]==0.46.0
+fastapi==0.136.3
+uvicorn[standard]==0.49.0
 gunicorn~=26.0
 pydantic>=2.11.0
 pydantic-settings[aws-secrets-manager]>=2.11.0
 uuid~=1.30
 python-multipart~=0.0.9
-aiohttp==3.13.5
+aiohttp==3.14.1
 aiofiles~=24.1
 httpx~=0.28.1
 
@@ -24,12 +24,12 @@ python-json-logger~=3.2.1
 alembic==1.18.4
 psycopg2-binary==2.9.12
 asyncpg==0.31.0
-SQLAlchemy[asyncpg]==2.0.49
+SQLAlchemy[asyncpg]==2.0.50
 
 
 # Document parsing
 pdfminer.six>=20251230
-unstructured[pdf,docx,pptx,xlsx]==0.22.27
+unstructured[pdf,docx,pptx,xlsx]==0.22.32
 # spaCy model required by unstructured for document partitioning.
 # unstructured pulls in spaCy but not the model, so pin it here to install at
 # build time instead of lazily downloading at runtime (fails on read-only
@@ -63,7 +63,7 @@ pytest~=8.1.1
 pytest-asyncio~=0.23
 pytest-mock~=3.14
 pytest-xdist~=3.6
-moto[s3]==5.2.1
+moto[s3]==5.2.2
 
 # Development
 ruff~=0.6
