@@ -18,7 +18,7 @@ httpx~=0.28.1
 # Logging
 bugsnag~=4.7.1
 boto3>=1.35.0 ### Used for CloudWatch logging and pydantic-settings AWS Secrets Manager
-python-json-logger~=3.2.1
+python-json-logger~=4.1.0
 
 # Database
 alembic==1.18.4
