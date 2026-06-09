@@ -428,9 +428,9 @@ class TestPropagationEdgeCases:
         mock_theme_update.assert_not_called()
 
     async def test_theme_new_banner_expiry_extended_by_new_use_case(self, db_session, make_mock_theme, mocker):
-        """Theme has 'new' banner expiry Apr 1, use case 'new' with expiry Jun 1, theme should extend."""
-        theme_expiry = datetime(2026, 4, 1, 12, 0, 0)
-        use_case_expiry = datetime(2026, 6, 1, 12, 0, 0)
+        """Theme has 'new' banner expiry, use case 'new' with later expiry, theme should extend."""
+        theme_expiry = datetime.now() + timedelta(days=30)
+        use_case_expiry = datetime.now() + timedelta(days=60)
 
         theme = make_mock_theme(
             show_update_banner=True,
@@ -600,9 +600,9 @@ class TestCreateUseCaseBannerPropagation:
     async def test_create_use_case_extends_theme_new_banner_expiry(
         self, db_session, make_mock_theme, make_mock_use_case, mocker
     ):
-        """Theme has 'new' banner expiry Apr 15, new use case 'new' expiry Jun 1, theme should extend."""
-        theme_expiry = datetime(2026, 4, 15, 12, 0, 0)
-        use_case_expiry = datetime(2026, 6, 1, 12, 0, 0)
+        """Theme has 'new' banner expiry, new use case 'new' with later expiry, theme should extend."""
+        theme_expiry = datetime.now() + timedelta(days=30)
+        use_case_expiry = datetime.now() + timedelta(days=60)
 
         theme = make_mock_theme(
             show_update_banner=True,
