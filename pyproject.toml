@@ -16,7 +16,7 @@ dev = [
     "pytest-asyncio==1.2.*",
     "pytest-mock==3.14.*",
     "httpx==0.28.1",
-    "ruff==0.6.*",
+    "ruff==0.15.*",
     "pre-commit==4.6.0",
     "pytest-xdist==3.6.*",
     "streamlit==1.58.0",
