@@ -1,6 +1,5 @@
 # ruff: noqa: E501
 
-import asyncio
 import logging
 import os
 from collections.abc import Generator
@@ -50,14 +49,6 @@ def test_db():
     database = os.getenv("TEST_POSTGRES_DB")
     logger.debug(f"conftest.py using POSTGRES_DB = {database}")
     return database
-
-
-@pytest.fixture(scope="session")
-def event_loop(request):
-    """Creates an event loop that is shared by test scenarios and the application"""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture
