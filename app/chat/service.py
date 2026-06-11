@@ -680,19 +680,16 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
     # AND the user has ticked 'use_gov_uk_search_api'
     # THEN always search GOV.UK
     if input_data.initial_call:
-        # logger.info("### --- Fist message trigger --- ###")
         should_enhance = input_data.use_gov_uk_search_api or input_data.enable_web_browsing
     # ELSE for subsequent messages, let the LLM decide if GOV.UK Search is appropriated
     else:
-        # logger.info("### --- Followup message trigger --- ###")
-        llm_assesment_if_we_should_use_gov_uk_search_again = await assess_if_next_message_should_use_gov_uk_search(
-            messages=messages,
-            new_user_message_content=input_data.query,
-            new_user_message_id=m_user.id,
-            db_session=db_session,
-        )
-        if llm_assesment_if_we_should_use_gov_uk_search_again is True:
-            should_enhance = True
+        if input_data.use_gov_uk_search_api or input_data.enable_web_browsing:
+            should_enhance = await assess_if_next_message_should_use_gov_uk_search(
+                messages=messages,
+                new_user_message_content=input_data.query,
+                new_user_message_id=m_user.id,
+                db_session=db_session,
+            )
         else:
             should_enhance = False
 
@@ -704,7 +701,13 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
     # Condition for searching GOV.UK
     if should_enhance:
         enhance_task = asyncio.create_task(
-            enhance_user_prompt(chat=chat, input_data=input_data, m_user_id=m_user.id, db_session=db_session)
+            enhance_user_prompt(
+                chat=chat,
+                input_data=input_data,
+                m_user_id=m_user.id,
+                db_session=db_session,
+                messages=messages,
+            )
         )
         tasks.append(enhance_task)
 
@@ -1001,9 +1004,6 @@ async def _check_document_access(db_session: AsyncSession, rag_request: RagReque
     Raises:
         DocumentAccessError: Raised if the user does not have access to the requested documents
     """
-    # logger.info(
-    #     "Checking document access for user %s for documents %s", rag_request.user_id, rag_request.document_uuids
-    # )
     result = await db_session.execute(
         select(cast(Document.uuid, sqlalchemy.String))
         .select_from(DocumentUserMapping)

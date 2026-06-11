@@ -25,6 +25,8 @@ jobs:
             CVE-2026-33231
             CVE-2026-4539
             CVE-2025-71176
+            # The below only applicable when attacker can manipulate local execution
+            CVE-2025-3000
             # torch/onnx/transformers are transitive deps of unstructured (ML-based document
             # parsing). These CVEs do not apply: torch CVEs require the attacker to already
             # have code execution on the server; transformers CVEs require loading
