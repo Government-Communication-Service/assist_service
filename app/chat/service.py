@@ -59,6 +59,7 @@ from app.config import (
     LLM_CHAT_TITLE_MODEL,
     SMART_TARGETS_SERVICE_DISABLED,
     TEST_USER_GROUPS,
+    USE_RAG,
 )
 from app.database.db_operations import DbOperations
 from app.database.models import (
@@ -712,7 +713,7 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         tasks.append(enhance_task)
 
     # Condition for searching central guidance
-    if input_data.use_rag:
+    if USE_RAG and input_data.use_rag:
         search_central_guidance_task = asyncio.create_task(
             search_central_guidance(input_data.query, m_user.id, db_session)
         )

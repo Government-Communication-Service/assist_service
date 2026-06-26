@@ -36,6 +36,11 @@ def get_central_index(db_session: AsyncSession):
 
 async def sync_central_index(session: AsyncSession) -> bool:
     """Updates the Central RAG OpenSearch index to be in sync with the PostgreSQL tables."""
+    from app.config import OPENSEARCH_MOCKED
+
+    if OPENSEARCH_MOCKED:
+        logger.info("OPENSEARCH_MOCKED is set — skipping central index sync.")
+        return True
 
     logger.debug("Starting synchronization of OpenSearch with PostgreSQL...")
     opensearch_client = create_client()

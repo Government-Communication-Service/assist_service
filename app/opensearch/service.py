@@ -7,12 +7,20 @@ from opensearchpy import AsyncOpenSearch, OpenSearch
 from opensearchpy.exceptions import RequestError, TransportError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import OPENSEARCH_DISABLE_SSL, OPENSEARCH_HOST, OPENSEARCH_PORT, OPENSEARCH_USER, settings
+from app.config import (
+    OPENSEARCH_DISABLE_SSL,
+    OPENSEARCH_HOST,
+    OPENSEARCH_MOCKED,
+    OPENSEARCH_PORT,
+    OPENSEARCH_USER,
+    settings,
+)
 from app.database.db_operations import DbOperations
 from app.database.models import SearchIndex
 from app.document_upload.constants import PERSONAL_DOCUMENTS_INDEX_NAME
 from app.logs import Action, LogsHandler
 from app.opensearch.exceptions import DocumentOperationError
+from app.opensearch.mock_client import MockAsyncOpenSearch, MockOpenSearch
 
 logging.getLogger("opensearch").setLevel(logging.ERROR)
 
@@ -20,6 +28,9 @@ logger = logging.getLogger(__name__)
 
 
 def verify_connection_to_opensearch():
+    if OPENSEARCH_MOCKED:
+        logger.info("OPENSEARCH_MOCKED is set — skipping OpenSearch connection check.")
+        return
     try:
         client = create_client()
         # Test if the client is created successfully
@@ -69,6 +80,9 @@ class OpenSearchClient:
     @classmethod
     def get_client(cls):
         if cls._instance is None:
+            if OPENSEARCH_MOCKED:
+                cls._instance = MockOpenSearch()
+                return cls._instance
             cls._instance = OpenSearch(
                 hosts=[{"host": OPENSEARCH_HOST, "port": OPENSEARCH_PORT}],
                 http_auth=(OPENSEARCH_USER, settings.opensearch_password.get_secret_value()),
@@ -87,6 +101,8 @@ def create_client():
 
 def create_async_client():
     """Creates an AsyncOpenSearch client."""
+    if OPENSEARCH_MOCKED:
+        return MockAsyncOpenSearch()
     return AsyncOpenSearch(
         hosts=[{"host": OPENSEARCH_HOST, "port": int(OPENSEARCH_PORT)}],
         http_auth=(OPENSEARCH_USER, settings.opensearch_password.get_secret_value()),

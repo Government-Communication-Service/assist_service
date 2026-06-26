@@ -36,6 +36,10 @@ class AppSettings(BaseSettings):
     opensearch_port: int = 9200
     opensearch_disable_ssl: bool = False
     sync_central_indexes_on_startup: bool = False
+    # When True, OpenSearch is stubbed out: the boot-time connection check is
+    # skipped and clients return empty results. Lets the app run
+    # without an OpenSearch cluster. Pair with USE_RAG=false.
+    opensearch_mocked: bool = False
 
     # --- server ---
     port: int = 5312
@@ -182,6 +186,7 @@ S3_ERRORDOCS_BUCKET = settings.s3_errordocs_bucket
 GCS_DATA_API_URL = settings.gcs_data_api_url
 
 # Feature flags
+USE_RAG = settings.use_rag
 SMART_TARGETS_SERVICE_DISABLED = settings.smart_targets_service_disabled
 
 # OpenSearch (non-secret)
@@ -190,6 +195,7 @@ OPENSEARCH_HOST = settings.opensearch_host
 OPENSEARCH_PORT = settings.opensearch_port
 OPENSEARCH_DISABLE_SSL = settings.opensearch_disable_ssl
 SYNC_CENTRAL_INDEXES_ON_STARTUP = settings.sync_central_indexes_on_startup
+OPENSEARCH_MOCKED = settings.opensearch_mocked
 
 # LLM / Bedrock
 LLM_DEFAULT_PROVIDER = settings.llm_default_provider
