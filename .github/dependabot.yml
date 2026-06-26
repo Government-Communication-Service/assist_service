@@ -33,6 +33,12 @@ updates:
     labels:
       - dependencies
       - python
+    ignore:
+      # Held at 0.18.18: 0.22.x regressed PDF parsing (OCR fallback needing Tesseract we don't
+      # ship). See requirements.txt. Re-test PDF uploads before unignoring/bumping.
+      - dependency-name: "unstructured"
+      # Kept in lockstep with unstructured 0.18.18 (pinned to its tested 1.0.5); bump together.
+      - dependency-name: "unstructured-inference"
     groups:
       python-production:
         applies-to: version-updates

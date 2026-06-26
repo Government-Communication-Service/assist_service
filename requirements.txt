@@ -29,7 +29,15 @@ SQLAlchemy[asyncpg]==2.0.50
 
 # Document parsing
 pdfminer.six>=20251230
-unstructured[pdf,docx,pptx,xlsx]==0.22.32
+# Pinned to 0.18.18: unstructured 0.22.x changed PDF auto-strategy so that files whose text
+# isn't cleanly extractable by pdfminer (e.g. slide decks / custom font encodings) fall back to
+# OCR_ONLY, which needs a Tesseract binary we don't ship -> TesseractNotFoundError / NoTextContentError
+# on PDFs that previously uploaded fine. 0.18.18 is the last version confirmed to parse them here.
+# Do NOT let Dependabot bump this without re-testing PDF uploads (it's how the regression landed).
+unstructured[pdf,docx,pptx,xlsx]==0.18.18
+# Pinned to the version in unstructured 0.18.18's tested lock; unstructured only requires >=1.0.5
+# (open upper bound), so without this the transitive dep floats and can drift out of API sync.
+unstructured-inference==1.0.5
 # spaCy model required by unstructured for document partitioning.
 # unstructured pulls in spaCy but not the model, so pin it here to install at
 # build time instead of lazily downloading at runtime (fails on read-only
