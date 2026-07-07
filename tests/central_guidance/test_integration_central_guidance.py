@@ -341,7 +341,7 @@ async def test_database_failure_handling(db_session):
     message_id = await create_test_message(db_session, query_content)
 
     # Mock database operations to fail
-    with patch("app.central_guidance.service_rag.save_llm_response") as mock_save:
+    with patch("app.bedrock.bedrock.DbOperations.insert_llm_internal_response_id_query") as mock_save:
         mock_save.side_effect = Exception("Database write failed")
 
         # Should not crash the main flow

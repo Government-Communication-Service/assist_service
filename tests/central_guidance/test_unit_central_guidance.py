@@ -17,6 +17,7 @@ def make_llm_response(is_relevant, reasoning="some reasoning"):
     response = MagicMock()
     response.content = [make_tool_use_block(is_relevant, reasoning)]
     response.usage = MagicMock(input_tokens=10, output_tokens=5)
+    response.llm_internal_response_id = 99
     return response
 
 
@@ -59,16 +60,13 @@ class TestEvaluateChunkRelevance:
         """LLM returns JSON boolean true -> use_chunk is True."""
         retrieval_result = make_retrieval_result()
         llm_response = make_llm_response(is_relevant=True)
-        saved_llm_response = MagicMock(id=99)
         updated_mapping = MagicMock()
 
         with (
             patch("app.central_guidance.service_rag.BedrockHandler") as mock_bedrock,
-            patch("app.central_guidance.service_rag.save_llm_response", new_callable=AsyncMock) as mock_save,
             patch("app.central_guidance.service_rag.update_chunk_mapping", new_callable=AsyncMock) as mock_update,
         ):
             mock_bedrock.return_value.invoke_async = AsyncMock(return_value=llm_response)
-            mock_save.return_value = saved_llm_response
             mock_update.return_value = updated_mapping
 
             result = await evaluate_chunk_relevance(retrieval_result, "what is comms strategy?", mock_db_session)
@@ -81,16 +79,13 @@ class TestEvaluateChunkRelevance:
         """LLM returns JSON boolean false -> use_chunk is False."""
         retrieval_result = make_retrieval_result()
         llm_response = make_llm_response(is_relevant=False)
-        saved_llm_response = MagicMock(id=99)
         updated_mapping = MagicMock()
 
         with (
             patch("app.central_guidance.service_rag.BedrockHandler") as mock_bedrock,
-            patch("app.central_guidance.service_rag.save_llm_response", new_callable=AsyncMock) as mock_save,
             patch("app.central_guidance.service_rag.update_chunk_mapping", new_callable=AsyncMock) as mock_update,
         ):
             mock_bedrock.return_value.invoke_async = AsyncMock(return_value=llm_response)
-            mock_save.return_value = saved_llm_response
             mock_update.return_value = updated_mapping
 
             await evaluate_chunk_relevance(retrieval_result, "what is comms strategy?", mock_db_session)
@@ -102,16 +97,13 @@ class TestEvaluateChunkRelevance:
         """LLM returns string 'True' instead of JSON boolean -> coerced to True."""
         retrieval_result = make_retrieval_result()
         llm_response = make_llm_response(is_relevant="True")
-        saved_llm_response = MagicMock(id=99)
         updated_mapping = MagicMock()
 
         with (
             patch("app.central_guidance.service_rag.BedrockHandler") as mock_bedrock,
-            patch("app.central_guidance.service_rag.save_llm_response", new_callable=AsyncMock) as mock_save,
             patch("app.central_guidance.service_rag.update_chunk_mapping", new_callable=AsyncMock) as mock_update,
         ):
             mock_bedrock.return_value.invoke_async = AsyncMock(return_value=llm_response)
-            mock_save.return_value = saved_llm_response
             mock_update.return_value = updated_mapping
 
             await evaluate_chunk_relevance(retrieval_result, "what is comms strategy?", mock_db_session)
@@ -123,16 +115,13 @@ class TestEvaluateChunkRelevance:
         """LLM returns string 'False' (the original bug) -> coerced to False, not truthy string."""
         retrieval_result = make_retrieval_result()
         llm_response = make_llm_response(is_relevant="False")
-        saved_llm_response = MagicMock(id=99)
         updated_mapping = MagicMock()
 
         with (
             patch("app.central_guidance.service_rag.BedrockHandler") as mock_bedrock,
-            patch("app.central_guidance.service_rag.save_llm_response", new_callable=AsyncMock) as mock_save,
             patch("app.central_guidance.service_rag.update_chunk_mapping", new_callable=AsyncMock) as mock_update,
         ):
             mock_bedrock.return_value.invoke_async = AsyncMock(return_value=llm_response)
-            mock_save.return_value = saved_llm_response
             mock_update.return_value = updated_mapping
 
             await evaluate_chunk_relevance(retrieval_result, "what is comms strategy?", mock_db_session)
@@ -149,17 +138,14 @@ class TestEvaluateChunkRelevance:
         block.input = {"reasoning": "no decision given"}
         response.content = [block]
         response.usage = MagicMock(input_tokens=10, output_tokens=5)
-
-        saved_llm_response = MagicMock(id=99)
+        response.llm_internal_response_id = 99
         updated_mapping = MagicMock()
 
         with (
             patch("app.central_guidance.service_rag.BedrockHandler") as mock_bedrock,
-            patch("app.central_guidance.service_rag.save_llm_response", new_callable=AsyncMock) as mock_save,
             patch("app.central_guidance.service_rag.update_chunk_mapping", new_callable=AsyncMock) as mock_update,
         ):
             mock_bedrock.return_value.invoke_async = AsyncMock(return_value=response)
-            mock_save.return_value = saved_llm_response
             mock_update.return_value = updated_mapping
 
             await evaluate_chunk_relevance(retrieval_result, "what is comms strategy?", mock_db_session)
@@ -174,17 +160,14 @@ class TestEvaluateChunkRelevance:
         response = MagicMock()
         response.content = [MagicMock()]  # not a ToolUseBlock instance
         response.usage = MagicMock(input_tokens=10, output_tokens=5)
-
-        saved_llm_response = MagicMock(id=99)
+        response.llm_internal_response_id = 99
         updated_mapping = MagicMock()
 
         with (
             patch("app.central_guidance.service_rag.BedrockHandler") as mock_bedrock,
-            patch("app.central_guidance.service_rag.save_llm_response", new_callable=AsyncMock) as mock_save,
             patch("app.central_guidance.service_rag.update_chunk_mapping", new_callable=AsyncMock) as mock_update,
         ):
             mock_bedrock.return_value.invoke_async = AsyncMock(return_value=response)
-            mock_save.return_value = saved_llm_response
             mock_update.return_value = updated_mapping
 
             await evaluate_chunk_relevance(retrieval_result, "what is comms strategy?", mock_db_session)
@@ -198,7 +181,6 @@ class TestEvaluateChunkRelevance:
 
         with (
             patch("app.central_guidance.service_rag.BedrockHandler") as mock_bedrock,
-            patch("app.central_guidance.service_rag.save_llm_response", new_callable=AsyncMock),
             patch("app.central_guidance.service_rag.update_chunk_mapping", new_callable=AsyncMock),
         ):
             mock_bedrock.return_value.invoke_async = AsyncMock(side_effect=RuntimeError("Bedrock unavailable"))

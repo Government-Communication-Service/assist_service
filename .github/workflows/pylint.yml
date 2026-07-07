@@ -54,6 +54,11 @@ jobs:
             PYSEC-2025-215
             PYSEC-2025-216
             PYSEC-2026-161
+            # NLTK path-traversal via percent-encoded sequences (PYSEC-2026-597).
+            # NLTK is a transitive dep of unstructured (document parsing); we never
+            # call nltk.data.load/find with user-supplied resource names, so an
+            # attacker cannot reach the vulnerable code path through our API.
+            PYSEC-2026-597
 
       - name: Install Bandit
         run: pip install bandit

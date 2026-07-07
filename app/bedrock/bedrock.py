@@ -5,13 +5,15 @@ from typing import Any, Callable, Dict, List, Optional
 from anthropic.types import MessageParam
 from anthropic.types.message import Message as AnthropicMessage
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bedrock.bedrock_stream import BedrockStreamInput, bedrock_stream
 from app.bedrock.bedrock_types import AnthropicBedrockProvider, AsyncAnthropicBedrockProvider
 from app.bedrock.retry import handle_region_failover_with_retries, with_region_failover_for_streaming
 from app.bedrock.schemas import LLMResponse, LLMTransaction
-from app.bedrock.service import llm_transaction
+from app.bedrock.service import calculate_completion_cost, llm_transaction
 from app.config import AWS_BEDROCK_REGION1, LLM_DEFAULT_MODEL
+from app.database.db_operations import DbOperations
 from app.database.models import LLM, Message
 from app.database.table import LLMTable
 
@@ -44,17 +46,18 @@ class Usage(BaseModel):
     output_tokens: int
 
 
-class Result(BaseModel):
-    content: List[Content | ContentToolUse]
-    completion_cost: float
-    usage: Usage
-
-
 class ToolResult(BaseModel):
     content: List[Content | ContentToolUse]
     completion_cost: float
     input_tokens: int
     output_tokens: int
+
+
+class BedrockMessage(AnthropicMessage):
+    llm_internal_response_id: int | None = None
+
+    def __init__(self, message: AnthropicMessage, llm_internal_response_id: int | None = None):
+        super().__init__(**message.model_dump(), llm_internal_response_id=llm_internal_response_id)
 
 
 class BedrockHandler:
@@ -113,6 +116,12 @@ class BedrockHandler:
 
         """
         # assign default llm model if no LLM model is provided
+        if llm is None:
+            logger.error(
+                "BedrockHandler instantiated without an llm argument — falling back to default model %s. "
+                "Pass llm= explicitly to use the intended model.",
+                LLM_DEFAULT_MODEL,
+            )
         self.llm = llm if llm else llm_get_default_model()
 
         if not max_tokens:
@@ -163,26 +172,12 @@ class BedrockHandler:
 
         return messages
 
-    def format_response(self, response: [Result | ToolResult | Message]) -> LLMTransaction:
-        if isinstance(response, ToolResult):
-            payload = LLMResponse(
-                content=response.content,
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens,
-            )
-        elif isinstance(response, Result):
-            payload = LLMResponse(
-                content=response.content,
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens,
-            )
-        else:
-            payload = LLMResponse(
-                content=response.content,
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens,
-            )
-
+    def format_response(self, response: ToolResult | AnthropicMessage) -> LLMTransaction:
+        payload = LLMResponse(
+            content=response.content,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+        )
         return llm_transaction(self.llm, payload)
 
     def _format_chat_title_response(self, response: AnthropicMessage) -> LLMTransaction:
@@ -194,22 +189,40 @@ class BedrockHandler:
 
         return llm_transaction(self.llm, result)
 
-    async def _invoke_async(self, messages, **data) -> Result:
+    async def _invoke_async(self, messages, db_session: AsyncSession | None = None, **data) -> BedrockMessage:
         logger.debug("LLM _invoke_async started")
         config = self.config | data
         logger.debug(f"Messages sent to LLM: {messages}")
         response = await self.async_client.messages.create(messages=messages, **config)
         logger.debug("LLM _invoke_async completed")
-        return response
+        llm_internal_response_id = None
+        if db_session is not None:
+            llm_internal_response = await DbOperations.insert_llm_internal_response_id_query(
+                db_session=db_session,
+                web_browsing_llm=self.llm,
+                content=str(response.content),
+                tokens_in=response.usage.input_tokens,
+                tokens_out=response.usage.output_tokens,
+                completion_cost=calculate_completion_cost(
+                    self.llm, response.usage.input_tokens, response.usage.output_tokens
+                ),
+            )
+            llm_internal_response_id = llm_internal_response.id
+        return BedrockMessage(response, llm_internal_response_id=llm_internal_response_id)
 
     @handle_region_failover_with_retries
-    async def invoke_async(self, messages, **data) -> Result:
-        return await self._invoke_async(messages, **data)
+    async def invoke_async(self, messages, db_session: AsyncSession | None = None, **data) -> BedrockMessage:
+        """Invoke the Bedrock API asynchronously with region failover.
+
+        Pass db_session to log the call to the database. The returned BedrockMessage
+        will then have llm_internal_response_id set, which can be used as a foreign key
+        in related tables. Without db_session, llm_internal_response_id is None.
+        """
+        return await self._invoke_async(messages, db_session=db_session, **data)
 
     async def _invoke_async_with_call_cost_details(self, messages, **data) -> LLMTransaction:
         config = self.config | data
         response = await self.async_client.messages.create(messages=messages, **config)
-
         return self.format_response(response)
 
     @handle_region_failover_with_retries

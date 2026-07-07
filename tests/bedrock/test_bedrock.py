@@ -2,12 +2,14 @@ import asyncio
 import json
 import logging
 from decimal import Decimal
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from anthropic.types.message import Message as AnthropicMessage
+from anthropic.types.usage import Usage
 
 from app.api.endpoints import ENDPOINTS
-from app.bedrock import BedrockHandler, RunMode
+from app.bedrock import BedrockHandler, BedrockMessage, RunMode
 from app.bedrock.bedrock_types import BedrockError
 from app.bedrock.service import calculate_completion_cost
 from app.config import AWS_BEDROCK_REGION1, LLM_CHAT_RESPONSE_MODEL, LLM_DEFAULT_MODEL
@@ -72,6 +74,78 @@ async def test_aws_region_failover_for_llm_invoke_fail(mock_invoke, caplog):
         await bedrock.invoke_async(messages)
 
     assert "Transient error invoke" in caplog.text
+
+
+def make_anthropic_message(model="anthropic.claude-haiku-4-5"):
+    return AnthropicMessage(
+        id="msg_test",
+        type="message",
+        role="assistant",
+        content=[],
+        model=model,
+        stop_reason="end_turn",
+        stop_sequence=None,
+        usage=Usage(input_tokens=10, output_tokens=5, cache_creation_input_tokens=0, cache_read_input_tokens=0),
+    )
+
+
+async def test_invoke_async_returns_bedrock_message():
+    """invoke_async wraps the SDK response in a BedrockMessage."""
+    llm = MagicMock()
+    llm.model = LLM_DEFAULT_MODEL
+    bedrock = BedrockHandler(llm=llm, mode=RunMode.ASYNC)
+
+    fake_response = make_anthropic_message(model=bedrock.model)
+    bedrock.async_client = MagicMock()
+    bedrock.async_client.messages.create = AsyncMock(return_value=fake_response)
+
+    result = await bedrock.invoke_async([{"role": "user", "content": "hello"}])
+
+    assert isinstance(result, BedrockMessage)
+    assert result.model == bedrock.model
+    assert result.llm_internal_response_id is None
+
+
+async def test_invoke_async_with_db_session_writes_to_db():
+    """invoke_async writes to llm_internal_response and populates llm_internal_response_id."""
+    llm = MagicMock()
+    llm.model = LLM_DEFAULT_MODEL
+    llm.input_cost_per_token = 1e-6
+    llm.output_cost_per_token = 5e-6
+    bedrock = BedrockHandler(llm=llm, mode=RunMode.ASYNC)
+
+    fake_response = make_anthropic_message(model=bedrock.model)
+    bedrock.async_client = MagicMock()
+    bedrock.async_client.messages.create = AsyncMock(return_value=fake_response)
+
+    mock_db_record = MagicMock(id=42)
+    mock_db_session = MagicMock()
+
+    patch_target = "app.bedrock.bedrock.DbOperations.insert_llm_internal_response_id_query"
+    with patch(patch_target, new_callable=AsyncMock) as mock_insert:
+        mock_insert.return_value = mock_db_record
+        result = await bedrock.invoke_async([{"role": "user", "content": "hello"}], db_session=mock_db_session)
+
+    mock_insert.assert_called_once()
+    assert result.llm_internal_response_id == 42
+
+
+async def test_invoke_async_without_db_session_does_not_write_to_db():
+    """invoke_async does not write to the DB when db_session is not provided."""
+    llm = MagicMock()
+    llm.model = LLM_DEFAULT_MODEL
+    bedrock = BedrockHandler(llm=llm, mode=RunMode.ASYNC)
+
+    fake_response = make_anthropic_message(model=bedrock.model)
+    bedrock.async_client = MagicMock()
+    bedrock.async_client.messages.create = AsyncMock(return_value=fake_response)
+
+    patch_target = "app.bedrock.bedrock.DbOperations.insert_llm_internal_response_id_query"
+    with patch(patch_target, new_callable=AsyncMock) as mock_insert:
+        result = await bedrock.invoke_async([{"role": "user", "content": "hello"}])
+
+    mock_insert.assert_not_called()
+    assert result.llm_internal_response_id is None
 
 
 @pytest.mark.asyncio

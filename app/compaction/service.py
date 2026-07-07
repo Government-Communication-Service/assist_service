@@ -5,44 +5,18 @@ import asyncio
 import logging
 from typing import Optional, Tuple
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.bedrock import BedrockHandler, RunMode
-from app.bedrock.service import calculate_completion_cost
+from app.bedrock import BedrockHandler, BedrockMessage, RunMode
 from app.compaction import config as compaction_config
-from app.database.models import LLM, LlmInternalResponse, Message
+from app.database.models import Message
 from app.database.table import LLMTable
 
 logger = logging.getLogger(__name__)
 
 
-async def save_llm_internal_response(
-    db_session: AsyncSession,
-    llm: LLM,
-    content: str,
-    input_tokens: int,
-    output_tokens: int,
-    system_prompt_id: Optional[int] = None,
-) -> LlmInternalResponse:
-    """Save LLM response and usage to database for analytics."""
-    stmt = (
-        insert(LlmInternalResponse)
-        .values(
-            llm_id=llm.id,
-            system_prompt_id=system_prompt_id,
-            content=content,
-            tokens_in=input_tokens,
-            tokens_out=output_tokens,
-            completion_cost=calculate_completion_cost(llm, input_tokens, output_tokens),
-        )
-        .returning(LlmInternalResponse)
-    )
-    result = await db_session.execute(stmt)
-    return result.scalar_one()
-
-
-async def summarise_message(message: Message, db_session: AsyncSession) -> Optional[LlmInternalResponse]:
+async def summarise_message(message: Message, db_session: AsyncSession) -> Optional[BedrockMessage]:
     """
     Summarise a single message using the configured LLM model.
 
@@ -51,7 +25,7 @@ async def summarise_message(message: Message, db_session: AsyncSession) -> Optio
         db_session: Database session
 
     Returns:
-        LlmInternalResponse record containing the summary, or None if already summarised
+        BedrockMessage on success, or None if already summarised or on error
     """
     # Skip if message already has a summary
     if message.summary is not None:
@@ -81,6 +55,7 @@ async def summarise_message(message: Message, db_session: AsyncSession) -> Optio
 
         # Call the LLM to generate summary
         response = await bedrock_handler.invoke_async(
+            db_session=db_session,
             max_tokens=llm.max_tokens,
             system=compaction_config.SUMMARISATION_SYSTEM_PROMPT,
             messages=messages,
@@ -89,28 +64,19 @@ async def summarise_message(message: Message, db_session: AsyncSession) -> Optio
         # Extract the summary from the response
         summary_content = response.content[0].text if response.content else ""
 
-        # Save the LLM response to track costs
-        llm_response = await save_llm_internal_response(
-            db_session=db_session,
-            llm=llm,
-            content=summary_content,
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-        )
-
         # Update the message with the summary and LLM response ID
         stmt = (
             update(Message)
             .where(Message.id == message.id)
             .values(
                 summary=summary_content,
-                summary_llm_response_id=llm_response.id,
+                summary_llm_response_id=response.llm_internal_response_id,
             )
         )
         await db_session.execute(stmt)
 
         logger.info(f"Successfully summarised message {message.id}")
-        return llm_response
+        return response
 
     except Exception as e:
         logger.exception(f"Error summarising message {message.id}: {e}")

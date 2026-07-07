@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from anthropic._exceptions import ServiceUnavailableError
 from anthropic.types import Message
+from anthropic.types.usage import Usage
 
 from app.bedrock import BedrockHandler, RunMode
 from app.bedrock.bedrock_types import AsyncAnthropicBedrock, AsyncAnthropicBedrockProvider
@@ -54,13 +55,24 @@ async def test_failover_moves_real_provider_client_region(monkeypatch):
     mock_response.request = MagicMock()
     mock_response.status_code = 503
 
+    fake_message = Message(
+        id="msg_test",
+        type="message",
+        role="assistant",
+        content=[],
+        model="anthropic.claude-haiku-4-5",
+        stop_reason="end_turn",
+        stop_sequence=None,
+        usage=Usage(input_tokens=5, output_tokens=3, cache_creation_input_tokens=0, cache_read_input_tokens=0),
+    )
+
     side_effects = [
         ServiceUnavailableError(
             "Error code: 503 - {'message': 'Bedrock is unable to process your request.'}",
             response=mock_response,
             body={"message": "Bedrock is unable to process your request."},
         ),
-        {"result": "ok"},
+        fake_message,
     ]
 
     class FakeMessages:
@@ -86,7 +98,7 @@ async def test_failover_moves_real_provider_client_region(monkeypatch):
     bedrock = BedrockHandler(mode=RunMode.ASYNC)
     result = await bedrock.invoke_async([{"role": "user", "content": "hello"}])
 
-    assert result == {"result": "ok"}
+    assert result.model == "anthropic.claude-haiku-4-5"
     assert call_regions == [AWS_BEDROCK_REGION1, AWS_BEDROCK_REGION2]
 
 
@@ -243,7 +255,7 @@ async def test_aws_region_failover_for_llm_invoke_success(mock_invoke, caplog):
         content=[{"type": "text", "text": "Hello!"}],
         model="claude-test",
         stop_reason="end_turn",
-        usage={"input_tokens": 10, "output_tokens": 5}
+        usage={"input_tokens": 10, "output_tokens": 5},
     )
     mock_invoke.side_effect = [Exception("fail"), mock_message]
     result = await bedrock.invoke_async(messages)
@@ -257,12 +269,7 @@ async def test_aws_region_failover_for_llm_invoke_async_success(mock_invoke, cap
     messages = [{"role": "user", "content": "hello"}]
     # Create a mock LLMTransaction object as the successful return value
     mock_transaction = LLMTransaction(
-        content="Hello!",
-        input_tokens=10,
-        output_tokens=5,
-        input_cost=0.001,
-        output_cost=0.002,
-        completion_cost=0.003
+        content="Hello!", input_tokens=10, output_tokens=5, input_cost=0.001, output_cost=0.002, completion_cost=0.003
     )
     mock_invoke.side_effect = [Exception("fail"), mock_transaction]
     result = await bedrock.invoke_async_with_call_cost_details(messages)

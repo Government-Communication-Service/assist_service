@@ -7,12 +7,12 @@ from urllib.parse import urlparse
 
 import aiohttp
 import httpx
+from anthropic.types.message import Message as AnthropicMessage
 from bs4 import BeautifulSoup
 from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bedrock import BedrockHandler, RunMode
-from app.bedrock.bedrock import Result
 from app.bedrock.tools_use import (
     DOCUMENT_RELEVANCE_ASSESSMENT,
     DOWNLOAD_URLS,
@@ -479,7 +479,7 @@ async def extract_content_from_gov_uk(url: str) -> str:
 
 async def is_document_relevant(
     llm: BedrockHandler, role: str, query: str, non_rag_document: str, non_rag_document_title: str
-) -> Result:
+) -> AnthropicMessage:
     messages = [
         {
             "role": role,
