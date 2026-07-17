@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from fastapi import HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 
+from app.config import ThinkingLevel
 from app.request_schemas import RequestModel, RequestStandard
 from app.themes_use_cases.schemas import BannerType, PrebuiltPrompt
 from app.user.schemas import DocumentSchema
@@ -73,6 +74,7 @@ class ChatBaseRequest(RequestStandard):
     document_uuids: Optional[List[str]] = None
     use_smart_targets: bool = False
     audience_segment_uuids: list[UUID] | None = None
+    thinking_level: Optional[ThinkingLevel] = None
 
 
 class ChatQueryRequest(RequestModel):
@@ -86,6 +88,7 @@ class ChatRequest(ChatQueryRequest):
     document_uuids: Optional[List[str]] = None
     use_smart_targets: bool = False
     audience_segment_uuids: list[UUID] | None = None
+    thinking_level: Optional[ThinkingLevel] = None
 
     @field_validator("query")
     def validate_query(cls, v):

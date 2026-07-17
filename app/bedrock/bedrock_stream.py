@@ -4,7 +4,7 @@ from typing import Any, List, Optional
 
 from anthropic import AsyncAnthropicBedrock
 from anthropic.types import MessageParam
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.bedrock.american_word_swap import PARTIAL_WORD_PATTERN, replace_american_words
 from app.database.models import Message
@@ -21,6 +21,7 @@ class BedrockStreamInput(BaseModel):
     user_message: Optional[Message] = None
     system: str = None
     on_complete: Any = None
+    extra_api_kwargs: dict = Field(default_factory=dict)
 
     class Config:
         arbitrary_types_allowed = True
@@ -34,6 +35,7 @@ async def bedrock_stream(bedrock_stream_input: BedrockStreamInput):
         messages=bedrock_stream_input.messages,
         model=bedrock_stream_input.model,
         system=bedrock_stream_input.system,
+        **bedrock_stream_input.extra_api_kwargs,
     ) as stream:
         remaining_word = ""
         async for text in stream.text_stream:

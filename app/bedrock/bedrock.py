@@ -64,6 +64,7 @@ class BedrockHandler:
     __CROSS_REGION_INFERENCE_MODELS = {
         AWS_BEDROCK_REGION1: [
             "anthropic.claude-haiku-4-5-20251001-v1:0",
+            "anthropic.claude-sonnet-5",
             "anthropic.claude-sonnet-4-6",
             "anthropic.claude-opus-4-6-v1",
             "anthropic.claude-opus-4-5-20251101-v1:0",
@@ -249,6 +250,7 @@ class BedrockHandler:
         user_message: Message = None,
         system: str = None,
         parse_data=None,
+        on_complete=None,
         **data,
     ):
         config = self.config | data
@@ -261,7 +263,8 @@ class BedrockHandler:
             user_message=user_message,
             system=system,
             parse_data=parse_data,
-            **data,
+            on_complete=on_complete,
+            extra_api_kwargs=data,
         )
         return bedrock_stream(bedrock_stream_input)
 

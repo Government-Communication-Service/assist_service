@@ -22,6 +22,7 @@ from app.bedrock import BedrockHandler, RunMode
 from app.bedrock.bedrock_types import BedrockError, BedrockErrorType
 from app.bedrock.schemas import LLMResponse
 from app.bedrock.service import llm_transaction
+from app.bedrock.thinking import thinking_kwargs
 from app.central_guidance.schemas import RagRequest
 from app.central_guidance.service_rag import search_central_guidance
 from app.chat.actions import get_response_system_prompt
@@ -55,6 +56,7 @@ from app.chat.schemas import (
 from app.chat.utils import prepare_message_objects_for_llm
 from app.compaction.service import trigger_compaction_if_needed
 from app.config import (
+    CHAT_THINKING_LEVEL,
     LLM_CHAT_RESPONSE_MODEL,
     LLM_CHAT_TITLE_MODEL,
     SMART_TARGETS_SERVICE_DISABLED,
@@ -944,6 +946,9 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         )
         return result
 
+    effective_thinking_level = input_data.thinking_level or CHAT_THINKING_LEVEL
+    llm_thinking_kwargs = thinking_kwargs(effective_thinking_level)
+
     if input_data.stream:
 
         def parse_data(text, citations):
@@ -968,11 +973,12 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
             system=system,
             parse_data=parse_data,
             on_complete=on_complete,
+            **llm_thinking_kwargs,
         )
 
         return stream_res
 
-    response = await llm.invoke_async(formatted_messages)
+    response = await llm.invoke_async(formatted_messages, **llm_thinking_kwargs)
     result = on_complete(response)
 
     return result

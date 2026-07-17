@@ -1,4 +1,5 @@
 import os
+from enum import Enum
 
 from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import (
@@ -7,6 +8,23 @@ from pydantic_settings import (
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
+
+
+class ThinkingLevel(str, Enum):
+    """Effort level for Sonnet 5 adaptive thinking on the main chat endpoint.
+
+    disabled — thinking off (cheapest; equivalent to pre-Sonnet-5 behaviour).
+    low/medium/high/xhigh/max — adaptive thinking at increasing depth/cost.
+    Set via CHAT_THINKING_LEVEL env var; override per-request via the
+    thinking_level body parameter.
+    """
+
+    disabled = "disabled"
+    low = "low"
+    medium = "medium"
+    high = "high"
+    xhigh = "xhigh"
+    max = "max"
 
 
 class AppSettings(BaseSettings):
@@ -84,18 +102,19 @@ class AppSettings(BaseSettings):
 
     # --- LLM / Bedrock ---
     llm_default_provider: str = "bedrock"
-    llm_default_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
-    llm_chat_response_model: str = "anthropic.claude-sonnet-4-6"
+    llm_default_model: str = "anthropic.claude-sonnet-4-6"
+    llm_chat_response_model: str = "anthropic.claude-sonnet-5"
     llm_chat_title_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     llm_index_router: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
-    llm_opensearch_query_generator: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    llm_opensearch_query_generator: str = "anthropic.claude-sonnet-4-6"
     llm_chunk_reviewer: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
-    llm_govuk_query_generator: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    llm_govuk_query_generator: str = "anthropic.claude-sonnet-4-6"
     llm_document_relevancy_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     llm_gov_uk_search_followup_assessment: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
-    llm_smart_targets_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    llm_smart_targets_model: str = "anthropic.claude-sonnet-4-6"
     llm_compaction_summarisation_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
-    llm_style_guide_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    llm_style_guide_model: str = "anthropic.claude-sonnet-4-6"
+    chat_thinking_level: ThinkingLevel = ThinkingLevel.disabled
 
     # --- style guide ---
     style_guide_llm_batch_size: int = 10
@@ -215,6 +234,7 @@ LLM_GOV_UK_SEARCH_FOLLOWUP_ASSESSMENT = settings.llm_gov_uk_search_followup_asse
 LLM_SMART_TARGETS_MODEL = settings.llm_smart_targets_model
 LLM_COMPACTION_SUMMARISATION_MODEL = settings.llm_compaction_summarisation_model
 COMPACTION_TOKEN_THRESHOLD = settings.compaction_token_threshold
+CHAT_THINKING_LEVEL = settings.chat_thinking_level
 
 # Style guide
 STYLE_GUIDE_LLM_BATCH_SIZE = settings.style_guide_llm_batch_size

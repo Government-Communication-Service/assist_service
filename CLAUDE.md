@@ -168,11 +168,11 @@ When adjusting rules or behavior, update the relevant tests in `tests/style_guid
 
 ### LLM Configuration
 The system uses multiple Claude models via AWS Bedrock for different purposes:
-- **Chat Response**: `claude-sonnet-4-20250514-v1:0` (highest quality)
-- **Chat Titles**: `claude-3-7-sonnet-20250219-v1:0`
-- **Query Generation**: `claude-3-7-sonnet-20250219-v1:0`
-- **Index Routing**: `claude-3-5-haiku-20241022-v1:0` (lightweight decisions)
-- **Document Review**: `claude-3-5-haiku-20241022-v1:0`
+- **Chat Response**: `claude-sonnet-5` (highest quality)
+- **Chat Titles**: `claude-haiku-4-5-20251001-v1:0`
+- **Query Generation**: `claude-sonnet-4-6`
+- **Index Routing**: `claude-haiku-4-5-20251001-v1:0` (lightweight decisions)
+- **Document Review**: `claude-haiku-4-5-20251001-v1:0`
 
 Models are configured in `app/config.py` and can be overridden via environment variables.
 

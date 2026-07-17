@@ -1,11 +1,11 @@
 from typing import Optional
 
-from anthropic.types import TextBlock, ToolUseBlock
+from anthropic.types import RedactedThinkingBlock, TextBlock, ThinkingBlock, ToolUseBlock
 from pydantic import BaseModel
 
 
 class LLMResponse(BaseModel):
-    content: str | list[Optional[str | TextBlock | ToolUseBlock]]
+    content: str | list[Optional[str | TextBlock | ThinkingBlock | RedactedThinkingBlock | ToolUseBlock]]
     input_tokens: int
     output_tokens: int
 
