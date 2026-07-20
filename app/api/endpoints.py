@@ -17,6 +17,8 @@ class ENDPOINTS:
     CHAT_TITLE = "/chats/users/{user_uuid}/chats/{chat_uuid}/title"
     CHAT_FAVOURITE = "/chats/users/{user_uuid}/chats/{chat_uuid}/favourite"
     CHAT_SHARE = "/chats/users/{user_uuid}/chats/{chat_uuid}/share"
+    CHAT_SHARE_USERS = "/chats/users/{user_uuid}/chats/{chat_uuid}/share/users"
+    CHAT_SHARE_USER = "/chats/users/{user_uuid}/chats/{chat_uuid}/share/users/{shared_user_uuid}"
     CHAT_SHARED = "/chats/shared/{share_code}"
     CHAT_ARCHIVE = "/chats/users/{user_uuid}/chats/{chat_uuid}/archive"
     #
@@ -54,7 +56,6 @@ class ENDPOINTS:
 
     # Add new endpoint for cleaning up expired message content
     CHAT_CLEANUP_EXPIRED_CONTENT = "/chats/messages/content/expired"
-
 
     def build_url(self, pattern: str, **kwargs) -> str:
         """Builds a URL from a pattern and keyword arguments to replace placeholders."""
@@ -117,6 +118,23 @@ class ENDPOINTS:
 
     def archive_chat(self, user_uuid: UUID, chat_uuid: UUID) -> str:
         return self.build_url(self.CHAT_ARCHIVE, user_uuid=user_uuid, chat_uuid=chat_uuid)
+
+    def chat_share(self, user_uuid: UUID, chat_uuid: UUID) -> str:
+        return self.build_url(self.CHAT_SHARE, user_uuid=user_uuid, chat_uuid=chat_uuid)
+
+    def chat_share_users(self, user_uuid: UUID, chat_uuid: UUID) -> str:
+        return self.build_url(self.CHAT_SHARE_USERS, user_uuid=user_uuid, chat_uuid=chat_uuid)
+
+    def chat_share_user(self, user_uuid: UUID, chat_uuid: UUID, shared_user_uuid: UUID) -> str:
+        return self.build_url(
+            self.CHAT_SHARE_USER,
+            user_uuid=user_uuid,
+            chat_uuid=chat_uuid,
+            shared_user_uuid=shared_user_uuid,
+        )
+
+    def shared_chat(self, share_code: str) -> str:
+        return self.build_url(self.CHAT_SHARED, share_code=share_code)
 
     def themes_use_cases(self, theme_uuid: UUID) -> str:
         return self.build_url(self.PROMPTS_THEMES_USE_CASES, theme_uuid=theme_uuid)

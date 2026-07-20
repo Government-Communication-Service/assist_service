@@ -5,6 +5,7 @@ from typing import Any, List, Mapping, Optional, Tuple, TypeVar
 
 from sqlalchemy import Result, Row, delete, desc, insert, select, text, update
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
@@ -13,6 +14,7 @@ from app.database.models import (
     LLM,
     Chat,
     ChatDocumentMapping,
+    ChatShareUserMapping,
     Document,
     DocumentChunk,
     DocumentUserMapping,
@@ -369,6 +371,22 @@ class DbOperations:
             return id_opensearch_list
 
         return []
+
+    @staticmethod
+    async def get_user_by_uuid(db_session: AsyncSession, user_uuid: str) -> User | None:
+        """
+        Retrieves a user by their UUID, or None when no such user exists.
+
+        Args:
+            db_session (AsyncSession): The asynchronous SQLAlchemy session for executing database queries.
+            user_uuid (str): The user's UUID.
+
+        Returns:
+            User | None: The matching user record, if any.
+        """
+        user_stmt = select(User).where(User.uuid == user_uuid)
+        user_result = await LogsHandler.with_logging(Action.GET_USER_BY_UUID, db_session.execute(user_stmt))
+        return user_result.scalars().first()
 
     @staticmethod
     async def upsert_user_by_uuid(db_session: AsyncSession, user_key_uuid: str) -> User | None:
@@ -1341,7 +1359,9 @@ class DbOperations:
             ) from e
 
     @staticmethod
-    async def chat_update_share(db_session: AsyncSession, chat: Chat, share: bool) -> Chat:
+    async def chat_update_share(
+        db_session: AsyncSession, chat: Chat, share: bool, share_private: Optional[bool] = None
+    ) -> Chat:
         """
         Updates the chat share status and generates share_code if needed.
         Toggling the share status does not update the chat's updated_at timestamp,
@@ -1351,6 +1371,9 @@ class DbOperations:
             db_session (AsyncSession): The asynchronous SQLAlchemy session for executing database queries.
             chat (Chat): Chat object.
             share (bool): New share status.
+            share_private (Optional[bool]): New private share status. When None the existing
+                value is left unchanged so that clients unaware of private shares cannot
+                accidentally turn a private share into a public one.
 
         Returns:
             Chat: A Chat object with updated share status.
@@ -1360,6 +1383,9 @@ class DbOperations:
             import time
 
             values = {"share": share, "updated_at": chat.updated_at}
+
+            if share_private is not None:
+                values["share_private"] = share_private
 
             # Generate share_code if sharing is enabled and no code exists
             if share and chat.share_code is None:
@@ -1376,6 +1402,165 @@ class DbOperations:
                 code=DatabaseExceptionErrorCode.UPDATE_ERROR,
                 message=f"An error occurred in the `chat_update_share` method on the table {Chat.__tablename__}:"
                 + f"Original error: {e}",
+            ) from e
+
+    @staticmethod
+    async def get_chat_share_users(db_session: AsyncSession, chat: Chat) -> List[Row]:
+        """
+        Retrieves the users allowed to view a privately shared chat, together with their
+        notification state.
+
+        Args:
+            db_session (AsyncSession): The asynchronous SQLAlchemy session for executing database queries.
+            chat (Chat): Chat object.
+
+        Returns:
+            List[Row]: Rows of (uuid, notified_at) for the users mapped to the chat's private share.
+        """
+        try:
+            stmt = (
+                select(User.uuid, ChatShareUserMapping.notified_at)
+                .join(User, ChatShareUserMapping.user_id == User.id)
+                .where(ChatShareUserMapping.chat_id == chat.id)
+                .order_by(ChatShareUserMapping.id)
+            )
+            result = await LogsHandler.with_logging(Action.DB_GET_CHAT_SHARE_USERS, db_session.execute(stmt))
+            return list(result.all())
+        except Exception as e:
+            raise DatabaseError(
+                code=DatabaseExceptionErrorCode.GET_BY_ERROR,
+                message="An error occurred in the `get_chat_share_users` method on the table "
+                + f"{ChatShareUserMapping.__tablename__}: Original error: {e}",
+            ) from e
+
+    @staticmethod
+    async def get_chat_share_user_mapping(
+        db_session: AsyncSession, chat_id: int, user_id: int
+    ) -> Optional[ChatShareUserMapping]:
+        """
+        Retrieves the private share mapping between a chat and a user, if one exists.
+
+        Args:
+            db_session (AsyncSession): The asynchronous SQLAlchemy session for executing database queries.
+            chat_id (int): The chat's primary key.
+            user_id (int): The user's primary key.
+
+        Returns:
+            Optional[ChatShareUserMapping]: The mapping record, or None when the user is not part of the share.
+        """
+        try:
+            stmt = select(ChatShareUserMapping).where(
+                ChatShareUserMapping.chat_id == chat_id,
+                ChatShareUserMapping.user_id == user_id,
+            )
+            result = await LogsHandler.with_logging(Action.DB_GET_CHAT_SHARE_USER_MAPPING, db_session.execute(stmt))
+            return result.scalars().first()
+        except Exception as e:
+            raise DatabaseError(
+                code=DatabaseExceptionErrorCode.GET_ONE_BY_ERROR,
+                message="An error occurred in the `get_chat_share_user_mapping` method on the table "
+                + f"{ChatShareUserMapping.__tablename__}: Original error: {e}",
+            ) from e
+
+    @staticmethod
+    async def add_chat_share_user(db_session: AsyncSession, chat: Chat, user: User) -> ChatShareUserMapping:
+        """
+        Adds a user to a chat's private share. The operation is idempotent: adding a user
+        who is already part of the share returns the existing mapping.
+
+        Args:
+            db_session (AsyncSession): The asynchronous SQLAlchemy session for executing database queries.
+            chat (Chat): Chat object.
+            user (User): The user being granted access to the private share.
+
+        Returns:
+            ChatShareUserMapping: The (new or existing) mapping record.
+        """
+        existing = await DbOperations.get_chat_share_user_mapping(db_session, chat.id, user.id)
+        if existing is not None:
+            return existing
+        try:
+            # ON CONFLICT DO NOTHING keeps this idempotent even under concurrent requests: if
+            # another request inserts the same (chat_id, user_id) between the check above and
+            # this statement, the unique constraint is honoured silently instead of raising.
+            # In that case RETURNING yields no row, so we read the winning mapping back.
+            stmt = (
+                pg_insert(ChatShareUserMapping)
+                .values(chat_id=chat.id, user_id=user.id)
+                .on_conflict_do_nothing(constraint="uq_chat_share_user_mapping_chat_id_user_id")
+                .returning(ChatShareUserMapping)
+            )
+            result = await LogsHandler.with_logging(Action.DB_ADD_CHAT_SHARE_USER, db_session.execute(stmt))
+            mapping = result.scalars().first()
+            if mapping is None:
+                mapping = await DbOperations.get_chat_share_user_mapping(db_session, chat.id, user.id)
+            return mapping
+        except Exception as e:
+            raise DatabaseError(
+                code=DatabaseExceptionErrorCode.CREATE_ERROR,
+                message="An error occurred in the `add_chat_share_user` method on the table "
+                + f"{ChatShareUserMapping.__tablename__}: Original error: {e}",
+            ) from e
+
+    @staticmethod
+    async def set_chat_share_user_notified(
+        db_session: AsyncSession, chat: Chat, user: User, notified_at: Optional[datetime]
+    ) -> int:
+        """
+        Records (or clears) when a user was notified that a chat was privately shared with them.
+
+        Args:
+            db_session (AsyncSession): The asynchronous SQLAlchemy session for executing database queries.
+            chat (Chat): Chat object.
+            user (User): The user whose notification state is being updated.
+            notified_at (Optional[datetime]): The notification timestamp, or None to clear it.
+
+        Returns:
+            int: The number of mapping records updated (0 when the user is not part of the share).
+        """
+        try:
+            stmt = (
+                update(ChatShareUserMapping)
+                .values(notified_at=notified_at)
+                .where(
+                    ChatShareUserMapping.chat_id == chat.id,
+                    ChatShareUserMapping.user_id == user.id,
+                )
+            )
+            result = await LogsHandler.with_logging(Action.DB_SET_CHAT_SHARE_USER_NOTIFIED, db_session.execute(stmt))
+            return result.rowcount
+        except Exception as e:
+            raise DatabaseError(
+                code=DatabaseExceptionErrorCode.UPDATE_ERROR,
+                message="An error occurred in the `set_chat_share_user_notified` method on the table "
+                + f"{ChatShareUserMapping.__tablename__}: Original error: {e}",
+            ) from e
+
+    @staticmethod
+    async def remove_chat_share_user(db_session: AsyncSession, chat: Chat, user: User) -> int:
+        """
+        Removes a user from a chat's private share.
+
+        Args:
+            db_session (AsyncSession): The asynchronous SQLAlchemy session for executing database queries.
+            chat (Chat): Chat object.
+            user (User): The user whose access is being revoked.
+
+        Returns:
+            int: The number of mapping records removed (0 when the user was not part of the share).
+        """
+        try:
+            stmt = delete(ChatShareUserMapping).where(
+                ChatShareUserMapping.chat_id == chat.id,
+                ChatShareUserMapping.user_id == user.id,
+            )
+            result = await LogsHandler.with_logging(Action.DB_REMOVE_CHAT_SHARE_USER, db_session.execute(stmt))
+            return result.rowcount
+        except Exception as e:
+            raise DatabaseError(
+                code=DatabaseExceptionErrorCode.DELETE_ERROR,
+                message="An error occurred in the `remove_chat_share_user` method on the table "
+                + f"{ChatShareUserMapping.__tablename__}: Original error: {e}",
             ) from e
 
     @staticmethod

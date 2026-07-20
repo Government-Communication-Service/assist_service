@@ -3,6 +3,7 @@ import asyncio
 import json
 from datetime import datetime, timedelta
 from typing import Dict, Optional
+from uuid import UUID
 
 import sqlalchemy
 from anthropic.types import TextBlock
@@ -371,7 +372,9 @@ async def patch_chat_favourite(db_session: AsyncSession, chat: Chat, favourite: 
     return ChatSuccessResponse(**chat_result.client_response())
 
 
-async def patch_chat_share(db_session: AsyncSession, chat: Chat, share: bool) -> ChatShareResponse:
+async def patch_chat_share(
+    db_session: AsyncSession, chat: Chat, share: bool, share_private: Optional[bool] = None
+) -> ChatShareResponse:
     """
     Updates the share status of a chat.
 
@@ -379,6 +382,8 @@ async def patch_chat_share(db_session: AsyncSession, chat: Chat, share: bool) ->
         db_session (AsyncSession): The active database session for performing the update.
         chat (Chat): The Chat instance representing the chat to be shared.
         share (bool): The new share status to be assigned to the chat.
+        share_private (Optional[bool]): The new private share status. When None the existing
+            value is left unchanged, keeping clients that predate private shares working.
 
     Returns:
         ChatShareResponse: Response object containing the updated chat details including share_code.
@@ -386,8 +391,96 @@ async def patch_chat_share(db_session: AsyncSession, chat: Chat, share: bool) ->
     Raises:
         Exception: If the database operation fails, the underlying DatabaseError will be propagated.
     """
-    chat_result = await DbOperations.chat_update_share(db_session, chat, share)
+    chat_result = await DbOperations.chat_update_share(db_session, chat, share, share_private)
     return ChatShareResponse(**chat_result.client_response())
+
+
+async def get_chat_share_users(db_session: AsyncSession, chat: Chat) -> list[dict]:
+    """
+    Lists the users allowed to view a privately shared chat, with their notification state.
+
+    Args:
+        db_session (AsyncSession): The active database session.
+        chat (Chat): The Chat instance whose private share list is requested.
+
+    Returns:
+        list[dict]: One dict per shared user with "uuid" and "notified_at" keys.
+    """
+    rows = await DbOperations.get_chat_share_users(db_session, chat)
+    return [{"uuid": str(row.uuid), "notified_at": row.notified_at} for row in rows]
+
+
+async def add_chat_share_user(db_session: AsyncSession, chat: Chat, shared_user_uuid: UUID) -> list[dict]:
+    """
+    Grants a user access to a chat's private share. The user is created if they are not
+    yet known to this service (their details live in the PHP frontend's database; this
+    API only tracks their UUID). Adding a user who already has access is a no-op.
+
+    Args:
+        db_session (AsyncSession): The active database session.
+        chat (Chat): The Chat instance being shared.
+        shared_user_uuid (UUID): The UUID of the user being granted access.
+
+    Returns:
+        list[dict]: The updated shared-user list, as returned by get_chat_share_users.
+    """
+    shared_user = await DbOperations.upsert_user_by_uuid(db_session, str(shared_user_uuid))
+    await DbOperations.add_chat_share_user(db_session, chat, shared_user)
+    return await get_chat_share_users(db_session, chat)
+
+
+async def remove_chat_share_user(db_session: AsyncSession, chat: Chat, shared_user_uuid: UUID) -> Optional[list[dict]]:
+    """
+    Revokes a user's access to a chat's private share. This deletes the mapping record
+    including its notification state, so re-adding the user starts fresh.
+
+    Args:
+        db_session (AsyncSession): The active database session.
+        chat (Chat): The Chat instance being shared.
+        shared_user_uuid (UUID): The UUID of the user whose access is being revoked.
+
+    Returns:
+        Optional[list[dict]]: The updated shared-user list, or None when the user was
+            not part of the share.
+    """
+    shared_user = await DbOperations.get_user_by_uuid(db_session, str(shared_user_uuid))
+    if shared_user is None:
+        return None
+
+    removed_count = await DbOperations.remove_chat_share_user(db_session, chat, shared_user)
+    if removed_count == 0:
+        return None
+
+    return await get_chat_share_users(db_session, chat)
+
+
+async def set_chat_share_user_notified(
+    db_session: AsyncSession, chat: Chat, shared_user_uuid: UUID, notified: bool
+) -> Optional[list[dict]]:
+    """
+    Records (notified=True) or clears (notified=False) when a user was notified that a
+    chat was privately shared with them. The timestamp is set server-side.
+
+    Args:
+        db_session (AsyncSession): The active database session.
+        chat (Chat): The Chat instance being shared.
+        shared_user_uuid (UUID): The UUID of the user whose notification state is updated.
+        notified (bool): True to stamp the notification time, False to clear it.
+
+    Returns:
+        Optional[list[dict]]: The updated shared-user list, or None when the user was
+            not part of the share.
+    """
+    shared_user = await DbOperations.get_user_by_uuid(db_session, str(shared_user_uuid))
+    if shared_user is None:
+        return None
+
+    notified_at = datetime.now() if notified else None
+    updated_count = await DbOperations.set_chat_share_user_notified(db_session, chat, shared_user, notified_at)
+    if updated_count == 0:
+        return None
+
+    return await get_chat_share_users(db_session, chat)
 
 
 async def chat_archive(db_session: AsyncSession, chat: Chat) -> ChatSuccessResponse:
@@ -430,6 +523,7 @@ async def chat_get_messages(chat: Chat):
             favourite=chat.favourite,
             share=chat.share,
             share_code=chat.share_code,
+            share_private=chat.share_private,
             from_open_chat=chat.from_open_chat,
             use_rag=chat.use_rag,
             use_gov_uk_search_api=chat.use_gov_uk_search_api,

@@ -219,6 +219,7 @@ class ChatBasicResponse(ItemTitleResponse):
     favourite: bool = False
     share: bool = False
     share_code: Optional[str] = None
+    share_private: bool = False
 
 
 class UserChatsResponse(SuccessResponse, ItemResponse):
@@ -231,6 +232,26 @@ class ChatSuccessResponse(SuccessResponse, ItemTitleResponse):
 
 class ChatShareResponse(ChatSuccessResponse):
     share_code: Optional[str] = None
+    share_private: bool = False
+
+
+class ChatSharedUser(BaseModel):
+    """A user on a private share's allow-list, and when they were notified about it (if at all)."""
+
+    uuid: UUID
+    notified_at: Optional[datetime] = None
+
+
+class ChatShareUsersResponse(SuccessResponse):
+    """The list of users allowed to view a privately shared chat.
+
+    shared_user_uuids is kept alongside the richer shared_users list for
+    backwards compatibility with clients that only consume the UUIDs.
+    """
+
+    uuid: UUID
+    shared_user_uuids: List[UUID] = []
+    shared_users: List[ChatSharedUser] = []
 
 
 class ChatWithLatestMessage(SuccessResponse, ChatBasicResponse):

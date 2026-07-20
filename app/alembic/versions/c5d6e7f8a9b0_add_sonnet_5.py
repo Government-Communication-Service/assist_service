@@ -39,6 +39,10 @@ def downgrade() -> None:
     meta = MetaData()
     meta.reflect(bind=op.get_bind())
     llm_table = Table("llm", meta)
+    message_table = Table("message", meta)
     model_names = [m["model"] for m in models]
-    d = llm_table.delete().where(llm_table.c.model.in_(model_names))
-    op.execute(d)
+    rows = op.get_bind().execute(llm_table.select().where(llm_table.c.model.in_(model_names))).fetchall()
+    if rows:
+        ids = [row._mapping["id"] for row in rows]
+        op.execute(message_table.update().where(message_table.c.llm_id.in_(ids)).values(llm_id=None))
+    op.execute(llm_table.delete().where(llm_table.c.model.in_(model_names)))

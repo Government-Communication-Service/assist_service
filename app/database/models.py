@@ -15,6 +15,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     create_engine,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -145,6 +146,7 @@ class Chat(Base):
     favourite = Column(Boolean, nullable=False, server_default="false")
     share = Column(Boolean, nullable=False, server_default="false")
     share_code = Column(String(10), nullable=True)
+    share_private = Column(Boolean, nullable=False, server_default="false")
 
     def client_response(self):
         return {
@@ -158,12 +160,36 @@ class Chat(Base):
                     "favourite": self.favourite,
                     "share": self.share,
                     "share_code": self.share_code,
+                    "share_private": self.share_private,
                 }
             ),
         }
 
     chat_document_mapping = relationship("ChatDocumentMapping", back_populates="chat")
     messages = relationship("Message", back_populates="chat")
+
+
+# Maps the users allowed to view a privately shared chat (chat.share_private = true).
+# The chat owner manages this list; it has no effect on public shares.
+class ChatShareUserMapping(Base):
+    __tablename__ = "chat_share_user_mapping"
+
+    chat_id = Column(Integer, ForeignKey("chat.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
+    # When the user was told (via the frontend's notify email) that the chat was shared with
+    # them; null until the owner triggers a notification. Removing the user deletes the row,
+    # so re-adding them starts with a fresh, un-notified state.
+    notified_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (UniqueConstraint("chat_id", "user_id", name="uq_chat_share_user_mapping_chat_id_user_id"),)
+
+    def client_response(self):
+        return {
+            **super().client_response(),
+            "chat_id": self.chat_id,
+            "user_id": self.user_id,
+            "notified_at": str(self.notified_at) if self.notified_at else None,
+        }
 
 
 class Message(Base):
