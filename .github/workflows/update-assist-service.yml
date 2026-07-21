@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source repository (dev-main)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: source
           ref: dev-main
@@ -20,7 +20,7 @@ jobs:
 
 
       - name: Checkout target repository (assist_service main)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ github.repository_owner }}/assist_service
           token: ${{ secrets.PAT_FOR_GIT_LFS }}
