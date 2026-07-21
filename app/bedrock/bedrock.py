@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bedrock.bedrock_stream import BedrockStreamInput, bedrock_stream
 from app.bedrock.bedrock_types import AnthropicBedrockProvider, AsyncAnthropicBedrockProvider
+from app.bedrock.dev_logging import log_invocation_to_file, log_response_to_file
 from app.bedrock.retry import handle_region_failover_with_retries, with_region_failover_for_streaming
 from app.bedrock.schemas import LLMResponse, LLMTransaction
 from app.bedrock.service import calculate_completion_cost, llm_transaction
@@ -99,7 +100,7 @@ class BedrockHandler:
         max_tokens=None,
         llm: Optional[LLM] = None,
         mode: RunMode = RunMode.SYNC,
-        system=None,
+        system: str | list | None = None,
     ):
         """
         Initializes the `BedrockHandler` instance with the following parameters:
@@ -194,7 +195,10 @@ class BedrockHandler:
         logger.debug("LLM _invoke_async started")
         config = self.config | data
         logger.debug(f"Messages sent to LLM: {messages}")
+        extra = {k: v for k, v in config.items() if k not in ("model", "max_tokens", "system")}
+        log_invocation_to_file(self.model, config.get("system"), messages, extra=extra or None)
         response = await self.async_client.messages.create(messages=messages, **config)
+        log_response_to_file(response)
         logger.debug("LLM _invoke_async completed")
         llm_internal_response_id = None
         if db_session is not None:
@@ -248,7 +252,7 @@ class BedrockHandler:
         self,
         messages,
         user_message: Message = None,
-        system: str = None,
+        system: str | list | None = None,
         parse_data=None,
         on_complete=None,
         **data,
@@ -273,7 +277,7 @@ class BedrockHandler:
         messages,
         on_error: Callable[[Exception], str],
         user_message: Message = None,
-        system: str = None,
+        system: str | list | None = None,
         parse_data=None,
         **data,
     ):

@@ -4,7 +4,7 @@ from uuid import UUID
 
 import pytest
 
-from app.chat.actions import get_response_system_prompt
+from app.chat.prompts import build_chat_system_prompt
 from app.chat.schemas import (
     CentralGuidanceSource,
     GovUkSearchSource,
@@ -52,9 +52,10 @@ def test_auto_generated_uuid(mock_uuid4):
 @pytest.mark.asyncio
 async def test_return_type():
     async with async_db_session() as db_session:
-        response = await get_response_system_prompt(db_session)
+        response = await build_chat_system_prompt(db_session)
         logging.info(f"Generated system prompt: {response}")
-    assert isinstance(response, str)
+    assert isinstance(response, list)
+    assert all(block.get("type") == "text" for block in response)
 
 
 def test_empty_sources_serialization():
@@ -216,28 +217,29 @@ def test_nested_source_objects_round_trip():
 
 # Tests for Smart Targets disable functionality
 
+
 @pytest.mark.asyncio
 async def test_smart_targets_disabled_skips_services():
     """Test that services are not called when Smart Targets is disabled."""
     # Use context managers for clarity and to avoid pytest patch parameter issues in CI
-    with patch("app.chat.actions.get_response_system_prompt.SMART_TARGETS_SERVICE_DISABLED", True):
-        with patch("app.chat.actions.get_response_system_prompt.SmartTargetsService") as mock_smart:
-            with patch("app.chat.actions.get_response_system_prompt.BmdbEditionService") as mock_bmdb:
+    with patch("app.chat.prompts.SMART_TARGETS_SERVICE_DISABLED", True):
+        with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
+            with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
                 async with async_db_session() as db_session:
-                    response = await get_response_system_prompt(db_session)
+                    response = await build_chat_system_prompt(db_session)
 
     mock_smart.return_value.get_available_metrics.assert_not_called()
     mock_bmdb.get_latest_edition.assert_not_called()
-    assert isinstance(response, str)
+    assert isinstance(response, list)
     assert len(response) > 0
 
 
 @pytest.mark.asyncio
 async def test_smart_targets_enabled_calls_services():
     """Test that services are called when Smart Targets is enabled."""
-    with patch("app.chat.actions.get_response_system_prompt.SMART_TARGETS_SERVICE_DISABLED", False):
-        with patch("app.chat.actions.get_response_system_prompt.SmartTargetsService") as mock_smart:
-            with patch("app.chat.actions.get_response_system_prompt.BmdbEditionService") as mock_bmdb:
+    with patch("app.chat.prompts.SMART_TARGETS_SERVICE_DISABLED", False):
+        with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
+            with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
                 mock_smart.return_value.get_available_metrics = AsyncMock(return_value=["metric1", "metric2"])
 
                 mock_edition = AsyncMock()
@@ -251,12 +253,13 @@ async def test_smart_targets_enabled_calls_services():
                 mock_bmdb.get_latest_edition = AsyncMock(return_value=mock_edition)
 
                 async with async_db_session() as db_session:
-                    response = await get_response_system_prompt(db_session)
+                    response = await build_chat_system_prompt(db_session)
 
     mock_smart.return_value.get_available_metrics.assert_called_once()
     mock_bmdb.get_latest_edition.assert_called_once()
-    assert "Smart Targets" in response
-    assert "metric1" in response
+    full_text = " ".join(block["text"] for block in response)
+    assert "Smart Targets" in full_text
+    assert "metric1" in full_text
 
 
 @pytest.mark.asyncio
@@ -264,9 +267,9 @@ async def test_smart_targets_error_continues_gracefully():
     """Test that system prompt builds even if Smart Targets service fails."""
     from app.smart_targets.exceptions import GetSmartTargetsMetricsError
 
-    with patch("app.chat.actions.get_response_system_prompt.SMART_TARGETS_SERVICE_DISABLED", False):
-        with patch("app.chat.actions.get_response_system_prompt.SmartTargetsService") as mock_smart:
-            with patch("app.chat.actions.get_response_system_prompt.BmdbEditionService") as mock_bmdb:
+    with patch("app.chat.prompts.SMART_TARGETS_SERVICE_DISABLED", False):
+        with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
+            with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
                 mock_smart.return_value.get_available_metrics = AsyncMock(
                     side_effect=GetSmartTargetsMetricsError("Connection failed")
                 )
@@ -276,9 +279,9 @@ async def test_smart_targets_error_continues_gracefully():
                 mock_bmdb.get_latest_edition = AsyncMock(return_value=mock_edition)
 
                 async with async_db_session() as db_session:
-                    response = await get_response_system_prompt(db_session)
+                    response = await build_chat_system_prompt(db_session)
 
-    assert isinstance(response, str)
+    assert isinstance(response, list)
     assert len(response) > 0
 
 
@@ -287,16 +290,16 @@ async def test_bmdb_error_continues_gracefully():
     """Test that system prompt builds even if BMDB service fails."""
     from app.bmdb.exceptions import GetBenchmarkDatabaseEditionError
 
-    with patch("app.chat.actions.get_response_system_prompt.SMART_TARGETS_SERVICE_DISABLED", False):
-        with patch("app.chat.actions.get_response_system_prompt.SmartTargetsService") as mock_smart:
-            with patch("app.chat.actions.get_response_system_prompt.BmdbEditionService") as mock_bmdb:
+    with patch("app.chat.prompts.SMART_TARGETS_SERVICE_DISABLED", False):
+        with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
+            with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
                 mock_smart.return_value.get_available_metrics = AsyncMock(return_value=["metric1"])
                 mock_bmdb.get_latest_edition = AsyncMock(
                     side_effect=GetBenchmarkDatabaseEditionError("API unavailable")
                 )
 
                 async with async_db_session() as db_session:
-                    response = await get_response_system_prompt(db_session)
+                    response = await build_chat_system_prompt(db_session)
 
-    assert isinstance(response, str)
-    assert "metric1" in response
+    assert isinstance(response, list)
+    assert "metric1" in " ".join(block["text"] for block in response)

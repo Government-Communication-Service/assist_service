@@ -26,9 +26,9 @@ from app.bedrock.service import llm_transaction
 from app.bedrock.thinking import thinking_kwargs
 from app.central_guidance.schemas import RagRequest
 from app.central_guidance.service_rag import search_central_guidance
-from app.chat.actions import get_response_system_prompt
 from app.chat.config import SLEEP_TIME_MESSAGE_DELETION
 from app.chat.constants import DELETION_NOTICE
+from app.chat.prompts import build_chat_system_prompt, build_session_system_prompt_block
 from app.chat.schemas import (
     AudienceSegmentsSource,
     CentralGuidanceSource,
@@ -721,7 +721,15 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
 
     ai_message = MessageDefaults(**message_defaults)
 
-    system = await get_response_system_prompt(db_session)
+    system = await build_chat_system_prompt(db_session)
+    session_block = await build_session_system_prompt_block(
+        db_session=db_session,
+        use_rag=input_data.use_rag,
+        use_gov_uk_search_api=input_data.use_gov_uk_search_api,
+        use_smart_targets=input_data.use_smart_targets,
+        document_uuids=input_data.document_uuids,
+    )
+    system = [*system, session_block]
 
     if input_data.user_group_ids:
         chat_user_group_mapping(m_user, input_data.user_group_ids)

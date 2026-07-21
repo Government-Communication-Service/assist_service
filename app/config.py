@@ -102,18 +102,18 @@ class AppSettings(BaseSettings):
 
     # --- LLM / Bedrock ---
     llm_default_provider: str = "bedrock"
-    llm_default_model: str = "anthropic.claude-sonnet-4-6"
+    llm_default_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
     llm_chat_response_model: str = "anthropic.claude-sonnet-5"
     llm_chat_title_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     llm_index_router: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
-    llm_opensearch_query_generator: str = "anthropic.claude-sonnet-4-6"
+    llm_opensearch_query_generator: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
     llm_chunk_reviewer: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
-    llm_govuk_query_generator: str = "anthropic.claude-sonnet-4-6"
+    llm_govuk_query_generator: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
     llm_document_relevancy_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     llm_gov_uk_search_followup_assessment: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
-    llm_smart_targets_model: str = "anthropic.claude-sonnet-4-6"
+    llm_smart_targets_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
     llm_compaction_summarisation_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
-    llm_style_guide_model: str = "anthropic.claude-sonnet-4-6"
+    llm_style_guide_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
     chat_thinking_level: ThinkingLevel = ThinkingLevel.disabled
 
     # --- style guide ---
@@ -134,6 +134,10 @@ class AppSettings(BaseSettings):
     web_browsing_timeout: int = 300
     gov_uk_base_url: str = "https://www.gov.uk"
     gov_uk_search_max_count: int = 10
+
+    # --- dev tooling ---
+    # Do not set this variable in production - it will cause every request to be logged to file
+    log_full_invocation_request_to_file_path: str = ""
 
     # --- test helpers ---
     test_user_groups: str = ""
@@ -253,6 +257,9 @@ BLACKLISTED_URLS = settings.blacklisted_urls
 WEB_BROWSING_TIMEOUT = settings.web_browsing_timeout
 GOV_UK_BASE_URL = settings.gov_uk_base_url
 GOV_UK_SEARCH_MAX_COUNT = settings.gov_uk_search_max_count
+
+# Dev tooling
+LOG_FULL_INVOCATION_REQUEST_TO_FILE_PATH = settings.log_full_invocation_request_to_file_path
 
 # Test helpers
 TEST_USER_GROUPS = settings.test_user_groups

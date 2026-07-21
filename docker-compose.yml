@@ -22,6 +22,7 @@ services:
     working_dir: /app
     volumes:
       - ./:/app
+      - /tmp/api:/tmp/api
     ports:
       - 5312:5312
       - 5678:5678

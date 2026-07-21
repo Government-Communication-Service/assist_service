@@ -36,6 +36,16 @@ This is the Copilot API (now known as "Assist"), a GenAI-powered FastAPI service
 - **Lint and format**: `make lint` (uses ruff with automatic fixing)
 - **Pre-commit hooks**: `pre-commit install` (must run after initial setup)
 
+### Dev Tooling — Observing LLM Requests
+Set `LOG_FULL_INVOCATION_REQUEST_TO_FILE_PATH=/tmp/api/invocation.json` in `.env` to make the app write the full Bedrock request (model, system prompt blocks, messages, tools, and token usage) to a file on every LLM call. Each call overwrites the previous file. The `/tmp/api` directory is bind-mounted from the host in `docker-compose.yml` so the file is directly accessible. To inspect it as collapsible HTML:
+
+```bash
+python scripts/system_prompt/pretty_print_invocation.py /tmp/api/invocation.json
+# opens /tmp/api/invocation.html
+```
+
+The HTML shows token usage at the top, each system block and message as a collapsible section (cached blocks flagged), and any extra kwargs (tools, tool_choice) in a separate section. Unset or leave empty to disable logging.
+
 ## Architecture
 
 ### Project Structure
@@ -159,6 +169,15 @@ Be explicit and specific when importing from other packages:
 ```python
 from app.auth.utils import verify_and_parse_uuid
 ```
+
+#### LLM Prompts — `prompts.py` convention
+
+Every module that sends LLM calls keeps its prompt text in a file called `prompts.py` within that module. This makes all prompts easy to locate (`find app -name prompts.py`) and collectively review.
+
+- Prompt text lives as named module-level constants (`SYSTEM_PROMPT_FOO = "..."`) or factory functions that return a string or content-block list.
+- Assembly logic (DB queries, feature-flag checks, segment building) lives in the same `prompts.py` — keep prompt text and the code that shapes it together.
+
+The main chat system prompt lives in `app/chat/prompts.py` and is the reference implementation. It returns a `list[dict]` (Bedrock content blocks) with the static portion first and a `cache_control` marker on that block, so the large static text is eligible for prompt caching. Dynamic content (today's date, DB-sourced lists, feature segments) is appended as a second block and is never cached.
 
 #### Style Guide Checks (GOV.UK)
 The style guide feature lives in `app/style_guide/` and integrates into chat flows via

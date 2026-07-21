@@ -7,6 +7,7 @@ from anthropic.types import MessageParam
 from pydantic import BaseModel, Field
 
 from app.bedrock.american_word_swap import PARTIAL_WORD_PATTERN, replace_american_words
+from app.bedrock.dev_logging import log_invocation_to_file, log_response_to_file
 from app.database.models import Message
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ class BedrockStreamInput(BaseModel):
     model: str
     parse_data: Optional[Any] = None
     user_message: Optional[Message] = None
-    system: str = None
+    system: str | list | None = None
     on_complete: Any = None
     extra_api_kwargs: dict = Field(default_factory=dict)
 
@@ -30,6 +31,12 @@ class BedrockStreamInput(BaseModel):
 async def bedrock_stream(bedrock_stream_input: BedrockStreamInput):
     full_message = ""
     logger.info("Calling bedrock_stream")
+    log_invocation_to_file(
+        bedrock_stream_input.model,
+        bedrock_stream_input.system,
+        bedrock_stream_input.messages,
+        extra=getattr(bedrock_stream_input, "extra_api_kwargs", None) or None,
+    )
     async with bedrock_stream_input.async_client.messages.stream(
         max_tokens=bedrock_stream_input.max_tokens,
         messages=bedrock_stream_input.messages,
@@ -85,6 +92,7 @@ async def bedrock_stream(bedrock_stream_input: BedrockStreamInput):
                 yield text
 
     response = await stream.get_final_message()
+    log_response_to_file(response)
     logger.debug("Final response is: %s", response)
 
     logger.info("Completed bedrock_stream")
