@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 pytestmark = [
     pytest.mark.e2e,
     pytest.mark.chat_share,
+    pytest.mark.usefixtures("mock_llm_response"),
 ]
 
 

@@ -6,6 +6,7 @@ from fastapi import APIRouter
 import app.auth.routes as auth
 import app.central_guidance.routes as central_guidance
 import app.chat.routes as chat
+import app.chat.share_routes as chat_share
 import app.document_upload.routes as document_upload
 import app.feedback.routes as feedback
 import app.healthcheck.routes as healthcheck
@@ -28,6 +29,7 @@ routers = [
     RouterConfig(healthcheck.router, "/healthcheck", ["Health Check"]),
     RouterConfig(auth.router, "/v1", ["Auth Sessions"]),
     RouterConfig(chat.router, "/v1", ["Chat Sessions"]),
+    RouterConfig(chat_share.router, "/v1", ["Chat Sharing"]),
     RouterConfig(feedback.router, "/v1", ["Message Feedback"]),
     RouterConfig(user.router, "/v1", ["User Data"]),
     RouterConfig(personal_prompts.router, "/v1", ["User Prompts"]),
