@@ -68,7 +68,7 @@ beautifulsoup4~=4.14.3
 # Testing
 requests~=2.34
 pytest~=9.0.3
-pytest-asyncio~=1.2
+pytest-asyncio~=1.4
 pytest-mock~=3.14
 pytest-xdist~=3.6
 moto[s3]==5.2.2

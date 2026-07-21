@@ -13,7 +13,7 @@ dynamic = ["dependencies"]
 [project.optional-dependencies]
 dev = [
     "pytest==9.0.3",
-    "pytest-asyncio==1.2.*",
+    "pytest-asyncio==1.4.*",
     "pytest-mock==3.14.*",
     "httpx==0.28.1",
     "ruff==0.15.*",
