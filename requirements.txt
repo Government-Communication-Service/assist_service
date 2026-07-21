@@ -47,7 +47,7 @@ unstructured-inference==1.0.5
 # and update this URL to the version it reports as compatible.
 en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
 #needed for odt file format processing.
-pypandoc~=1.13
+pypandoc~=1.17
 # File type detection
 python-magic~=0.4.27
 
