@@ -7,23 +7,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bmdb.exceptions import GetBenchmarkDatabaseEditionError
 from app.bmdb.services import BmdbEditionService
-from app.config import SMART_TARGETS_SERVICE_DISABLED
+from app.config import SMART_TARGETS_SERVICE_DISABLED, settings
 from app.database.models import Document
 from app.smart_targets.exceptions import GetSmartTargetsMetricsError
 from app.smart_targets.service import SmartTargetsService
 
 logger = getLogger(__name__)
 
-# All hyperlinks used in the system prompt, kept here so they can be updated in one place.
 CHANGING_INFO = {
-    "model": "Claude Sonnet 5",
-    "model_cutoff": "end of January 2026",  # no capital at start
-    "assist_about": "https://connect.communications.gov.uk/assist/about",
-    "assist_support": "https://connect.communications.gov.uk/assist/support",
-    "assist_how_to_use": "https://connect.communications.gov.uk/assist/how-to-use",
-    "assist_my_documents": "https://connect.communications.gov.uk/assist/my-documents",
-    "assist_home": "https://connect.communications.gov.uk/assist",
-    "audience_segmentation": "https://communications.gov.uk/publications/government-audience-segmentation",
+    "model": settings.system_prompt_model_name,
+    "model_cutoff": settings.system_prompt_model_cutoff,
+    "assist_about": settings.system_prompt_assist_about,
+    "assist_support": settings.system_prompt_assist_support,
+    "assist_how_to_use": settings.system_prompt_assist_how_to_use,
+    "assist_my_documents": settings.system_prompt_assist_my_docs,
+    "assist_home": settings.system_prompt_assist_home,
+    "audience_segmentation": settings.system_prompt_audience_seg,
 }
 
 # The static portion of the system prompt. This block never changes between requests,

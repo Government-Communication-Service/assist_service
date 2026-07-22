@@ -83,16 +83,18 @@ class AppSettings(BaseSettings):
 
     # --- feature flags ---
     is_dev: bool = False
-    use_jwt_token: bool = False
-    show_auth_token_generator: bool = False
     show_detailed_error_messages: bool = False
-    show_header_params_in_docs: bool = False
-    show_developer_endpoints_in_docs: bool = False
     use_rag: bool = True
-    use_default_llm_response: bool = False
     smart_targets_service_disabled: bool = False
     debug_mode: bool = False
     debug_logging: bool = False
+
+    # --- Probably unused ---
+    use_jwt_token: bool = False
+    show_auth_token_generator: bool = False
+    show_header_params_in_docs: bool = False
+    show_developer_endpoints_in_docs: bool = False
+    use_default_llm_response: bool = False
     litellm_logging: bool = False
 
     # --- monitoring ---
@@ -103,7 +105,7 @@ class AppSettings(BaseSettings):
     # --- LLM / Bedrock ---
     llm_default_provider: str = "bedrock"
     llm_default_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
-    llm_chat_response_model: str = "anthropic.claude-sonnet-5"
+    llm_chat_response_model: str = "anthropic.claude-sonnet-4-6"
     llm_chat_title_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     llm_index_router: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     llm_opensearch_query_generator: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
@@ -115,6 +117,16 @@ class AppSettings(BaseSettings):
     llm_compaction_summarisation_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     llm_style_guide_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
     chat_thinking_level: ThinkingLevel = ThinkingLevel.disabled
+
+    # --- System prompt constants ---
+    system_prompt_model_name: str = "Claude Sonnet 4.6"
+    system_prompt_model_cutoff: str = "end of August 2025"  # no capital at start
+    system_prompt_assist_about: str = "https://connect.communications.gov.uk/assist/about"
+    system_prompt_assist_support: str = "https://connect.communications.gov.uk/assist/support"
+    system_prompt_assist_how_to_use: str = "https://connect.communications.gov.uk/assist/how-to-use"
+    system_prompt_assist_my_docs: str = "https://connect.communications.gov.uk/assist/my-documents"
+    system_prompt_assist_home: str = "https://connect.communications.gov.uk/assist"
+    system_prompt_audience_seg: str = "https://communications.gov.uk/publications/government-audience-segmentation"
 
     # --- style guide ---
     style_guide_llm_batch_size: int = 10
@@ -179,6 +191,15 @@ class AppSettings(BaseSettings):
         settings_cls: type[BaseSettings],
         **kwargs: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Use AWS Secrets manager
+
+        The priority order is:
+            kwargs
+            environment variables
+            .env file
+            AWS secrets manager
+            defaults
+        """
         sources = list(super().settings_customise_sources(settings_cls, **kwargs))
         secret_name = os.environ.get("APP_SECRET_NAME")
         if secret_name:
