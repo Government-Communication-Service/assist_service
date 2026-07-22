@@ -28,7 +28,7 @@ SQLAlchemy[asyncpg]==2.0.51
 
 
 # Document parsing
-pdfminer.six>=20251230
+pdfminer.six>=20260107
 # Pinned to 0.18.18: unstructured 0.22.x changed PDF auto-strategy so that files whose text
 # isn't cleanly extractable by pdfminer (e.g. slide decks / custom font encodings) fall back to
 # OCR_ONLY, which needs a Tesseract binary we don't ship -> TesseractNotFoundError / NoTextContentError
