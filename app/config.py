@@ -105,7 +105,7 @@ class AppSettings(BaseSettings):
     # --- LLM / Bedrock ---
     llm_default_provider: str = "bedrock"
     llm_default_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
-    llm_chat_response_model: str = "anthropic.claude-sonnet-4-6"
+    llm_chat_response_model: str = "anthropic.claude-sonnet-5"
     llm_chat_title_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     llm_index_router: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     llm_opensearch_query_generator: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
@@ -119,8 +119,8 @@ class AppSettings(BaseSettings):
     chat_thinking_level: ThinkingLevel = ThinkingLevel.disabled
 
     # --- System prompt constants ---
-    system_prompt_model_name: str = "Claude Sonnet 4.6"
-    system_prompt_model_cutoff: str = "end of August 2025"  # no capital at start
+    system_prompt_model_name: str = "Claude Sonnet 5"
+    system_prompt_model_cutoff: str = "end of January 2026"  # no capital at start
     system_prompt_assist_about: str = "https://connect.communications.gov.uk/assist/about"
     system_prompt_assist_support: str = "https://connect.communications.gov.uk/assist/support"
     system_prompt_assist_how_to_use: str = "https://connect.communications.gov.uk/assist/how-to-use"
