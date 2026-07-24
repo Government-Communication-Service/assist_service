@@ -13,6 +13,7 @@ from app.chat.schemas import (
     Sources,
     UserDocumentSource,
 )
+from app.config import settings
 from app.database.table import async_db_session
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,22 @@ async def test_return_type():
         logging.info(f"Generated system prompt: {response}")
     assert isinstance(response, list)
     assert all(block.get("type") == "text" for block in response)
+
+
+@pytest.mark.asyncio
+async def test_cache_control_present_when_enabled():
+    with patch.object(settings, "system_prompt_caching_enabled", True):
+        async with async_db_session() as db_session:
+            response = await build_chat_system_prompt(db_session)
+    assert all("cache_control" in block for block in response)
+
+
+@pytest.mark.asyncio
+async def test_cache_control_absent_when_disabled():
+    with patch.object(settings, "system_prompt_caching_enabled", False):
+        async with async_db_session() as db_session:
+            response = await build_chat_system_prompt(db_session)
+    assert all("cache_control" not in block for block in response)
 
 
 def test_empty_sources_serialization():

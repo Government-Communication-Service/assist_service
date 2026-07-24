@@ -192,18 +192,14 @@ async def build_chat_system_prompt(db_session: AsyncSession) -> list[dict]:
         f"{smart_targets_edition_segment}"
     )
 
-    return [
-        {
-            "type": "text",
-            "text": CHAT_SYSTEM_PROMPT_STATIC,
-            "cache_control": {"type": "ephemeral"},
-        },
-        {
-            "type": "text",
-            "text": dynamic_block,
-            "cache_control": {"type": "ephemeral"},
-        },
-    ]
+    static_block_dict: dict = {"type": "text", "text": CHAT_SYSTEM_PROMPT_STATIC}
+    dynamic_block_dict: dict = {"type": "text", "text": dynamic_block}
+
+    if settings.system_prompt_caching_enabled:
+        static_block_dict["cache_control"] = {"type": "ephemeral"}
+        dynamic_block_dict["cache_control"] = {"type": "ephemeral"}
+
+    return [static_block_dict, dynamic_block_dict]
 
 
 async def build_session_system_prompt_block(

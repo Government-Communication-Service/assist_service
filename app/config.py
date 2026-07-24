@@ -119,6 +119,7 @@ class AppSettings(BaseSettings):
     chat_thinking_level: ThinkingLevel = ThinkingLevel.disabled
 
     # --- System prompt constants ---
+    system_prompt_caching_enabled: bool = True
     system_prompt_model_name: str = "Claude Sonnet 5"
     system_prompt_model_cutoff: str = "end of January 2026"  # no capital at start
     system_prompt_assist_about: str = "https://connect.communications.gov.uk/assist/about"
