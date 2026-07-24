@@ -10,6 +10,7 @@ from sqlalchemy import insert
 from sqlalchemy.future import select
 from unstructured.documents.elements import (
     Element,
+    Table,
     Text,
 )
 from unstructured.partition.auto import partition
@@ -98,9 +99,7 @@ class PersonalDocumentParser:
                 file=file_info.content, metadata_filename=file_info.filename, **self._PARTITION_DEFAULT_PARAMETERS
             )
         if file_extension == ".xlsx":
-            return partition_xlsx(
-                file=file_info.content, metadata_filename=file_info.filename, **self._PARTITION_DEFAULT_PARAMETERS
-            )
+            return partition_xlsx(file=file_info.content, metadata_filename=file_info.filename)
         return partition(
             file=file_info.content, metadata_filename=file_info.filename, **self._PARTITION_DEFAULT_PARAMETERS
         )
@@ -176,7 +175,12 @@ class PersonalDocumentParser:
             documents = []
             for element in elements:
                 # Check what content is being passed
-                content = element.text if isinstance(element, Text) else str(element)
+                if isinstance(element, Table) and element.metadata.text_as_html:
+                    content = element.metadata.text_as_html
+                elif isinstance(element, Text):
+                    content = element.text
+                else:
+                    content = str(element)
                 content = self._sanitize_text(content)
                 if not content:
                     continue
