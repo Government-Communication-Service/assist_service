@@ -23,6 +23,7 @@ from app.database.db_session import get_db_session
 from app.database.models import AuthSession, User
 from app.document_upload.constants import PERSONAL_DOCUMENTS_INDEX_NAME
 from app.document_upload.personal_document_parser import (
+    DocumentParsingError,
     FileFormatError,
     FileInfo,
     NoTextContentError,
@@ -333,6 +334,18 @@ async def upload_file(
                 "status_message": str(ex),
             },
         )
+    except DocumentParsingError as ex:
+        await upload_failed_document(file_content, file_name, user, "malformed_file_content")
+        logger.info(f"User uploaded malformed file: {file.filename}, cause: {ex.cause}")
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "status": "failed",
+                "error_code": "DOCUMENT_PARSING_ERROR",
+                "status_message": "This file appears to be corrupted or damaged and could not be read. "
+                "Check the file opens correctly, or try re-saving/exporting it, then upload again.",
+            },
+        )
     except asyncio.TimeoutError as ex:
         await upload_failed_document(file_content, file_name, user, "timeout")
         logger.info(f"Processing file timed out: {file.filename}, error: {ex}")
@@ -341,7 +354,7 @@ async def upload_file(
             content={
                 "status": "failed",
                 "error_code": "FILE_PROCESSING_TIMEOUT_ERROR",
-                "status_message": "Uploading document timed out, please try again",
+                "status_message": "Uploading document timed out. Try again",
             },
         )
     except TesseractNotFoundError:
@@ -354,7 +367,7 @@ async def upload_file(
                 "error_code": "DOCUMENTS_REQUIRING_OCR_NOT_SUPPORTED",
                 "status_message": "This document does not contain any text."
                 "It may contain scanned text or images of text,"
-                " but Assist cannot process these. Please upload a document that contains the information"
+                " but Assist cannot process these. Upload a document that contains the information"
                 " in text format.",
             },
         )
@@ -369,7 +382,7 @@ async def upload_file(
                     "error_code": "UNSUPPORTED_WORD_DOCUMENT_VERSION",
                     "status_message": "The file uploaded is either not a word document, "
                     "or was generated with an older Word version,"
-                    "Please use latest Word version or upload the document in PDF format",
+                    "Use latest Word version or upload the document in PDF format",
                 },
             )
         return JSONResponse(
@@ -377,7 +390,7 @@ async def upload_file(
             content={
                 "status": "failed",
                 "error_code": "UNSUPPORTED_DOCUMENT",
-                "status_message": "Unsupported file uploaded, Please upload the file in Word or PDF format",
+                "status_message": "Unsupported file uploaded. Upload the file in Word or PDF format",
             },
         )
     except Exception as e:
@@ -397,7 +410,7 @@ async def upload_file(
                     "error_code": "UNSUPPORTED_DOCUMENT",
                     "status_message": "The file uploaded is either not a word document, "
                     "or was generated with an older Word version,"
-                    "Please use latest Word version or upload the document in PDF format",
+                    "Use latest Word version or upload the document in PDF format",
                 },
             )
 

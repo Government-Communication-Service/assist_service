@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import BinaryIO, List
 
+from pandas.errors import ParserError
 from sqlalchemy import insert
 from sqlalchemy.future import select
 from unstructured.documents.elements import (
@@ -19,10 +20,15 @@ from unstructured.partition.ppt import partition_ppt
 from unstructured.partition.pptx import partition_pptx
 from unstructured.partition.xlsx import partition_xlsx
 
-from app.config import DOCUMENT_PROCESSING_TIMEOUT_SECONDS
+from app.config import (
+    DOCUMENT_CHUNK_INSERT_BATCH_SIZE,
+    DOCUMENT_PROCESSING_TIMEOUT_SECONDS,
+    MAX_TABLE_CHUNK_CHARS,
+)
 from app.database.models import AuthSession, Document, DocumentChunk, DocumentUserMapping, SearchIndex, User
 from app.database.table import async_db_session
 from app.document_upload.constants import PERSONAL_DOCUMENTS_INDEX_NAME
+from app.document_upload.table_content import build_table_chunk_documents
 from app.opensearch.schemas import OpenSearchRecord
 from app.opensearch.service import AsyncOpenSearchOperations
 
@@ -41,6 +47,17 @@ class FileFormatError(Exception):
         self.supported_formats = supported_formats
 
 
+class DocumentParsingError(Exception):
+    """
+    Raised when the underlying parser (openpyxl/pandas/unstructured) fails on
+    malformed file content - attributable to bad user input, not an app bug.
+    """
+
+    def __init__(self, msg: str, cause: Exception):
+        super().__init__(msg)
+        self.cause = cause
+
+
 @dataclass
 class FileInfo:
     filename: str
@@ -51,7 +68,7 @@ _SUPPORTED_TYPES = [".txt", ".pdf", ".docx", ".csv", ".pptx", ".ppt", ".odt", ".
 
 _UTF8_INVALID_CHARS_PATTERN = re.compile(
     r"[\x80-\x9F]|"  # Control characters
-    r"[\x00-\x1F]"  # Control characters
+    r"[\x00-\x08\x0B\x0C\x0E-\x1F]"  # Control characters, excluding \t \n \r
 )
 
 
@@ -86,23 +103,34 @@ class PersonalDocumentParser:
             )
         # there's a bug in partition function that it fails auto detect some pptx, pdf files.
 
-        if file_extension == ".pdf":
-            return partition_pdf(
+        try:
+            if file_extension == ".pdf":
+                return partition_pdf(
+                    file=file_info.content, metadata_filename=file_info.filename, **self._PARTITION_DEFAULT_PARAMETERS
+                )
+            if file_extension == ".pptx":
+                return partition_pptx(
+                    file=file_info.content, metadata_filename=file_info.filename, **self._PARTITION_DEFAULT_PARAMETERS
+                )
+            if file_extension == ".ppt":
+                return partition_ppt(
+                    file=file_info.content, metadata_filename=file_info.filename, **self._PARTITION_DEFAULT_PARAMETERS
+                )
+            if file_extension == ".xlsx":
+                # IndexError is scoped to just this branch: it targets openpyxl's stylesheet-parsing
+                # bug on malformed xlsx files. Catching it around every partitioner would also swallow
+                # genuine IndexErrors from unrelated pdf/pptx/docx parsing bugs as a false "corrupt file".
+                try:
+                    return partition_xlsx(file=file_info.content, metadata_filename=file_info.filename)
+                except IndexError as e:
+                    raise DocumentParsingError(
+                        f"Could not parse {file_info.filename}: malformed file content", cause=e
+                    ) from e
+            return partition(
                 file=file_info.content, metadata_filename=file_info.filename, **self._PARTITION_DEFAULT_PARAMETERS
             )
-        if file_extension == ".pptx":
-            return partition_pptx(
-                file=file_info.content, metadata_filename=file_info.filename, **self._PARTITION_DEFAULT_PARAMETERS
-            )
-        if file_extension == ".ppt":
-            return partition_ppt(
-                file=file_info.content, metadata_filename=file_info.filename, **self._PARTITION_DEFAULT_PARAMETERS
-            )
-        if file_extension == ".xlsx":
-            return partition_xlsx(file=file_info.content, metadata_filename=file_info.filename)
-        return partition(
-            file=file_info.content, metadata_filename=file_info.filename, **self._PARTITION_DEFAULT_PARAMETERS
-        )
+        except (UnicodeDecodeError, ParserError) as e:
+            raise DocumentParsingError(f"Could not parse {file_info.filename}: malformed file content", cause=e) from e
 
     def _sanitize_text(self, text: str):
         """
@@ -176,8 +204,11 @@ class PersonalDocumentParser:
             for element in elements:
                 # Check what content is being passed
                 if isinstance(element, Table) and element.metadata.text_as_html:
-                    content = element.metadata.text_as_html
-                elif isinstance(element, Text):
+                    documents.extend(
+                        build_table_chunk_documents(element, new_document, self._sanitize_text, MAX_TABLE_CHUNK_CHARS)
+                    )
+                    continue
+                if isinstance(element, Text):
                     content = element.text
                 else:
                     content = str(element)
@@ -211,6 +242,10 @@ class PersonalDocumentParser:
                 }
                 for idx, doc in enumerate(items_)
             ]
-            await db_session.execute(insert(DocumentChunk).values(document_chunks))
+            # asyncpg caps bind parameters at 32767, so insert in batches to support documents
+            # (e.g. large/complex xlsx workbooks) that produce many chunks.
+            for i in range(0, len(document_chunks), DOCUMENT_CHUNK_INSERT_BATCH_SIZE):
+                batch = document_chunks[i : i + DOCUMENT_CHUNK_INSERT_BATCH_SIZE]
+                await db_session.execute(insert(DocumentChunk).values(batch))
 
             return new_document

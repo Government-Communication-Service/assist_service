@@ -126,7 +126,7 @@ async def upload_file(api_endpoint, async_client, async_http_requester, doc, res
                 "status": "failed",
                 "status_message": "This document does not contain any text."
                 "It may contain scanned text or images of text, but Assist cannot process these. "
-                "Please upload a document that contains the information in text format.",
+                "Upload a document that contains the information in text format.",
             },
         ),
         (
@@ -148,7 +148,7 @@ async def upload_file(api_endpoint, async_client, async_http_requester, doc, res
                 "status": "failed",
                 "status_message": "The file uploaded is either not a word document, "
                 "or was generated with an older Word version,"
-                "Please use latest Word version or upload the document in PDF format",
+                "Use latest Word version or upload the document in PDF format",
             },
         ),
     ],
@@ -216,6 +216,59 @@ async def test_list_user_documents(async_client, user_id, async_http_requester):
 
 
 @pytest.mark.asyncio
+@patch(
+    "app.document_upload.personal_document_parser.partition_xlsx",
+    side_effect=IndexError("list index out of range"),
+)
+async def test_uploading_malformed_xlsx_document_returns_clean_400(
+    _mock_partition_xlsx, async_client, user_id, async_http_requester
+):
+    """
+    A workbook that trips openpyxl's stylesheet-parsing IndexError (seen in production
+    for corrupt/malformed style refs) must surface as a clean 400 DOCUMENT_PARSING_ERROR,
+    not a raw 500.
+    """
+    doc_to_upload = "tests/resources/user_details.xlsx"
+    api = ENDPOINTS()
+    api_endpoint = api.user_documents(user_id)
+
+    expected_response = {
+        "status": "failed",
+        "error_code": "DOCUMENT_PARSING_ERROR",
+        "status_message": "This file appears to be corrupted or damaged and could not be read. "
+        "Check the file opens correctly, or try re-saving/exporting it, then upload again.",
+    }
+    result = await upload_file(api_endpoint, async_client, async_http_requester, doc_to_upload, response_code=400)
+    assert expected_response == result
+
+
+@pytest.mark.asyncio
+@patch(
+    "app.document_upload.personal_document_parser.partition",
+    side_effect=UnicodeDecodeError("utf-8", b"\x93", 0, 1, "invalid start byte"),
+)
+async def test_uploading_malformed_csv_document_returns_clean_400(
+    _mock_partition, async_client, user_id, async_http_requester
+):
+    """
+    A CSV with non-UTF-8 bytes (seen in production) must surface as a clean 400
+    DOCUMENT_PARSING_ERROR, not a raw 500.
+    """
+    doc_to_upload = "tests/resources/username.csv"
+    api = ENDPOINTS()
+    api_endpoint = api.user_documents(user_id)
+
+    expected_response = {
+        "status": "failed",
+        "error_code": "DOCUMENT_PARSING_ERROR",
+        "status_message": "This file appears to be corrupted or damaged and could not be read. "
+        "Check the file opens correctly, or try re-saving/exporting it, then upload again.",
+    }
+    result = await upload_file(api_endpoint, async_client, async_http_requester, doc_to_upload, response_code=400)
+    assert expected_response == result
+
+
+@pytest.mark.asyncio
 @patch("app.document_upload.personal_document_parser.PersonalDocumentParser._PROCESSING_TIME_IN_SECS", new=0.01)
 async def test_timeout_for_processing_large_files(async_client, user_id, async_http_requester):
     """
@@ -232,7 +285,7 @@ async def test_timeout_for_processing_large_files(async_client, user_id, async_h
     expected_response = {
         "error_code": "FILE_PROCESSING_TIMEOUT_ERROR",
         "status": "failed",
-        "status_message": "Uploading document timed out, please try again",
+        "status_message": "Uploading document timed out. Try again",
     }
     result = await upload_file(api_endpoint, async_client, async_http_requester, doc_to_upload, response_code=400)
     assert expected_response == result

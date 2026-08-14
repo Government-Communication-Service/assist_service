@@ -98,6 +98,14 @@ test-central-guidance-rag:
 test-document-upload:
 	$(docker-cmd) "${test-cmd} tests/document_upload tests/opensearch"
 
+# Coverage report for a specific module. Override, e.g.:
+#   make test-coverage MODULE=app.chat.service TEST_PATH=tests/chat
+MODULE ?= app.document_upload.table_content
+TEST_PATH ?= tests/document_upload
+
+test-coverage:
+	$(docker-cmd) "${test-cmd} $(TEST_PATH) --cov=$(MODULE) --cov-report=term-missing"
+
 test-document-rag-integration:
 	$(docker-cmd) "${test-cmd} tests/document_upload/rag/test_document_upload_rag_integration.py -v"
 

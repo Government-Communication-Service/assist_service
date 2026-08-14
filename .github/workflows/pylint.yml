@@ -6,15 +6,15 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Install Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.12"
       - name: Prepare requirements for pip-audit
         run: grep -v '^en_core_web_sm\|^torch\|^--extra-index-url' requirements.txt > requirements-audit.txt
 
-      - uses: pypa/gh-action-pip-audit@v1.1.0
+      - uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
         with:
           inputs: requirements-audit.txt
           ignore-vulns: |
@@ -77,8 +77,13 @@ jobs:
         run: ruff check --output-format=github .
 
       - name: Secret Scanning with Trufflehog
-        uses: trufflesecurity/trufflehog@main
+        uses: trufflesecurity/trufflehog@55db46bee4d7b63eb1197f0ca2aac089a168f7b4 # main, pinned since it's a moving branch ref
         with:
           base: ""
           head: ${{ github.ref_name }}
-          extra_args: --results=verified,unknown
+          # Lob detector has a known false-positive bug: its regex matches any
+          # `test_` + 35 alphanumeric chars (40 chars total), which coincidentally
+          # matches many pytest test function names (e.g. test_parse_empty_csv_returns_no_elements).
+          # We don't use Lob's mail/print API anywhere in this app, so excluding
+          # the detector entirely is safe.
+          extra_args: --results=verified,unknown --exclude-detectors=Lob

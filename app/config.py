@@ -138,7 +138,9 @@ class AppSettings(BaseSettings):
     stream_first_chunk_timeout: float = 20.0
     opensearch_delete_batch_size: int = 100
     document_cleanup_batch_size: int = 1000
+    document_chunk_insert_batch_size: int = 1000
     document_processing_timeout_seconds: int = 118
+    max_table_chunk_chars: int = 1500
     compaction_token_threshold: int = 160000
 
     # --- gov.uk ---
@@ -172,6 +174,8 @@ class AppSettings(BaseSettings):
         "document_processing_timeout_seconds",
         "opensearch_delete_batch_size",
         "document_cleanup_batch_size",
+        "document_chunk_insert_batch_size",
+        "max_table_chunk_chars",
         "compaction_token_threshold",
         "style_guide_max_document_chars",
         "style_guide_max_chunk_chars",
@@ -271,7 +275,9 @@ STYLE_GUIDE_MAX_CHUNK_CHARS = settings.style_guide_max_chunk_chars
 # Document cleanup
 OPENSEARCH_DELETE_BATCH_SIZE = settings.opensearch_delete_batch_size
 DOCUMENT_CLEANUP_BATCH_SIZE = settings.document_cleanup_batch_size
+DOCUMENT_CHUNK_INSERT_BATCH_SIZE = settings.document_chunk_insert_batch_size
 DOCUMENT_PROCESSING_TIMEOUT_SECONDS = settings.document_processing_timeout_seconds
+MAX_TABLE_CHUNK_CHARS = settings.max_table_chunk_chars
 
 # Gov.uk
 WHITELISTED_URLS = settings.whitelisted_urls
