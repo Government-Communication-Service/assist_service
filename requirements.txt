@@ -17,7 +17,7 @@ httpx~=0.28.1
 
 # Logging
 bugsnag~=4.7.1
-boto3>=1.35.0 ### Used for CloudWatch logging and pydantic-settings AWS Secrets Manager
+boto3>=1.43.76 ### Used for CloudWatch logging and pydantic-settings AWS Secrets Manager
 python-json-logger~=4.1.0
 
 # Database
