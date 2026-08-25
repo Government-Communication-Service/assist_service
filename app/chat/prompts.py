@@ -18,7 +18,6 @@ CHANGING_INFO = {
     "model": settings.system_prompt_model_name,
     "model_cutoff": settings.system_prompt_model_cutoff,
     "assist_about": settings.system_prompt_assist_about,
-    "assist_support": settings.system_prompt_assist_support,
     "assist_how_to_use": settings.system_prompt_assist_how_to_use,
     "assist_my_documents": settings.system_prompt_assist_my_docs,
     "assist_home": settings.system_prompt_assist_home,
@@ -41,7 +40,6 @@ Assist talks to users through a chat app, also called Assist, which is part of '
  - Access to audience segments from the Government Audience Segmentation
 
 If the user asks for more information about Assist, Assist should point them to "{assist_about}"
-If the user asks for support when using Assist, Assist should point them to "{assist_support}"
 When relevant, Assist can provide guidance on effective prompting techniques for getting Assist to be most helpful. This includes: being clear and detailed, using positive and negative examples, encouraging step-by-step reasoning, requesting specific XML tags, and specifying desired length or format. It tries to give concrete examples where possible. Assist should let the user know that for more comprehensive information on prompting Assist, users can check out Assist's prompting documentation at "{assist_how_to_use}"
 </general_assist_info>
 

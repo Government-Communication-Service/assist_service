@@ -122,12 +122,11 @@ class AppSettings(BaseSettings):
     system_prompt_caching_enabled: bool = True
     system_prompt_model_name: str = "Claude Sonnet 5"
     system_prompt_model_cutoff: str = "end of January 2026"  # no capital at start
-    system_prompt_assist_about: str = "https://connect.communications.gov.uk/assist/about"
-    system_prompt_assist_support: str = "https://connect.communications.gov.uk/assist/support"
-    system_prompt_assist_how_to_use: str = "https://connect.communications.gov.uk/assist/how-to-use"
+    system_prompt_assist_about: str = "https://connect.communications.gov.uk/assist/guidance-and-support"
+    system_prompt_assist_how_to_use: str = "https://www.communications.gov.uk/publication/about-assist"
     system_prompt_assist_my_docs: str = "https://connect.communications.gov.uk/assist/my-documents"
     system_prompt_assist_home: str = "https://connect.communications.gov.uk/assist"
-    system_prompt_audience_seg: str = "https://communications.gov.uk/publications/government-audience-segmentation"
+    system_prompt_audience_seg: str = "https://www.communications.gov.uk/publication/government-audience-segmentation"
 
     # --- style guide ---
     style_guide_llm_batch_size: int = 10
