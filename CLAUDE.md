@@ -37,7 +37,7 @@ This is the Copilot API (now known as "Assist"), a GenAI-powered FastAPI service
 - **Pre-commit hooks**: `pre-commit install` (must run after initial setup)
 
 ### Dev Tooling — Observing LLM Requests
-Set `LOG_FULL_INVOCATION_REQUEST_TO_FILE_PATH=/tmp/api/invocation.json` in `.env` to make the app write the full Bedrock request (model, system prompt blocks, messages, tools, and token usage) to a file on every LLM call. Each call overwrites the previous file. The `/tmp/api` directory is bind-mounted from the host in `docker-compose.yml` so the file is directly accessible. To inspect it as collapsible HTML:
+Set `LOG_FULL_INVOCATION_REQUEST_TO_FILE_PATH=/tmp/api/invocation.json` in `.env` to make the app write the full Bedrock request (model, system prompt blocks, messages, tools, and token usage) to a file on every LLM call. Each call gets its own numbered file (`invocation_1.json`, `invocation_2.json`, ...) so concurrent calls - e.g. a background compaction call - don't clobber each other. The `/tmp/api` directory is bind-mounted from the host in `docker-compose.yml` so the files are directly accessible. To inspect one as collapsible HTML:
 
 ```bash
 python scripts/system_prompt/pretty_print_invocation.py /tmp/api/invocation.json

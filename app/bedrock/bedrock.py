@@ -196,9 +196,9 @@ class BedrockHandler:
         config = self.config | data
         logger.debug(f"Messages sent to LLM: {messages}")
         extra = {k: v for k, v in config.items() if k not in ("model", "max_tokens", "system")}
-        log_invocation_to_file(self.model, config.get("system"), messages, extra=extra or None)
+        log_path = log_invocation_to_file(self.model, config.get("system"), messages, extra=extra or None)
         response = await self.async_client.messages.create(messages=messages, **config)
-        log_response_to_file(response)
+        log_response_to_file(response, log_path)
         logger.debug("LLM _invoke_async completed")
         llm_internal_response_id = None
         if db_session is not None:

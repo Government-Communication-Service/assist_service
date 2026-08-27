@@ -31,7 +31,7 @@ class BedrockStreamInput(BaseModel):
 async def bedrock_stream(bedrock_stream_input: BedrockStreamInput):
     full_message = ""
     logger.info("Calling bedrock_stream")
-    log_invocation_to_file(
+    log_path = log_invocation_to_file(
         bedrock_stream_input.model,
         bedrock_stream_input.system,
         bedrock_stream_input.messages,
@@ -92,7 +92,7 @@ async def bedrock_stream(bedrock_stream_input: BedrockStreamInput):
                 yield text
 
     response = await stream.get_final_message()
-    log_response_to_file(response)
+    log_response_to_file(response, log_path)
     logger.debug("Final response is: %s", response)
 
     logger.info("Completed bedrock_stream")
