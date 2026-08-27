@@ -54,7 +54,7 @@ from app.chat.schemas import (
     UserChatsResponse,
     UserDocumentSource,
 )
-from app.chat.utils import prepare_message_objects_for_llm
+from app.chat.utils import cap_enhanced_prompt_size, prepare_message_objects_for_llm
 from app.compaction.service import trigger_compaction_if_needed
 from app.config import (
     CHAT_THINKING_LEVEL,
@@ -709,14 +709,21 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         messages = message_repo.get_by_chat(chat_id)
         parent_message_id = messages[-1].id
 
-    m_user = message_repo.create(
-        {
-            "content": input_data.query,
-            "role": RoleEnum.user,
-            "parent_message_id": parent_message_id,
-            **MessageDefaults(**message_defaults).dict(),
-        }
-    )
+    # If the previous request created this exact user message but never got a reply (e.g. the
+    # client timed out and resubmitted), reuse that row instead of writing a duplicate one.
+    pending_duplicate = messages and messages[-1].role == RoleEnum.user and messages[-1].content == input_data.query
+    if pending_duplicate:
+        m_user = messages[-1]
+        messages = messages[:-1]
+    else:
+        m_user = message_repo.create(
+            {
+                "content": input_data.query,
+                "role": RoleEnum.user,
+                "parent_message_id": parent_message_id,
+                **MessageDefaults(**message_defaults).dict(),
+            }
+        )
     all_messages_pre_retrieval: list[Message] = messages + [m_user]
 
     ai_message = MessageDefaults(**message_defaults)
@@ -996,23 +1003,23 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
                     )
                 ]
 
-    # Compile the final query to be passed to the LLM
-    query_parts = [input_data.query]
-    # Add each segment only if it has content
-    if prompt_segment_gov_uk_search:
-        query_parts.append(prompt_segment_gov_uk_search)
-    if prompt_segment_central_guidance:
-        query_parts.append(prompt_segment_central_guidance)
-    if prompt_segment_document_upload:
-        query_parts.append(prompt_segment_document_upload)
-    if prompt_segment_smart_targets:
-        query_parts.append(prompt_segment_smart_targets)
-    if prompt_segment_audience_segments:
-        query_parts.append(prompt_segment_audience_segments)
-    if prompt_segment_style_guide:
-        query_parts.append(prompt_segment_style_guide)
-
-    query_enhanced_with_rag = "\n\n".join(query_parts)
+    # Compile the final query to be passed to the LLM.
+    # Failsafe: cap how much RAG/search/tool content can be appended, regardless of source,
+    # tightening further as the existing conversation nears the model's context window.
+    existing_conversation_tokens = next((m.tokens for m in reversed(messages) if m.tokens), 0)
+    query_enhanced_with_rag = cap_enhanced_prompt_size(
+        query=input_data.query,
+        enhanced_segments=[
+            prompt_segment_gov_uk_search,
+            prompt_segment_central_guidance,
+            prompt_segment_document_upload,
+            prompt_segment_smart_targets,
+            prompt_segment_audience_segments,
+            prompt_segment_style_guide,
+        ],
+        existing_conversation_tokens=existing_conversation_tokens,
+        reserved_output_tokens=llm_obj.max_tokens or 0,
+    )
 
     # Check if compaction is needed before generating the final message
     compaction_triggered = False

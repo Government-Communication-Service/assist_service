@@ -142,12 +142,20 @@ class AppSettings(BaseSettings):
     max_table_chunk_chars: int = 1500
     compaction_token_threshold: int = 160000
 
+    # --- enhanced prompt failsafe ---
+    # Hard cap on the RAG/search/tool content appended to a user's query (not the query itself).
+    max_enhanced_prompt_chars: int = 200000
+    # The main chat model's total context window, used to shrink the above cap further as an
+    # existing conversation approaches the limit.
+    chat_model_context_window_tokens: int = 1000000
+
     # --- gov.uk ---
     whitelisted_urls: list[str] = ["https://www.gov.uk"]
     blacklisted_urls: list[str] = ["https://www.gov.uk/publications"]
     web_browsing_timeout: int = 300
     gov_uk_base_url: str = "https://www.gov.uk"
     gov_uk_search_max_count: int = 10
+    gov_uk_search_max_document_chars: int = 20000
 
     # --- dev tooling ---
     # Do not set this variable in production - it will cause every request to be logged to file
@@ -180,6 +188,9 @@ class AppSettings(BaseSettings):
         "style_guide_max_chunk_chars",
         "style_guide_llm_batch_size",
         "gov_uk_search_max_count",
+        "gov_uk_search_max_document_chars",
+        "max_enhanced_prompt_chars",
+        "chat_model_context_window_tokens",
         "aws_bedrock_regions_max_retries",
         mode="after",
     )
@@ -284,6 +295,9 @@ BLACKLISTED_URLS = settings.blacklisted_urls
 WEB_BROWSING_TIMEOUT = settings.web_browsing_timeout
 GOV_UK_BASE_URL = settings.gov_uk_base_url
 GOV_UK_SEARCH_MAX_COUNT = settings.gov_uk_search_max_count
+GOV_UK_SEARCH_MAX_DOCUMENT_CHARS = settings.gov_uk_search_max_document_chars
+MAX_ENHANCED_PROMPT_CHARS = settings.max_enhanced_prompt_chars
+CHAT_MODEL_CONTEXT_WINDOW_TOKENS = settings.chat_model_context_window_tokens
 
 # Dev tooling
 LOG_FULL_INVOCATION_REQUEST_TO_FILE_PATH = settings.log_full_invocation_request_to_file_path

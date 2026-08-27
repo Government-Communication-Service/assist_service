@@ -26,6 +26,7 @@ from app.chat.schemas import ChatCreateMessageInput, RoleEnum
 from app.chat.utils import prepare_message_objects_for_llm
 from app.config import (
     GOV_UK_SEARCH_MAX_COUNT,
+    GOV_UK_SEARCH_MAX_DOCUMENT_CHARS,
     LLM_DOCUMENT_RELEVANCY_MODEL,
     LLM_GOV_UK_SEARCH_FOLLOWUP_ASSESSMENT,
     LLM_GOVUK_QUERY_GENERATOR,
@@ -265,10 +266,18 @@ async def process_documents(documents: List[Any]) -> str:
     """
     wrapped_document = ""
     for i, document in enumerate(documents, 1):
+        body = document.body
+        if len(body) > GOV_UK_SEARCH_MAX_DOCUMENT_CHARS:
+            logger.warning(
+                f"GOV.UK document '{document.title}' is {len(body):,} chars, "
+                f"truncating to {GOV_UK_SEARCH_MAX_DOCUMENT_CHARS:,}"
+            )
+            body = body[:GOV_UK_SEARCH_MAX_DOCUMENT_CHARS] + "... [content truncated]"
+
         wrapped_document += f"<gov-uk-search-result-{i}>\n"
         wrapped_document += f"<document-title>{document.title}</document-title>\n"
         wrapped_document += f"<document-url>{document.url}</document-url>\n"
-        wrapped_document += f"<document-body>\n{document.body}\n</document-body>\n"
+        wrapped_document += f"<document-body>\n{body}\n</document-body>\n"
         wrapped_document += f"</gov-uk-search-result-{i}>"
         if i < len(documents):
             wrapped_document += "\n"

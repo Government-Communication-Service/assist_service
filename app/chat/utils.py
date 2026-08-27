@@ -9,6 +9,7 @@ from app.auth.exceptions import UuidInvalidError, UuidMissingError
 from app.auth.utils import verify_and_parse_uuid
 from app.auth.verify_service import verify_and_get_user_from_header
 from app.chat.constants import PRIVATE_SHARE_ACCESS_DENIED
+from app.config import CHAT_MODEL_CONTEXT_WINDOW_TOKENS, MAX_ENHANCED_PROMPT_CHARS
 from app.database.db_operations import DbOperations
 from app.database.db_session import get_db_session
 from app.database.models import Chat, Message, User
@@ -18,6 +19,9 @@ from app.database.table import (
 )
 
 logger = getLogger(__name__)
+
+# Rule-of-thumb token estimate, matching app.compaction.service.estimate_message_tokens.
+CHARS_PER_TOKEN_ESTIMATE = 3.5
 
 
 def chat_validator(chat_uuid: str = Path(..., description="Chat UUID"), user_uuid: str = Path(...)):
@@ -116,6 +120,46 @@ def verify_shared_user_uuid_from_path(shared_user_uuid: str = Path(..., descript
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"'shared_user_uuid' parameter '{shared_user_uuid}' is not a valid UUID",
         ) from e
+
+
+def cap_enhanced_prompt_size(
+    query: str,
+    enhanced_segments: list[str],
+    existing_conversation_tokens: int,
+    reserved_output_tokens: int,
+) -> str:
+    """Failsafe gate bounding the RAG/search/tool content appended to a user's query.
+
+    Caps the enhanced (non-query) portion of the prompt to `max_enhanced_prompt_chars`, and
+    tightens that cap further as the existing conversation approaches the chat model's context
+    window. Only the appended content is ever truncated - never the user's own query.
+
+    Args:
+        query: The user's original, verbatim query - never truncated.
+        enhanced_segments: RAG/search/tool content to append, in the order they should appear.
+        existing_conversation_tokens: Estimated or measured size of the conversation so far,
+            not including this turn's enhanced content.
+        reserved_output_tokens: Tokens to leave headroom for the model's reply.
+
+    Returns:
+        The query, followed by the (possibly truncated) enhanced content.
+    """
+    enhanced_text = "\n\n".join(segment for segment in enhanced_segments if segment)
+    if not enhanced_text:
+        return query
+
+    remaining_tokens = max(0, CHAT_MODEL_CONTEXT_WINDOW_TOKENS - existing_conversation_tokens - reserved_output_tokens)
+    allowed_chars = min(MAX_ENHANCED_PROMPT_CHARS, int(remaining_tokens * CHARS_PER_TOKEN_ESTIMATE))
+
+    if len(enhanced_text) > allowed_chars:
+        logger.warning(
+            f"Enhanced prompt content is {len(enhanced_text):,} chars, over the {allowed_chars:,}-char "
+            f"limit (existing conversation ~{existing_conversation_tokens:,} tokens of "
+            f"{CHAT_MODEL_CONTEXT_WINDOW_TOKENS:,} context window); truncating"
+        )
+        enhanced_text = enhanced_text[: max(allowed_chars, 0)] + "\n\n... [content truncated]"
+
+    return f"{query}\n\n{enhanced_text}"
 
 
 def prepare_message_objects_for_llm(all_messages: list[Message]) -> list[dict]:
