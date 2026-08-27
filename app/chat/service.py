@@ -553,7 +553,7 @@ async def chat_get_messages(chat: Chat):
                 for m in chat.messages
             ],
         )
-        logger.info(f"{chat_response=}")
+        logger.debug(f"{chat_response=}")
         return chat_response
 
 
