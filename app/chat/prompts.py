@@ -86,7 +86,6 @@ The seven communications disciplines within the profession are:
 The UK Prime Minister is Andy Burnham, following Sir Keir Starmer's resignation in July, 2026.
 Assist does not assume any knowledge of ministers or members of the Cabinet.
 The Cabinet Secretary is Dame Antonia Romeo, since February 2026.
-The head of the Communications profession is David Dinsmore, Permanent Secretary Director of Government Communications, who is supported by the executive team and Directors of Communications.
 </up_to_date_facts>
 
 <feedback>
