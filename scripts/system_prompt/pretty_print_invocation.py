@@ -127,15 +127,41 @@ def render_user_content(text: str, depth: int = 0) -> str:
     return "\n".join(parts) if parts else f'<pre style="{indent}">{escape(text)}</pre>'
 
 
+def render_content_block(block: dict) -> str:
+    """Render a single content block, handling text, tool_use, tool_result, and thinking."""
+    btype = block.get("type", "unknown")
+    if btype == "text":
+        return block.get("text", "")
+    if btype == "thinking":
+        text = block.get("thinking") or block.get("thinking_delta") or ""
+        return f"<thinking>\n{text}\n</thinking>" if text else "<thinking>(empty)</thinking>"
+    if btype == "tool_use":
+        name = block.get("name", "?")
+        tool_input = json.dumps(block.get("input", {}), indent=2)
+        return f"[tool_use: {name}]\n{tool_input}"
+    if btype == "tool_result":
+        tool_id = block.get("tool_use_id", "?")
+        content = block.get("content", "")
+        is_error = block.get("is_error", False)
+        prefix = f"[tool_result for {tool_id}]" + (" ⚠ error" if is_error else "")
+        if isinstance(content, list):
+            content = "\n".join(b.get("text", json.dumps(b)) for b in content if isinstance(b, dict))
+        return f"{prefix}\n{content}"
+    # fallback
+    return json.dumps(block, indent=2)
+
+
 def render_messages(messages: list) -> str:
     parts = []
     for i, msg in enumerate(messages):
         role = msg.get("role", "unknown")
         content = msg.get("content", "")
         if isinstance(content, list):
-            content = "\n\n".join(
-                block.get("text", json.dumps(block, indent=2)) for block in content if isinstance(block, dict)
-            )
+            rendered_blocks = []
+            for block in content:
+                if isinstance(block, dict):
+                    rendered_blocks.append(render_content_block(block))
+            content = "\n\n".join(rendered_blocks)
         content = str(content)
         label = f"Message {i + 1} — {role}"
         css = f"role-{role}" if role in ("user", "assistant") else ""
@@ -174,7 +200,7 @@ def main():
     sections.append(render_messages(messages))
     response = data.get("response")
     if response:
-        text = "\n\n".join(b.get("text", "") for b in response if b.get("text"))
+        text = "\n\n".join(render_content_block(b) for b in response if isinstance(b, dict))
         sections.append(render_section("Response", text, "role-assistant"))
 
     html = HTML_TEMPLATE.format(model=escape(model), sections="\n".join(sections))

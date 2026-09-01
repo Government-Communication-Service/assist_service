@@ -8,6 +8,13 @@ from app.config import LOG_FULL_INVOCATION_REQUEST_TO_FILE_PATH
 _call_counter = itertools.count(1)
 
 
+def _json_default(obj):
+    """JSON serialiser that preserves Anthropic typed objects (e.g. ToolUseBlock) as dicts."""
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    return str(obj)
+
+
 def log_invocation_to_file(
     model: str, system: str | list | None, messages: list, extra: dict | None = None
 ) -> str | None:
@@ -32,7 +39,7 @@ def log_invocation_to_file(
     if extra:
         payload["extra"] = extra
     with open(path, "w") as f:
-        json.dump(payload, f, indent=2, default=str)
+        json.dump(payload, f, indent=2, default=_json_default)
     return str(path)
 
 
@@ -53,6 +60,6 @@ def log_response_to_file(response, path: str | None) -> None:
         "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", None),
         "cache_creation": getattr(usage, "cache_creation", None),
     }
-    payload["response"] = [{"type": block.type, "text": getattr(block, "text", None)} for block in response.content]
+    payload["response"] = [block.model_dump() for block in response.content]
     with open(path, "w") as f:
-        json.dump(payload, f, indent=2, default=str)
+        json.dump(payload, f, indent=2, default=_json_default)
