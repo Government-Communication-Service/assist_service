@@ -108,7 +108,7 @@ class AppSettings(BaseSettings):
     llm_chat_response_model: str = "anthropic.claude-sonnet-5"
     llm_chat_title_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     llm_index_router: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
-    llm_opensearch_query_generator: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    llm_opensearch_query_generator: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     llm_chunk_reviewer: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     llm_govuk_query_generator: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
     llm_document_relevancy_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
@@ -141,6 +141,10 @@ class AppSettings(BaseSettings):
     document_processing_timeout_seconds: int = 118
     max_table_chunk_chars: int = 1500
     compaction_token_threshold: int = 160000
+
+    # --- central guidance RAG ---
+    max_central_guidance_results: int = 12
+    max_central_guidance_chunk_chars: int = 10000
 
     # --- enhanced prompt failsafe ---
     # Hard cap on the RAG/search/tool content appended to a user's query (not the query itself).
@@ -189,6 +193,8 @@ class AppSettings(BaseSettings):
         "style_guide_llm_batch_size",
         "gov_uk_search_max_count",
         "gov_uk_search_max_document_chars",
+        "max_central_guidance_results",
+        "max_central_guidance_chunk_chars",
         "max_enhanced_prompt_chars",
         "chat_model_context_window_tokens",
         "aws_bedrock_regions_max_retries",
@@ -275,6 +281,10 @@ LLM_SMART_TARGETS_MODEL = settings.llm_smart_targets_model
 LLM_COMPACTION_SUMMARISATION_MODEL = settings.llm_compaction_summarisation_model
 COMPACTION_TOKEN_THRESHOLD = settings.compaction_token_threshold
 CHAT_THINKING_LEVEL = settings.chat_thinking_level
+
+# Central guidance RAG
+MAX_CENTRAL_GUIDANCE_RESULTS = settings.max_central_guidance_results
+MAX_CENTRAL_GUIDANCE_CHUNK_CHARS = settings.max_central_guidance_chunk_chars
 
 # Style guide
 STYLE_GUIDE_LLM_BATCH_SIZE = settings.style_guide_llm_batch_size

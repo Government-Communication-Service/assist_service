@@ -197,3 +197,38 @@ def prepare_message_objects_for_llm(all_messages: list[Message]) -> list[dict]:
 
     logger.debug("Messages formatted for submission to LLM for final response")
     return new_messages
+
+
+def prepare_recent_turns_for_decision(all_messages: list[Message], num_turns: int) -> list[dict]:
+    """Lightweight conversation context for background RAG/search decision calls.
+
+    Args:
+        all_messages: Full message history for the chat, oldest first.
+        num_turns: Number of most recent messages to include; 0 or falsy includes all.
+
+    Returns:
+        List of {"role", "content"} dicts, safe to pass directly as a Messages API `messages`
+        list (consecutive user turns are merged to preserve strict role alternation). User
+        messages use raw content (or summary, if compacted); assistant messages are truncated
+        to a 200-char preview.
+    """
+    recent_messages = all_messages[-num_turns:] if num_turns else all_messages
+    new_messages: list[dict] = []
+    for msg in recent_messages:
+        if msg.summary is not None:
+            content_to_use = msg.summary
+        elif msg.role == "user":
+            content_to_use = msg.content
+        else:
+            content_to_use = (msg.content or "")[:200]
+            if not content_to_use:
+                # Tool-only assistant turns are persisted with empty content; skipping them
+                # keeps this safe to pass directly as a Messages API `messages` list, which
+                # rejects empty-content blocks.
+                continue
+
+        if msg.role == "user" and new_messages and new_messages[-1]["role"] == "user":
+            new_messages[-1]["content"] += "\n\n" + content_to_use
+        else:
+            new_messages.append({"role": msg.role, "content": content_to_use})
+    return new_messages

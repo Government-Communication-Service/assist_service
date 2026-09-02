@@ -90,38 +90,53 @@ TOOL_OPENSEARCH_QUERY_GENERATOR = {
 
 SYSTEM_PROMPT_CHUNK_RELEVANCE_EVALUATOR = (
     "You are a document relevance evaluator for the Government Communication Service (GCS). "
-    "Your job is to determine if a document chunk is relevant to a user's query. "
-    "You will be given a user's original query and a document chunk (with title and content). "
-    "Evaluate whether the chunk contains information that would help answer the user's question. "
-    "Be judicious, and think carefully before giving a final answer."
+    "Your job is to determine if document chunks are relevant to a user's query. "
+    "You will be given a user's original query and a numbered list of document chunks "
+    "(each with a title and content). "
+    "Evaluate each chunk independently: does it contain information that would help answer "
+    "the user's question? Be judicious, and think carefully before giving a final answer. "
+    "You must return exactly one evaluation per chunk provided, using the same chunk_index."
 )
 
 TOOL_NAME_CHUNK_RELEVANCE_EVALUATOR = "evaluate_chunk_relevance"
 
 TOOL_CHUNK_RELEVANCE_EVALUATOR = {
     "name": TOOL_NAME_CHUNK_RELEVANCE_EVALUATOR,
-    "description": "Evaluate whether a document chunk is relevant to the user's query",
+    "description": "Evaluate whether each of a list of document chunks is relevant to the user's query",
     "input_schema": {
         "type": "object",
         "properties": {
-            "reasoning": {
-                "type": "string",
-                "description": (
-                    "Brief explanation of why the chunk is or isn't relevant to the user's query. "
-                    "This helps when thinking step by step through the evaluation."
-                ),
-            },
-            "is_relevant": {
-                "type": "boolean",
-                "description": (
-                    "Set to true (JSON boolean) if the document chunk contains information relevant "
-                    "to the user's query. Set to false (JSON boolean) if the chunk is not relevant "
-                    "or useful for answering the user's question. "
-                    "Do not use the strings 'true' or 'false' — use JSON boolean values only."
-                ),
+            "evaluations": {
+                "type": "array",
+                "description": "One evaluation per chunk provided, in any order.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "chunk_index": {
+                            "type": "integer",
+                            "description": "The index of the chunk being evaluated, matching its <chunk-N> tag.",
+                        },
+                        "reasoning": {
+                            "type": "string",
+                            "description": (
+                                "Brief explanation of why the chunk is or isn't relevant to the user's query."
+                            ),
+                        },
+                        "is_relevant": {
+                            "type": "boolean",
+                            "description": (
+                                "Set to true (JSON boolean) if the document chunk contains information relevant "
+                                "to the user's query. Set to false (JSON boolean) if the chunk is not relevant "
+                                "or useful for answering the user's question. "
+                                "Do not use the strings 'true' or 'false' — use JSON boolean values only."
+                            ),
+                        },
+                    },
+                    "required": ["chunk_index", "is_relevant", "reasoning"],
+                },
             },
         },
-        "required": ["is_relevant", "reasoning"],
+        "required": ["evaluations"],
     },
 }
 

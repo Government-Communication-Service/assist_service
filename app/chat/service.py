@@ -826,7 +826,7 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
     # Condition for searching central guidance
     if USE_RAG and input_data.use_rag:
         search_central_guidance_task = asyncio.create_task(
-            search_central_guidance(input_data.query, m_user.id, db_session)
+            search_central_guidance(input_data.query, m_user.id, db_session, messages=messages)
         )
         tasks.append(search_central_guidance_task)
 

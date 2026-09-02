@@ -255,12 +255,13 @@ async def test_all_chunks_filtered_out_scenario(db_session):
     message_id = await create_test_message(db_session, query_content)
 
     # Mock chunk evaluation to always return irrelevant
-    with patch("app.central_guidance.service_rag.evaluate_chunk_relevance") as mock_evaluate:
+    with patch("app.central_guidance.service_rag.evaluate_chunks_relevance") as mock_evaluate:
 
-        async def mock_evaluate_func(retrieval_result, user_query, db_session):
-            # Mark chunk as not relevant
-            retrieval_result.message_document_chunk_mapping.use_document_chunk = False
-            return retrieval_result
+        async def mock_evaluate_func(retrieval_results, user_query, db_session):
+            # Mark all chunks as not relevant
+            for retrieval_result in retrieval_results:
+                retrieval_result.message_document_chunk_mapping.use_document_chunk = False
+            return retrieval_results
 
         mock_evaluate.side_effect = mock_evaluate_func
 

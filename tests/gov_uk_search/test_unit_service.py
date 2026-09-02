@@ -297,7 +297,7 @@ class TestAssessIfNextMessageShouldUseGovUkSearch:
                 db_session=db_session,
             )
 
-        # 20 recent messages (some may be merged by prepare_message_objects_for_llm)
+        # 20 recent messages (some may be merged by prepare_recent_turns_for_decision)
         # plus 1 new user message appended — total must be <= 21
         assert len(captured_messages) <= 21
 

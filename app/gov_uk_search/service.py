@@ -23,7 +23,7 @@ from app.bedrock.tools_use import (
 )
 from app.chat.exceptions import ChatNotFoundError
 from app.chat.schemas import ChatCreateMessageInput, RoleEnum
-from app.chat.utils import prepare_message_objects_for_llm
+from app.chat.utils import prepare_recent_turns_for_decision
 from app.config import (
     GOV_UK_SEARCH_MAX_COUNT,
     GOV_UK_SEARCH_MAX_DOCUMENT_CHARS,
@@ -561,7 +561,7 @@ async def get_search_queries(
     # in the current query (e.g. pronouns, implicit topics, comparative requests)
     conversation_context = ""
     if messages:
-        recent = prepare_message_objects_for_llm(messages[-10:])
+        recent = prepare_recent_turns_for_decision(messages, num_turns=10)
         if recent:
             turns = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in recent)
             conversation_context = f"\n\n<recent-conversation>\n{turns}\n</recent-conversation>"
@@ -1122,8 +1122,8 @@ async def assess_if_next_message_should_use_gov_uk_search(
         else ""
     )
 
-    # Use only the last 20 messages to keep context bounded, formatted the same way as the main LLM call
-    recent_messages = prepare_message_objects_for_llm(messages[-20:])
+    # Keep context bounded to the last 20 messages
+    recent_messages = prepare_recent_turns_for_decision(messages, num_turns=20)
     recent_messages.append({"role": "user", "content": new_user_message_content})
 
     total_chars = sum(len(m["content"]) for m in recent_messages)
@@ -1190,9 +1190,9 @@ async def assess_if_next_message_should_use_gov_uk_search(
             f"Expected boolean True or False, got '{result}' (type: {type(result).__name__})"
         )
 
-    except Exception as e:
-        logger.warning(
+    except Exception:
+        logger.exception(
             f"GOV.UK search assessment failed for message {new_user_message_id} "
-            f"({len(messages)} messages in chat). Defaulting to False. Error: {e}"
+            f"({len(messages)} messages in chat). Defaulting to False."
         )
         return False
