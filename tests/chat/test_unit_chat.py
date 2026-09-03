@@ -1,9 +1,11 @@
 import logging
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import pytest
+from anthropic.types import TextBlock
 
+from app.bedrock.schemas import LLMResponse
 from app.chat.prompts import build_chat_system_prompt
 from app.chat.schemas import (
     CentralGuidanceSource,
@@ -13,6 +15,7 @@ from app.chat.schemas import (
     Sources,
     UserDocumentSource,
 )
+from app.chat.service import chat_save_llm_output
 from app.config import settings
 from app.database.table import async_db_session
 
@@ -73,6 +76,35 @@ async def test_cache_control_absent_when_disabled():
         async with async_db_session() as db_session:
             response = await build_chat_system_prompt(db_session)
     assert all("cache_control" not in block for block in response)
+
+
+@patch("app.chat.service.ChatTable")
+@patch("app.chat.service.MessageTable")
+def test_chat_save_llm_output_writes_cache_tokens_to_user_message(mock_message_table_cls, mock_chat_table_cls):
+    """chat_save_llm_output records cache_read/cache_write tokens on the user message row."""
+    mock_message_repo = MagicMock()
+    mock_message_table_cls.return_value = mock_message_repo
+    mock_message_repo.create.return_value = MagicMock(id=2, chat_id=1)
+
+    llm = MagicMock()
+    llm.input_cost_per_token = 1e-6
+    llm.output_cost_per_token = 5e-6
+
+    llm_response = LLMResponse(
+        content=[TextBlock(type="text", text="hello")],
+        input_tokens=10,
+        output_tokens=5,
+        cache_read_tokens=3,
+        cache_write_tokens=7,
+    )
+    user_message = MagicMock(id=1, citation=None, sources=None)
+    ai_message_defaults = MessageDefaults(chat_id=1, auth_session_id=2, llm_id=3)
+
+    chat_save_llm_output(ai_message_defaults, llm_response, user_message, llm)
+
+    _, update_payload = mock_message_repo.update.call_args[0]
+    assert update_payload["cache_read_tokens"] == 3
+    assert update_payload["cache_write_tokens"] == 7
 
 
 def test_empty_sources_serialization():

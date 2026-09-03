@@ -15,6 +15,8 @@ def llm_transaction(llm: LLM, response: LLMResponse) -> LLMTransaction:
         content=response.content,
         input_tokens=response.input_tokens,
         output_tokens=response.output_tokens,
+        cache_read_tokens=response.cache_read_tokens,
+        cache_write_tokens=response.cache_write_tokens,
         input_cost=input_cost,
         output_cost=output_cost,
         completion_cost=input_cost + output_cost,

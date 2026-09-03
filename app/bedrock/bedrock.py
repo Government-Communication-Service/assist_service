@@ -28,6 +28,30 @@ def llm_get_default_model() -> LLM:
     return LLMTable().get_by_model(LLM_DEFAULT_MODEL)
 
 
+def _as_token_count(value: Any) -> int:
+    """Coerce a usage field to an int, falling back to 0 for anything unusable.
+
+    These values feed straight into Decimal arithmetic for cost, so a non-numeric value must
+    never propagate — None when caching is off, and test doubles, both land here.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def extract_cache_tokens(usage: Any) -> tuple[int, int]:
+    """Pull (cache_read_tokens, cache_write_tokens) out of an Anthropic usage object.
+
+    Both fields are absent or None when caching is not in play, so they are read
+    defensively rather than assumed present.
+    """
+    return (
+        _as_token_count(getattr(usage, "cache_read_input_tokens", None)),
+        _as_token_count(getattr(usage, "cache_creation_input_tokens", None)),
+    )
+
+
 class RunMode(str, Enum):
     SYNC = "sync"
     ASYNC = "async"
@@ -175,18 +199,24 @@ class BedrockHandler:
         return messages
 
     def format_response(self, response: ToolResult | AnthropicMessage) -> LLMTransaction:
+        cache_read_tokens, cache_write_tokens = extract_cache_tokens(response.usage)
         payload = LLMResponse(
             content=response.content,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens,
         )
         return llm_transaction(self.llm, payload)
 
     def _format_chat_title_response(self, response: AnthropicMessage) -> LLMTransaction:
+        cache_read_tokens, cache_write_tokens = extract_cache_tokens(response.usage)
         result = LLMResponse(
             content=response.content[0].text,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_tokens=cache_write_tokens,
         )
 
         return llm_transaction(self.llm, result)
@@ -202,12 +232,15 @@ class BedrockHandler:
         logger.debug("LLM _invoke_async completed")
         llm_internal_response_id = None
         if db_session is not None:
+            cache_read_tokens, cache_write_tokens = extract_cache_tokens(response.usage)
             llm_internal_response = await DbOperations.insert_llm_internal_response_id_query(
                 db_session=db_session,
                 web_browsing_llm=self.llm,
                 content=str(response.content),
                 tokens_in=response.usage.input_tokens,
                 tokens_out=response.usage.output_tokens,
+                cache_read_tokens=cache_read_tokens,
+                cache_write_tokens=cache_write_tokens,
                 completion_cost=calculate_completion_cost(
                     self.llm, response.usage.input_tokens, response.usage.output_tokens
                 ),

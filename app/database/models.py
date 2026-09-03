@@ -201,6 +201,8 @@ class Message(Base):
     sources = Column(Text, nullable=True)
     role = Column(Text, nullable=False)
     tokens = Column(Integer, nullable=False)
+    cache_read_tokens = Column(Integer, nullable=True)
+    cache_write_tokens = Column(Integer, nullable=True)
     auth_session_id = Column(Integer, ForeignKey("auth_session.id"), nullable=False)
     parent_message_id = Column(Integer, ForeignKey("message.id"), nullable=True)
     redaction_id = Column(Integer, ForeignKey("redaction.id"))
@@ -491,6 +493,8 @@ class LlmInternalResponse(Base):
     content = Column(Text, nullable=False)
     tokens_in = Column(Integer, nullable=False)
     tokens_out = Column(Integer, nullable=False)
+    cache_read_tokens = Column(Integer, nullable=True)
+    cache_write_tokens = Column(Integer, nullable=True)
     completion_cost = Column(DECIMAL(precision=10, scale=8), nullable=False)
 
 

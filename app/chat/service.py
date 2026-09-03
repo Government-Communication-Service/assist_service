@@ -163,6 +163,8 @@ def chat_save_llm_output(
                 user_message,
                 {
                     "tokens": llm_response.input_tokens,
+                    "cache_read_tokens": llm_response.cache_read_tokens,
+                    "cache_write_tokens": llm_response.cache_write_tokens,
                 },
             )
             logger.info(

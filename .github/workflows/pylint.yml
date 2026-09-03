@@ -59,6 +59,10 @@ jobs:
             # call nltk.data.load/find with user-supplied resource names, so an
             # attacker cannot reach the vulnerable code path through our API.
             PYSEC-2026-597
+            # NLTK model-persistence sandbox bypass (PYSEC-2026-3740). unstructured only
+            # calls pos_tag/sent_tokenize/word_tokenize, never the vulnerable train/save/load
+            # APIs, so there's no attacker-controlled path reaching them through our API.
+            PYSEC-2026-3740
 
       - name: Install Bandit
         run: pip install bandit

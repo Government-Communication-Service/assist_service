@@ -1594,6 +1594,8 @@ class DbOperations:
         tokens_in: int,
         tokens_out: int,
         completion_cost: int,
+        cache_read_tokens: int = 0,
+        cache_write_tokens: int = 0,
     ) -> LlmInternalResponse:
         # Log the raw LLM response to the database to allow:
         # - tracking the cost of the query and the raw response
@@ -1605,6 +1607,8 @@ class DbOperations:
                 content=content,
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
+                cache_read_tokens=cache_read_tokens,
+                cache_write_tokens=cache_write_tokens,
                 completion_cost=completion_cost,
             )
             .returning(LlmInternalResponse)

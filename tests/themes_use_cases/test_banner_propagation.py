@@ -211,9 +211,9 @@ class TestExtendBannerExpiry:
     """Theme has 'updated' banner. Use case sends a later expiry, theme should extend."""
 
     async def test_propagate_extends_expiry(self, db_session, make_mock_theme, mocker):
-        """Theme expiry Apr 15, use case expiry Sep 2, theme should extend to Sep 2."""
-        theme_expiry = datetime(2026, 4, 15, 12, 0, 0)
-        use_case_expiry = datetime(2026, 9, 2, 12, 0, 0)
+        """Theme expiry is sooner than use case expiry, theme should extend to match."""
+        theme_expiry = datetime.now() + timedelta(days=30)
+        use_case_expiry = datetime.now() + timedelta(days=60)
 
         theme = make_mock_theme(
             show_update_banner=True,
@@ -244,9 +244,9 @@ class TestExtendBannerExpiry:
     async def test_update_use_case_extends_theme_expiry(
         self, db_session, theme_uuid, use_case_uuid, make_mock_theme, make_mock_use_case, mocker
     ):
-        """Full flow: theme 'updated' expiry Apr 15, use case sends Sep 2, theme extends."""
-        theme_expiry = datetime(2026, 4, 15, 12, 0, 0)
-        use_case_expiry = datetime(2026, 9, 2, 12, 0, 0)
+        """Full flow: theme 'updated' expiry is sooner, use case sends a later expiry, theme extends."""
+        theme_expiry = datetime.now() + timedelta(days=30)
+        use_case_expiry = datetime.now() + timedelta(days=60)
 
         theme = make_mock_theme(
             show_update_banner=True,

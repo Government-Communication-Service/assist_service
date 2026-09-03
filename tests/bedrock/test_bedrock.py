@@ -130,6 +130,63 @@ async def test_invoke_async_with_db_session_writes_to_db():
     assert result.llm_internal_response_id == 42
 
 
+async def test_invoke_async_with_db_session_passes_cache_tokens_to_db():
+    """invoke_async forwards cache_read/cache_write tokens from response.usage to the DB insert."""
+    llm = MagicMock()
+    llm.model = LLM_DEFAULT_MODEL
+    llm.input_cost_per_token = 1e-6
+    llm.output_cost_per_token = 5e-6
+    bedrock = BedrockHandler(llm=llm, mode=RunMode.ASYNC)
+
+    fake_response = AnthropicMessage(
+        id="msg_test",
+        type="message",
+        role="assistant",
+        content=[],
+        model=bedrock.model,
+        stop_reason="end_turn",
+        stop_sequence=None,
+        usage=Usage(input_tokens=10, output_tokens=5, cache_creation_input_tokens=7, cache_read_input_tokens=3),
+    )
+    bedrock.async_client = MagicMock()
+    bedrock.async_client.messages.create = AsyncMock(return_value=fake_response)
+
+    mock_db_session = MagicMock()
+    patch_target = "app.bedrock.bedrock.DbOperations.insert_llm_internal_response_id_query"
+    with patch(patch_target, new_callable=AsyncMock) as mock_insert:
+        mock_insert.return_value = MagicMock(id=1)
+        await bedrock.invoke_async([{"role": "user", "content": "hello"}], db_session=mock_db_session)
+
+    _, kwargs = mock_insert.call_args
+    assert kwargs["cache_read_tokens"] == 3
+    assert kwargs["cache_write_tokens"] == 7
+
+
+def test_format_response_extracts_cache_tokens():
+    """format_response reads cache_read_input_tokens/cache_creation_input_tokens off response.usage."""
+    llm = MagicMock()
+    llm.model = LLM_DEFAULT_MODEL
+    llm.input_cost_per_token = 1e-6
+    llm.output_cost_per_token = 5e-6
+    bedrock = BedrockHandler(llm=llm)
+
+    fake_response = AnthropicMessage(
+        id="msg_test",
+        type="message",
+        role="assistant",
+        content=[],
+        model=bedrock.model,
+        stop_reason="end_turn",
+        stop_sequence=None,
+        usage=Usage(input_tokens=10, output_tokens=5, cache_creation_input_tokens=7, cache_read_input_tokens=3),
+    )
+
+    transaction = bedrock.format_response(fake_response)
+
+    assert transaction.cache_read_tokens == 3
+    assert transaction.cache_write_tokens == 7
+
+
 async def test_invoke_async_without_db_session_does_not_write_to_db():
     """invoke_async does not write to the DB when db_session is not provided."""
     llm = MagicMock()
