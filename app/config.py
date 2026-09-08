@@ -94,7 +94,6 @@ class AppSettings(BaseSettings):
 
     # --- feature flags ---
     is_dev: bool = False
-    show_detailed_error_messages: bool = False
     use_rag: bool = True
     smart_targets_service_disabled: bool = False
     debug_mode: bool = False

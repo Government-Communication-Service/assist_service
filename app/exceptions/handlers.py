@@ -20,49 +20,49 @@ from app.logs.logs_handler import logger
 from app.personal_prompts.exceptions import UserPromptMissingError
 
 
-def log_and_raise_http_exception(status_code: int, request: Request, exc: Exception) -> None:
+def log_and_raise_http_exception(status_code: int, request: Request, exc: Exception, label: str) -> None:
     logger.error(f"Error in endpoint {request.url.path}: {exc}\n", exc_info=exc)
-    raise HTTPException(status_code=status_code, detail=str(exc))
+    raise HTTPException(status_code=status_code, detail=f"An error occurred processing your request: {label}")
 
 
 async def auth_token_missing_handler(request: Request, exc: AuthTokenMissingError) -> None:
-    log_and_raise_http_exception(status_code=401, request=request, exc=exc)
+    log_and_raise_http_exception(status_code=401, request=request, exc=exc, label="Auth token missing")
 
 
 def auth_token_invalid_handler(request: Request, exc: AuthTokenInvalidError) -> None:
-    log_and_raise_http_exception(status_code=401, request=request, exc=exc)
+    log_and_raise_http_exception(status_code=401, request=request, exc=exc, label="Auth token invalid")
 
 
 def add_new_user_error_handler(request: Request, exc: AddNewUserError) -> None:
-    log_and_raise_http_exception(status_code=401, request=request, exc=exc)
+    log_and_raise_http_exception(status_code=401, request=request, exc=exc, label="Unable to add user")
 
 
 def session_uuid_missing_handler(request: Request, exc: SessionUuidMissingError) -> None:
-    log_and_raise_http_exception(status_code=400, request=request, exc=exc)
+    log_and_raise_http_exception(status_code=400, request=request, exc=exc, label="Session UUID missing")
 
 
 def user_key_uuid_missing_handler(request: Request, exc: UserKeyUuidMissingError) -> None:
-    log_and_raise_http_exception(status_code=400, request=request, exc=exc)
+    log_and_raise_http_exception(status_code=400, request=request, exc=exc, label="User key UUID missing")
 
 
 def user_uuid_not_matching_handler(request: Request, exc: UserUuidNotMatchingError) -> None:
-    log_and_raise_http_exception(status_code=403, request=request, exc=exc)
+    log_and_raise_http_exception(status_code=403, request=request, exc=exc, label="User UUID mismatch")
 
 
 def session_uuid_malformed_handler(request: Request, exc: SessionUuidMalformedError) -> None:
-    log_and_raise_http_exception(status_code=400, request=request, exc=exc)
+    log_and_raise_http_exception(status_code=400, request=request, exc=exc, label="Session UUID malformed")
 
 
 def user_key_uuid_malformed_handler(request: Request, exc: UserKeyUuidMalformedError) -> None:
-    log_and_raise_http_exception(status_code=400, request=request, exc=exc)
+    log_and_raise_http_exception(status_code=400, request=request, exc=exc, label="User key UUID malformed")
 
 
 def session_uuid_not_in_database_handler(request: Request, exc: SessionUuidNotInDatabaseError) -> None:
-    log_and_raise_http_exception(status_code=404, request=request, exc=exc)
+    log_and_raise_http_exception(status_code=404, request=request, exc=exc, label="Session not found")
 
 
 def user_prompt_missing_handler(request: Request, exc: UserPromptMissingError) -> None:
-    log_and_raise_http_exception(status_code=404, request=request, exc=exc)
+    log_and_raise_http_exception(status_code=404, request=request, exc=exc, label="User prompt not found")
 
 
 def handle_document_access_error(request: Request, ex: DocumentAccessError) -> Response:
