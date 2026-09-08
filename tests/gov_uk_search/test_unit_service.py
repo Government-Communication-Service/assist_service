@@ -203,8 +203,13 @@ class TestAssessIfNextMessageShouldUseGovUkSearch:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_uses_summary_for_compacted_messages(self):
-        """Messages with summaries should be sent as summaries, not raw content."""
+    async def test_ignores_legacy_per_message_summaries(self):
+        """Legacy Message.summary values must no longer be substituted for content.
+
+        Per-message summarisation has been replaced by a single ChatCompaction summary of the
+        conversation. Historical rows in production still carry summaries from the old
+        mechanism, and those chats should now send their full content instead.
+        """
         db_session = AsyncMock()
         db_session.execute = AsyncMock(return_value=MagicMock(fetchall=MagicMock(return_value=[])))
 
@@ -246,10 +251,10 @@ class TestAssessIfNextMessageShouldUseGovUkSearch:
                 db_session=db_session,
             )
 
-        # The compacted message should appear as its summary, not original content
+        # The message appears in full; the stale per-message summary is not used.
         contents = [m["content"] for m in captured_messages]
-        assert any("short summary" in c for c in contents)
-        assert not any("original long content" in c for c in contents)
+        assert any("original long content" in c for c in contents)
+        assert not any("short summary" in c for c in contents)
 
     @pytest.mark.asyncio
     async def test_only_last_20_messages_sent(self):

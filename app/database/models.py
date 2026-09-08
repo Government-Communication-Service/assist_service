@@ -209,8 +209,12 @@ class Message(Base):
     interrupted = Column(Boolean, nullable=False)
     completion_cost = Column(Numeric, nullable=True)
     llm_id = Column(Integer, ForeignKey("llm.id"), nullable=True)
+    # Legacy per-message compaction summary. No longer written or read — superseded by
+    # ChatCompaction. Retained so historical rows survive; safe to drop in a later migration.
     summary = Column(Text, nullable=True)
     summary_llm_response_id = Column(Integer, ForeignKey("llm_internal_response.id"), nullable=True)
+    cache_read_tokens = Column(Integer, nullable=True)
+    cache_write_tokens = Column(Integer, nullable=True)
     chat = relationship("Chat", back_populates="messages")
 
     def client_response(self):
@@ -223,6 +227,47 @@ class Message(Base):
                 "citation": self.citation,
             },
         )
+
+
+class ChatCompaction(Base):
+    """A single summary standing in for a chat's history up to a cut point.
+
+    Replaces the old per-message summaries: everything at or before `up_to_message_id` is
+    represented by `summary`, and later messages are sent verbatim. Rows are kept rather
+    than overwritten so the compaction history and its cost stay auditable.
+    """
+
+    __tablename__ = "chat_compaction"
+
+    chat_id = Column(Integer, ForeignKey("chat.id"), nullable=False)
+    # Everything at or before this message is covered by the summary.
+    up_to_message_id = Column(Integer, ForeignKey("message.id"), nullable=False)
+    summary = Column(Text, nullable=False)
+    prefix_tokens_at_compaction = Column(Integer, nullable=True)
+    summary_tokens = Column(Integer, nullable=True)
+    # Usage from the compaction call
+    summary_cache_read_tokens = Column(Integer, nullable=True)
+    summary_cache_write_tokens = Column(Integer, nullable=True)
+    llm_internal_response_id = Column(Integer, ForeignKey("llm_internal_response.id"), nullable=True)
+
+    __table_args__ = (Index("idx_chat_compaction_chat_deleted_created", "chat_id", "deleted_at", "created_at"),)
+
+
+class ChatCompactionLock(Base):
+    """Ensures only one compaction runs at a time for a given chat, across all workers.
+
+    A held lock older than `compaction_lock_stale_after_minutes` is treated as abandoned
+    (worker crash) and can be reacquired — there is no separate cleanup job, the check lives
+    entirely in the acquire query's WHERE clause.
+    """
+
+    __tablename__ = "chat_compaction_lock"
+
+    chat_id = Column(Integer, ForeignKey("chat.id"), nullable=False)
+    compaction_lock = Column(Boolean, nullable=False, server_default="false")
+    locked_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (UniqueConstraint("chat_id", name="uq_chat_compaction_lock_chat_id"),)
 
 
 class Redaction(Base):
@@ -334,8 +379,7 @@ class UseCase(Base):
     user_input_form = Column(Text, nullable=False)
     position = Column(
         Integer, nullable=True
-    )  # The 'position' column is to ensure that the order of records is explicit.
-    # This is to avoid a situation where themes / use cases are shown in a random order on the frontend.
+    )  # The 'position' column is to ensure that the order of records is explicit
 
     # Banner fields for showing "new" or "updated" banners
     show_update_banner = Column(Boolean, nullable=False, server_default="false")

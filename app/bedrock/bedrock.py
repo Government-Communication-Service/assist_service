@@ -242,7 +242,11 @@ class BedrockHandler:
                 cache_read_tokens=cache_read_tokens,
                 cache_write_tokens=cache_write_tokens,
                 completion_cost=calculate_completion_cost(
-                    self.llm, response.usage.input_tokens, response.usage.output_tokens
+                    self.llm,
+                    response.usage.input_tokens,
+                    response.usage.output_tokens,
+                    cache_read_tokens=cache_read_tokens,
+                    cache_write_tokens=cache_write_tokens,
                 ),
             )
             llm_internal_response_id = llm_internal_response.id

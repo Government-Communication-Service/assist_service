@@ -101,12 +101,13 @@ class TestPrepareRecentTurnsForDecision:
 
         assert result == [{"role": "user", "content": "raw query"}]
 
-    def test_uses_summary_when_present(self):
+    def test_ignores_legacy_per_message_summary(self):
+        """Message.summary is legacy (superseded by ChatCompaction) and must not be used."""
         messages = [make_message("user", "raw query", summary="a short summary")]
 
         result = prepare_recent_turns_for_decision(messages, num_turns=6)
 
-        assert result == [{"role": "user", "content": "a short summary"}]
+        assert result == [{"role": "user", "content": "raw query"}]
 
     def test_truncates_assistant_content_to_preview(self):
         long_reply = "y" * 500

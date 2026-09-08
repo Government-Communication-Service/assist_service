@@ -27,6 +27,17 @@ class ThinkingLevel(str, Enum):
     max = "max"
 
 
+class CacheTtl(str, Enum):
+    """Time-to-live for the conversation prompt-cache breakpoint.
+
+    five_minutes — 1.25x write cost, breaks even after 2 requests.
+    one_hour — 2x write cost, worth it when users pause mid-conversation.
+    """
+
+    five_minutes = "5m"
+    one_hour = "1h"
+
+
 class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -114,7 +125,6 @@ class AppSettings(BaseSettings):
     llm_document_relevancy_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     llm_gov_uk_search_followup_assessment: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     llm_smart_targets_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
-    llm_compaction_summarisation_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     llm_style_guide_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
     chat_thinking_level: ThinkingLevel = ThinkingLevel.disabled
 
@@ -130,8 +140,8 @@ class AppSettings(BaseSettings):
 
     # --- style guide ---
     style_guide_llm_batch_size: int = 10
-    style_guide_max_document_chars: int = 100000
-    style_guide_max_chunk_chars: int = 50000
+    style_guide_max_document_chars: int = 100_000
+    style_guide_max_chunk_chars: int = 50_000
 
     # --- timeouts / batch sizes ---
     stream_first_chunk_timeout: float = 20.0
@@ -140,18 +150,35 @@ class AppSettings(BaseSettings):
     document_chunk_insert_batch_size: int = 1000
     document_processing_timeout_seconds: int = 118
     max_table_chunk_chars: int = 1500
-    compaction_token_threshold: int = 160000
+
+    # --- compaction ---
+    compaction_enabled: bool = True
+    compaction_token_threshold: int = 80_000
+    compaction_max_summary_tokens: int = 12_000
+    # Never compact until at least this many messages since the last compaction
+    compaction_min_messages: int = 4
+    # Feature flag — when False, summaries are written but not used.
+    compaction_use_conversation_summary: bool = True
+    # A compaction lock older than this is treated as stale and can be reacquired
+    compaction_lock_stale_after_minutes: int = 5
+
+    # --- prompt caching (conversation) ---
+    # The cache breakpoint is placed only on turns that are also compacting
+    message_cache_control_enabled: bool = True
+    message_cache_ttl: CacheTtl = CacheTtl.five_minutes
+    cache_read_cost_multiplier: float = 0.1
+    cache_write_cost_multiplier: float = 1.25
 
     # --- central guidance RAG ---
     max_central_guidance_results: int = 12
-    max_central_guidance_chunk_chars: int = 10000
+    max_central_guidance_chunk_chars: int = 10_000
 
     # --- enhanced prompt failsafe ---
     # Hard cap on the RAG/search/tool content appended to a user's query (not the query itself).
-    max_enhanced_prompt_chars: int = 200000
+    max_enhanced_prompt_chars: int = 200_000
     # The main chat model's total context window, used to shrink the above cap further as an
     # existing conversation approaches the limit.
-    chat_model_context_window_tokens: int = 1000000
+    chat_model_context_window_tokens: int = 1_000_000
 
     # --- gov.uk ---
     whitelisted_urls: list[str] = ["https://www.gov.uk"]
@@ -159,7 +186,7 @@ class AppSettings(BaseSettings):
     web_browsing_timeout: int = 300
     gov_uk_base_url: str = "https://www.gov.uk"
     gov_uk_search_max_count: int = 10
-    gov_uk_search_max_document_chars: int = 20000
+    gov_uk_search_max_document_chars: int = 20_000
 
     # --- dev tooling ---
     # Do not set this variable in production - it will cause every request to be logged to file
@@ -188,6 +215,11 @@ class AppSettings(BaseSettings):
         "document_chunk_insert_batch_size",
         "max_table_chunk_chars",
         "compaction_token_threshold",
+        "compaction_max_summary_tokens",
+        "compaction_min_messages",
+        "compaction_lock_stale_after_minutes",
+        "cache_read_cost_multiplier",
+        "cache_write_cost_multiplier",
         "style_guide_max_document_chars",
         "style_guide_max_chunk_chars",
         "style_guide_llm_batch_size",
@@ -278,8 +310,6 @@ LLM_GOVUK_QUERY_GENERATOR = settings.llm_govuk_query_generator
 LLM_DOCUMENT_RELEVANCY_MODEL = settings.llm_document_relevancy_model
 LLM_GOV_UK_SEARCH_FOLLOWUP_ASSESSMENT = settings.llm_gov_uk_search_followup_assessment
 LLM_SMART_TARGETS_MODEL = settings.llm_smart_targets_model
-LLM_COMPACTION_SUMMARISATION_MODEL = settings.llm_compaction_summarisation_model
-COMPACTION_TOKEN_THRESHOLD = settings.compaction_token_threshold
 CHAT_THINKING_LEVEL = settings.chat_thinking_level
 
 # Central guidance RAG

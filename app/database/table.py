@@ -563,9 +563,14 @@ class MessageTable(Table):
         super().__init__(model=Message, table_name="Message")
 
     def get_by_chat(self, chat_id: str) -> list[Message]:
+        """Return a chat's live messages, oldest first.
+
+        Soft-deleted messages are excluded — without that filter they were being replayed to
+        the LLM, and this query disagreed with every other message read in the app.
+        """
         try:
             with get_session() as session:
-                messages = session.query(Message).filter_by(chat_id=chat_id)
+                messages = session.query(Message).filter_by(chat_id=chat_id).filter(Message.deleted_at.is_(None))
                 messages = messages.order_by(self.model.created_at.asc()).all()
                 return messages
         except Exception as e:

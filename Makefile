@@ -131,6 +131,9 @@ test-bedrock-cost-calculation:
 test-chat:
 	$(docker-cmd) "${test-cmd} tests/chat"
 
+test-compaction:
+	$(docker-cmd) "${test-cmd} tests/compaction"
+
 test-chat-cleanup:
 	$(docker-cmd) "${test-cmd} tests/chat/test_message_cleanup.py"
 

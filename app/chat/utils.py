@@ -9,10 +9,12 @@ from app.auth.exceptions import UuidInvalidError, UuidMissingError
 from app.auth.utils import verify_and_parse_uuid
 from app.auth.verify_service import verify_and_get_user_from_header
 from app.chat.constants import PRIVATE_SHARE_ACCESS_DENIED
-from app.config import CHAT_MODEL_CONTEXT_WINDOW_TOKENS, MAX_ENHANCED_PROMPT_CHARS
+from app.compaction.prompts import build_compaction_summary_message
+from app.compaction.service import estimate_message_tokens
+from app.config import CHAT_MODEL_CONTEXT_WINDOW_TOKENS, MAX_ENHANCED_PROMPT_CHARS, CacheTtl, settings
 from app.database.db_operations import DbOperations
 from app.database.db_session import get_db_session
-from app.database.models import Chat, Message, User
+from app.database.models import Chat, ChatCompaction, Message, User
 from app.database.table import (
     ChatTable,
     UserTable,
@@ -20,6 +22,8 @@ from app.database.table import (
 
 logger = getLogger(__name__)
 
+# Sonnet 5's minimum cacheable prefix. Shorter prefixes are not stored at all.
+MIN_CACHEABLE_PREFIX_TOKENS = 1024
 # Rule-of-thumb token estimate, matching app.compaction.service.estimate_message_tokens.
 CHARS_PER_TOKEN_ESTIMATE = 3.5
 
@@ -122,6 +126,55 @@ def verify_shared_user_uuid_from_path(shared_user_uuid: str = Path(..., descript
         ) from e
 
 
+def message_cache_control() -> dict:
+    """The cache_control marker for the conversation breakpoint.
+
+    A 5-minute TTL is the API default, so it is expressed by omitting `ttl` entirely.
+    """
+    block = {"type": "ephemeral"}
+    if settings.message_cache_ttl == CacheTtl.one_hour:
+        block["ttl"] = settings.message_cache_ttl.value
+    return block
+
+
+def apply_final_turn_cache_control(new_messages: list[dict]) -> list[dict]:
+    """Return a copy with a cache breakpoint on the last assistant message.
+
+    If there is a final user message, the cache breakpoint will be on the turn
+    before it. This is so that a prompt and compaction request can reuse the
+    same cache.
+    """
+    if not new_messages or not settings.message_cache_control_enabled:
+        return new_messages
+
+    # Below the model's minimum cacheable prefix nothing is stored at all, so the breakpoint
+    # would simply be wasted.
+    estimated_tokens = sum(estimate_message_tokens(msg["content"]) for msg in new_messages)
+    if estimated_tokens < MIN_CACHEABLE_PREFIX_TOKENS:
+        logger.debug(
+            f"Conversation is ~{estimated_tokens} tokens, below the {MIN_CACHEABLE_PREFIX_TOKENS}-token "
+            "minimum for caching; skipping the cache breakpoint"
+        )
+        return new_messages
+
+    for index in range(len(new_messages) - 1, -1, -1):
+        if new_messages[index]["role"] == "assistant":
+            marked_messages = list(new_messages)
+            marked_messages[index] = {
+                **marked_messages[index],
+                "content": [
+                    {
+                        "type": "text",
+                        "text": marked_messages[index]["content"],
+                        "cache_control": message_cache_control(),
+                    }
+                ],
+            }
+            return marked_messages
+
+    return new_messages
+
+
 def cap_enhanced_prompt_size(
     query: str,
     enhanced_segments: list[str],
@@ -162,17 +215,38 @@ def cap_enhanced_prompt_size(
     return f"{query}\n\n{enhanced_text}"
 
 
-def prepare_message_objects_for_llm(all_messages: list[Message]) -> list[dict]:
+def prepare_message_objects_for_llm(
+    all_messages: list[Message],
+    *,
+    compaction: ChatCompaction | None = None,
+) -> list[dict]:
+    """Format message rows into the list the Anthropic API expects.
+
+    Args:
+        all_messages: The chat's messages, oldest first.
+        compaction: If set, messages up to its cut point are replaced by its summary.
+    """
     new_messages: list[dict] = []
-    for msg in all_messages:
+    messages_to_send = all_messages
+
+    if compaction is not None and settings.compaction_use_conversation_summary:
+        # Everything at or before the cut point is represented by the summary. Ids increase
+        # with creation time within a chat, so comparing them is enough to find the boundary.
+        messages_to_send = [
+            msg for msg in all_messages if getattr(msg, "id", None) is None or msg.id > compaction.up_to_message_id
+        ]
+        new_messages.append({"role": "user", "content": build_compaction_summary_message(compaction.summary)})
+        logger.info(
+            f"Using compaction {compaction.id} for chat {compaction.chat_id}: "
+            f"{len(all_messages) - len(messages_to_send)} messages replaced by a summary, "
+            f"{len(messages_to_send)} sent verbatim"
+        )
+
+    for msg in messages_to_send:
         # Determine content to use based on priority:
-        # 1. If summary exists, use summary (for compacted messages)
-        # 2. If RAG-enhanced content exists, use it
-        # 3. Otherwise, use original content
-        if hasattr(msg, "summary") and msg.summary is not None:
-            content_to_use = msg.summary
-            logger.debug(f"Using summary for message {getattr(msg, 'id', 'unknown')}: {len(content_to_use)} chars")
-        elif hasattr(msg, "content_enhanced_with_rag") and msg.content_enhanced_with_rag is not None:
+        # 1. If RAG-enhanced content exists, use it
+        # 2. Otherwise, use original content
+        if hasattr(msg, "content_enhanced_with_rag") and msg.content_enhanced_with_rag is not None:
             content_to_use = msg.content_enhanced_with_rag
             logger.debug(f"Using RAG content for message {getattr(msg, 'id', 'unknown')}: {len(content_to_use)} chars")
         else:
@@ -209,15 +283,12 @@ def prepare_recent_turns_for_decision(all_messages: list[Message], num_turns: in
     Returns:
         List of {"role", "content"} dicts, safe to pass directly as a Messages API `messages`
         list (consecutive user turns are merged to preserve strict role alternation). User
-        messages use raw content (or summary, if compacted); assistant messages are truncated
-        to a 200-char preview.
+        messages use raw content; assistant messages are truncated to a 200-char preview.
     """
     recent_messages = all_messages[-num_turns:] if num_turns else all_messages
     new_messages: list[dict] = []
     for msg in recent_messages:
-        if msg.summary is not None:
-            content_to_use = msg.summary
-        elif msg.role == "user":
+        if msg.role == "user":
             content_to_use = msg.content
         else:
             content_to_use = (msg.content or "")[:200]

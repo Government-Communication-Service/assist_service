@@ -1,86 +1,37 @@
-# ruff: noqa: E501
-"""Chat compaction service for summarising messages to handle token limits"""
+"""Chat compaction: replace a long history with a single summary.
+
+Compaction always covers everything up to and including the last assistant message before
+the prompt that triggered it. The compaction call works with caching to reduce costs.
+
+The compaction call uses a special prompt at the end of the chat rather than a system prompt
+to ensure that we can reuse the cached prefix (system + messages).
+
+Compaction occurs in the background. This works with the compaction lock (a db table) to avoid
+redundant compaction calls if the chat moves on while compaction is underway. Otherwise a quickfire
+round of prompts and responses could trigger several compaction calls, as the compaction
+only comes into effect when the summary is written to the database.
+"""
 
 import asyncio
 import logging
-from typing import Optional, Tuple
+from datetime import datetime, timedelta
+from typing import Optional
 
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.bedrock import BedrockHandler, BedrockMessage, RunMode
-from app.compaction import config as compaction_config
-from app.database.models import Message
-from app.database.table import LLMTable
+from app.bedrock import BedrockHandler, RunMode
+from app.compaction.prompts import CONVERSATION_COMPACTION_INSTRUCTION
+from app.config import settings
+from app.database.models import LLM, ChatCompaction, ChatCompactionLock, Message
+from app.database.table import async_db_session
 
 logger = logging.getLogger(__name__)
 
-
-async def summarise_message(message: Message, db_session: AsyncSession) -> Optional[BedrockMessage]:
-    """
-    Summarise a single message using the configured LLM model.
-
-    Args:
-        message: The message to summarise
-        db_session: Database session
-
-    Returns:
-        BedrockMessage on success, or None if already summarised or on error
-    """
-    # Skip if message already has a summary
-    if message.summary is not None:
-        logger.debug(f"Message {message.id} already has a summary, skipping")
-        return None
-
-    try:
-        # Get the summarisation LLM model
-        llm_table = LLMTable()
-        llm = llm_table.get_by_model(compaction_config.LLM_COMPACTION_SUMMARISATION_MODEL)
-
-        # Create Bedrock handler for summarisation
-        bedrock_handler = BedrockHandler(llm=llm, mode=RunMode.ASYNC)
-
-        # Prepare the message content for summarisation
-        content_to_summarise = (
-            message.content_enhanced_with_rag if message.content_enhanced_with_rag else message.content
-        )
-
-        # Create messages for the LLM with pseudo-XML tags
-        messages = [
-            {
-                "role": "user",
-                "content": f"Please summarise this {message.role} message:\n\n<message-content>\n{content_to_summarise}\n</message-content>",
-            }
-        ]
-
-        # Call the LLM to generate summary
-        response = await bedrock_handler.invoke_async(
-            db_session=db_session,
-            max_tokens=llm.max_tokens,
-            system=compaction_config.SUMMARISATION_SYSTEM_PROMPT,
-            messages=messages,
-        )
-
-        # Extract the summary from the response
-        summary_content = response.content[0].text if response.content else ""
-
-        # Update the message with the summary and LLM response ID
-        stmt = (
-            update(Message)
-            .where(Message.id == message.id)
-            .values(
-                summary=summary_content,
-                summary_llm_response_id=response.llm_internal_response_id,
-            )
-        )
-        await db_session.execute(stmt)
-
-        logger.info(f"Successfully summarised message {message.id}")
-        return response
-
-    except Exception as e:
-        logger.exception(f"Error summarising message {message.id}: {e}")
-        return None
+# Strong references to in-flight background tasks. asyncio only holds a weak reference to a
+# running task, so without this a compaction can be garbage-collected mid-call.
+_background_tasks: set[asyncio.Task] = set()
 
 
 def estimate_message_tokens(content: str) -> int:
@@ -98,173 +49,250 @@ def estimate_message_tokens(content: str) -> int:
     return int(len(content) / 3.5)
 
 
-async def calculate_chat_token_count_with_current_message(
-    chat_id: int, current_message_content: str, db_session: AsyncSession
-) -> int:
+def estimate_prefix_tokens(formatted_messages: list[dict]) -> int:
+    """Estimate the size of an assembled message list, before any cache_control is applied.
+
+    Used to decide whether to compact *before* the LLM call happens, so there is no real
+    usage number yet. Must run on the plain-string form of the messages — once
+    `apply_final_turn_cache_control` converts an entry's content into a block list,
+    `estimate_message_tokens` can no longer read it as a string.
     """
-    Calculate the total token count for all messages in a chat, including the current message.
+    return sum(estimate_message_tokens(msg["content"]) for msg in formatted_messages)
 
-    Args:
-        chat_id: The chat ID to calculate tokens for
-        current_message_content: The content of the current message being processed (with RAG content)
-        db_session: Database session
 
-    Returns:
-        Total token count for the chat including the current message
+def find_last_assistant_message_id(messages: list[Message]) -> Optional[int]:
+    """Find the cut point: the last assistant-role message in the given (oldest-first) list.
+
+    This is always the true end of the last *complete* turn: a turn only ends once a final,
+    user-visible assistant reply exists, so this lands on the right boundary even once a
+    turn can contain several rows (eg a tool-call loop).
     """
-    try:
-        # Get all existing messages for the chat, ordered by creation date
-        stmt = (
-            select(Message)
-            .where(Message.chat_id == chat_id)
-            .where(Message.deleted_at.is_(None))
-            .order_by(Message.created_at)
-        )
-        result = await db_session.execute(stmt)
-        messages = result.scalars().all()
-
-        # Sum up all the existing token counts
-        # If a message has a summary, use that for token estimation instead of the stored tokens value
-        existing_tokens = 0
-        for message in messages:
-            if message.summary is not None:
-                existing_tokens += estimate_message_tokens(message.summary)
-            elif message.tokens:
-                existing_tokens += message.tokens
-
-        # Estimate tokens for the current message with RAG content
-        current_message_tokens = estimate_message_tokens(current_message_content)
-
-        total_tokens = existing_tokens + current_message_tokens
-
-        logger.debug(
-            f"Chat {chat_id} has {existing_tokens} existing tokens + {current_message_tokens} current message tokens = {total_tokens} total"
-        )
-        return total_tokens
-
-    except Exception as e:
-        logger.exception(f"Error calculating token count for chat {chat_id}: {e}")
-        return 0
+    for msg in reversed(messages):
+        if msg.role == "assistant":
+            return msg.id
+    return None
 
 
-async def should_trigger_compaction(chat_id: int, current_message_content: str, db_session: AsyncSession) -> bool:
+def messages_since_compaction(messages: list[Message], compaction: Optional[ChatCompaction]) -> int:
+    """Count messages not covered by the given compaction (or all of them, if there is none)."""
+    if compaction is None:
+        return len(messages)
+    return sum(1 for msg in messages if msg.id > compaction.up_to_message_id)
+
+
+def should_compact(estimated_tokens: int, messages_since_last_compaction: int) -> bool:
+    """Decide whether this turn's estimated prefix size warrants compacting the chat.
+
+    An estimate is used rather than measured token counts because there may be a new
+    compaction summary in the database that will significantly reduce the input tokens
+    for the next LLM request, compared to those measured in the last request.
     """
-    Determine if compaction should be triggered for a chat based on token threshold.
-
-    Args:
-        chat_id: The chat ID to check
-        current_message_content: The content of the current message being processed (with RAG content)
-        db_session: Database session
-
-    Returns:
-        True if compaction should be triggered, False otherwise
-    """
-    total_tokens = await calculate_chat_token_count_with_current_message(chat_id, current_message_content, db_session)
-    should_compact = total_tokens >= compaction_config.COMPACTION_TOKEN_THRESHOLD
-
-    if should_compact:
-        logger.info(
-            f"Chat {chat_id} has {total_tokens} tokens, triggering compaction (threshold: {compaction_config.COMPACTION_TOKEN_THRESHOLD})"
-        )
-    else:
-        logger.debug(
-            f"Chat {chat_id} has {total_tokens} tokens, no compaction triggered (threshold: {compaction_config.COMPACTION_TOKEN_THRESHOLD})"
-        )
-    return should_compact
-
-
-async def compact_chat_messages(chat_id: int, db_session: AsyncSession) -> int:
-    """
-    Compact all unsummarised messages in a chat by creating summaries.
-
-    Args:
-        chat_id: The chat ID to compact
-        db_session: Database session
-
-    Returns:
-        Number of messages that were successfully summarised
-    """
-    try:
-        # Get all messages that don't have summaries yet
-        stmt = (
-            select(Message)
-            .where(Message.chat_id == chat_id)
-            .where(Message.deleted_at.is_(None))
-            .where(Message.summary.is_(None))
-            .order_by(Message.created_at)
-        )
-        result = await db_session.execute(stmt)
-        messages_to_summarise = result.scalars().all()
-
-        # Summarise all messages in parallel
-        summarisation_tasks = [summarise_message(message, db_session) for message in messages_to_summarise]
-
-        llm_responses = await asyncio.gather(*summarisation_tasks, return_exceptions=True)
-
-        # Count successful summarisations
-        summarised_count = sum(
-            1 for response in llm_responses if response is not None and not isinstance(response, Exception)
-        )
-
-        # Commit the changes
-        await db_session.commit()
-
-        logger.info(f"Compaction completed for chat {chat_id}: {summarised_count} messages summarised")
-        return summarised_count
-
-    except Exception as e:
-        logger.exception(f"Error during compaction for chat {chat_id}: {e}")
-        await db_session.rollback()
-        return 0
-
-
-async def perform_chat_compaction(
-    chat_id: int, current_message_content: str, db_session: AsyncSession
-) -> Tuple[bool, int]:
-    """
-    Perform chat compaction by summarising messages.
-
-    Args:
-        chat_id: The chat ID to compact
-        current_message_content: The content of the current message being processed (with RAG content)
-        db_session: Database session
-
-    Returns:
-        Tuple of (compaction_performed, messages_summarised)
-    """
-    try:
-        if not await should_trigger_compaction(chat_id, current_message_content, db_session):
-            return False, 0
-
-        # Summarise all unsummarised messages
-        summarised_count = await compact_chat_messages(chat_id, db_session)
-
-        return True, summarised_count
-
-    except Exception as e:
-        logger.exception(f"Error in perform_chat_compaction for chat {chat_id}: {e}")
-        return False, 0
-
-
-async def trigger_compaction_if_needed(chat_id: int, current_message_content: str, db_session: AsyncSession) -> bool:
-    """
-    Check if compaction is needed and trigger it if necessary.
-    This is the main entry point for compaction logic.
-
-    Args:
-        chat_id: The chat ID to check and potentially compact
-        current_message_content: The content of the current message being processed (with RAG content)
-        db_session: Database session
-
-    Returns:
-        True if compaction was triggered and completed, False otherwise
-    """
-    try:
-        compaction_performed, summarised_count = await perform_chat_compaction(
-            chat_id, current_message_content, db_session
-        )
-        return compaction_performed
-
-    except Exception as e:
-        logger.exception(f"Error in trigger_compaction_if_needed for chat {chat_id}: {e}")
+    if not settings.compaction_enabled:
         return False
+
+    if messages_since_last_compaction < settings.compaction_min_messages:
+        logger.debug(
+            f"{messages_since_last_compaction} messages since the last compaction is below the "
+            f"minimum of {settings.compaction_min_messages}, not compacting"
+        )
+        return False
+
+    if estimated_tokens < settings.compaction_token_threshold:
+        logger.debug(
+            f"Estimated prefix of {estimated_tokens} tokens is below the compaction threshold "
+            f"({settings.compaction_token_threshold}), not compacting"
+        )
+        return False
+
+    return True
+
+
+async def get_latest_compaction(chat_id: int, db_session: AsyncSession) -> Optional[ChatCompaction]:
+    """Return the most recent compaction for a chat, or None if it has never been compacted."""
+    stmt = (
+        select(ChatCompaction)
+        .where(ChatCompaction.chat_id == chat_id)
+        .where(ChatCompaction.deleted_at.is_(None))
+        .order_by(ChatCompaction.created_at.desc(), ChatCompaction.id.desc())
+        .limit(1)
+    )
+    result = await db_session.execute(stmt)
+    return result.scalars().first()
+
+
+async def is_compaction_locked(chat_id: int, db_session: AsyncSession) -> bool:
+    """Read-only check of whether a chat's compaction lock is currently held.
+
+    Does not claim the lock; not a substitute for `acquire_compaction_lock`. A held lock
+    older than `compaction_lock_stale_after_minutes` is treated as free.
+    """
+    stale_cutoff = datetime.now() - timedelta(minutes=settings.compaction_lock_stale_after_minutes)
+    stmt = select(ChatCompactionLock.id).where(
+        ChatCompactionLock.chat_id == chat_id,
+        ChatCompactionLock.compaction_lock.is_(True),
+        ChatCompactionLock.locked_at >= stale_cutoff,
+    )
+    result = await db_session.execute(stmt)
+    return result.first() is not None
+
+
+async def acquire_compaction_lock(chat_id: int) -> bool:
+    """Atomically claim the compaction lock for a chat, across all workers.
+
+    Opens and commits its own short-lived session, deliberately separate from the session
+    the rest of compaction uses for the (potentially long) LLM call.
+
+    A held lock older than `compaction_lock_stale_after_minutes` is treated as free.
+    """
+    now = datetime.now()
+    stale_cutoff = now - timedelta(minutes=settings.compaction_lock_stale_after_minutes)
+    stmt = (
+        pg_insert(ChatCompactionLock)
+        .values(chat_id=chat_id, compaction_lock=True, locked_at=now)
+        .on_conflict_do_update(
+            constraint="uq_chat_compaction_lock_chat_id",
+            set_={"compaction_lock": True, "locked_at": now},
+            where=(ChatCompactionLock.compaction_lock.is_(False)) | (ChatCompactionLock.locked_at < stale_cutoff),
+        )
+        .returning(ChatCompactionLock.id)
+    )
+    async with async_db_session() as session:
+        result = await session.execute(stmt)
+        return result.first() is not None
+
+
+async def release_compaction_lock(chat_id: int) -> None:
+    """Free the compaction lock, in its own short-lived session (see `acquire_compaction_lock`)."""
+    try:
+        async with async_db_session() as session:
+            await session.execute(
+                update(ChatCompactionLock).where(ChatCompactionLock.chat_id == chat_id).values(compaction_lock=False)
+            )
+    except Exception:
+        logger.exception(f"Failed to release the compaction lock for chat {chat_id}")
+
+
+async def compact_chat(
+    chat_id: int,
+    llm_obj: LLM,
+    system: str | list | None,
+    formatted_messages: list[dict],
+    up_to_message_id: int,
+    prefix_tokens: int,
+    extra_api_kwargs: Optional[dict] = None,
+) -> Optional[ChatCompaction]:
+    """Summarise a chat's history into a single ChatCompaction row.
+
+    Runs in the background to avoid blocking the conversation. Includes lock acquisition
+    and release.
+
+    Args:
+        chat_id: Chat to compact.
+        llm_obj: The LLM the chat call used — the same model must be used, or the cache misses.
+        system: The exact system blocks the chat call sent.
+        formatted_messages: The prefix through the last assistant message — everything the
+            chat call sent, minus the current turn's own prompt. Callers derive this as
+            `formatted_messages_for_reply[:-1]`. Reusing it verbatim is what makes this a
+            cache read instead of a full re-read.
+        up_to_message_id: Cut point — the last assistant message's id, the same one the chat
+            call's cache breakpoint sits on.
+        prefix_tokens: Estimated prefix size that triggered this, recorded for ROI analysis.
+        extra_api_kwargs: Thinking/output config from the chat call, passed through so the
+            request shape matches and the message cache still applies.
+
+    Returns:
+        The created ChatCompaction, or None if compaction was skipped or failed.
+    """
+    acquired = False
+    try:
+        acquired = await acquire_compaction_lock(chat_id)
+        if not acquired:
+            logger.info(f"Chat {chat_id} is already being compacted, skipping")
+            return None
+
+        async with async_db_session() as db_session:
+            previous = await get_latest_compaction(chat_id, db_session)
+            if previous is not None and previous.up_to_message_id >= up_to_message_id:
+                logger.warning(
+                    f"Chat {chat_id} is already compacted up to message {previous.up_to_message_id}, "
+                    f"which covers the proposed cut point {up_to_message_id}; skipping"
+                )
+                return None
+
+            messages = [*formatted_messages, {"role": "user", "content": CONVERSATION_COMPACTION_INSTRUCTION}]
+
+            bedrock_handler = BedrockHandler(llm=llm_obj, mode=RunMode.ASYNC)
+            response = await bedrock_handler.invoke_async(
+                messages,
+                db_session=db_session,
+                system=system,
+                max_tokens=settings.compaction_max_summary_tokens,
+                **(extra_api_kwargs or {}),
+            )
+
+            summary = "".join(block.text for block in response.content if getattr(block, "type", None) == "text")
+            if not summary.strip():
+                logger.error(f"Compaction for chat {chat_id} produced an empty summary, discarding")
+                return None
+
+            compaction = ChatCompaction(
+                chat_id=chat_id,
+                up_to_message_id=up_to_message_id,
+                summary=summary,
+                prefix_tokens_at_compaction=prefix_tokens,
+                summary_tokens=response.usage.output_tokens,
+                summary_cache_read_tokens=getattr(response.usage, "cache_read_input_tokens", 0),
+                summary_cache_write_tokens=getattr(response.usage, "cache_creation_input_tokens", 0),
+                llm_internal_response_id=response.llm_internal_response_id,
+            )
+            db_session.add(compaction)
+            # Committed automatically when this block exits cleanly — no explicit commit here.
+
+        logger.info(
+            f"Compacted chat {chat_id} up to message {up_to_message_id}: "
+            f"{prefix_tokens} estimated prefix tokens summarised into {response.usage.output_tokens} tokens "
+            f"(cache read {getattr(response.usage, 'cache_read_input_tokens', 0)})"
+        )
+        return compaction
+
+    except Exception as e:
+        logger.exception(f"Error compacting chat {chat_id}: {e}")
+        return None
+    finally:
+        if acquired:
+            await release_compaction_lock(chat_id)
+
+
+def schedule_compaction(
+    chat_id: int,
+    llm_obj: LLM,
+    system: str | list | None,
+    formatted_messages: list[dict],
+    up_to_message_id: int,
+    prefix_tokens: int,
+    extra_api_kwargs: Optional[dict] = None,
+) -> asyncio.Task:
+    """Kick off compaction in the background.
+
+    This is designed to take as long as it takes, not blocking the conversation.
+    Subsequent turns that happen before the summary lands in the database don't benefit from
+    compaction, but the lock ensures that they don't fire redundant compaction requests.
+
+    Losing a compaction to a worker restart is harmless — the next turn after the lock
+    is released will retry.
+    """
+    logger.info(f"Chat {chat_id} reached {prefix_tokens} estimated prefix tokens, scheduling background compaction")
+    task = asyncio.create_task(
+        compact_chat(
+            chat_id=chat_id,
+            llm_obj=llm_obj,
+            system=system,
+            formatted_messages=formatted_messages,
+            up_to_message_id=up_to_message_id,
+            prefix_tokens=prefix_tokens,
+            extra_api_kwargs=extra_api_kwargs,
+        )
+    )
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task

@@ -54,8 +54,16 @@ from app.chat.schemas import (
     UserChatsResponse,
     UserDocumentSource,
 )
-from app.chat.utils import cap_enhanced_prompt_size, prepare_message_objects_for_llm
-from app.compaction.service import trigger_compaction_if_needed
+from app.chat.utils import apply_final_turn_cache_control, cap_enhanced_prompt_size, prepare_message_objects_for_llm
+from app.compaction.service import (
+    estimate_prefix_tokens,
+    find_last_assistant_message_id,
+    get_latest_compaction,
+    is_compaction_locked,
+    messages_since_compaction,
+    schedule_compaction,
+    should_compact,
+)
 from app.config import (
     CHAT_THINKING_LEVEL,
     LLM_CHAT_RESPONSE_MODEL,
@@ -162,6 +170,7 @@ def chat_save_llm_output(
             message_repo.update(
                 user_message,
                 {
+                    # total input tokens is the sum of all three.
                     "tokens": llm_response.input_tokens,
                     "cache_read_tokens": llm_response.cache_read_tokens,
                     "cache_write_tokens": llm_response.cache_write_tokens,
@@ -169,6 +178,7 @@ def chat_save_llm_output(
             )
             logger.info(
                 f"User message updated successfully. Tokens: {llm_response.input_tokens}, "
+                f"Cache read: {llm_response.cache_read_tokens}, cache write: {llm_response.cache_write_tokens}, "
                 f"Completion cost: {transaction.input_cost}",
             )
         except Exception as e:
@@ -1023,17 +1033,6 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         reserved_output_tokens=llm_obj.max_tokens or 0,
     )
 
-    # Check if compaction is needed before generating the final message
-    compaction_triggered = False
-    try:
-        compaction_triggered = await trigger_compaction_if_needed(chat_id, query_enhanced_with_rag, db_session)
-        if compaction_triggered:
-            logger.info(f"Compaction triggered for chat {chat_id} before message generation")
-            # Reload messages from database to get updated summaries
-            messages = message_repo.get_by_chat(chat_id)
-    except Exception as e:
-        logger.exception(f"Error during compaction check for chat {chat_id}: {e}")
-
     m_user = message_repo.update(
         m_user,
         {
@@ -1045,7 +1044,32 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
 
     all_messages_post_retrieval = messages + [m_user]
 
-    formatted_messages = prepare_message_objects_for_llm(all_messages_post_retrieval)
+    # Returns compaction summary or None
+    compaction = await get_latest_compaction(chat_id, db_session)
+    formatted_messages = prepare_message_objects_for_llm(
+        all_messages_post_retrieval,
+        compaction=compaction,
+    )
+
+    # Compaction decided before the call, so that both the user prompt and the compaction
+    # can use the same cache
+    estimated_prefix_tokens = estimate_prefix_tokens(formatted_messages)
+    last_assistant_message_id = find_last_assistant_message_id(messages)
+    over_compaction_threshold = last_assistant_message_id is not None and should_compact(
+        estimated_prefix_tokens, messages_since_compaction(messages, compaction)
+    )
+
+    if over_compaction_threshold and await is_compaction_locked(chat_id, db_session):
+        # Compaction already in flight for this chat - skip the cache write meant for it too.
+        logger.debug(f"Chat {chat_id} is already being compacted; not setting up a cache breakpoint this turn")
+        over_compaction_threshold = False
+
+    if over_compaction_threshold:
+        # Guaranteed cache usage: prompt and compaction
+        formatted_messages = apply_final_turn_cache_control(formatted_messages)
+
+    effective_thinking_level = input_data.thinking_level or CHAT_THINKING_LEVEL
+    llm_thinking_kwargs = thinking_kwargs(effective_thinking_level)
 
     def on_complete(response):
         formatted_response = llm.format_response(response)
@@ -1055,10 +1079,17 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
             llm=llm_obj,
             llm_response=formatted_response,
         )
+        if result and over_compaction_threshold:
+            schedule_compaction(
+                chat_id=chat_id,
+                llm_obj=llm_obj,
+                system=system,
+                formatted_messages=formatted_messages[:-1],
+                up_to_message_id=last_assistant_message_id,
+                prefix_tokens=formatted_response.total_input_tokens,
+                extra_api_kwargs=llm_thinking_kwargs,
+            )
         return result
-
-    effective_thinking_level = input_data.thinking_level or CHAT_THINKING_LEVEL
-    llm_thinking_kwargs = thinking_kwargs(effective_thinking_level)
 
     if input_data.stream:
 

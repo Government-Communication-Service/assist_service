@@ -14,6 +14,7 @@ from app.auth.constants import AUTH_TOKEN_ALIAS, SESSION_AUTH_ALIAS, USER_KEY_UU
 from app.bedrock import BedrockHandler
 from app.bedrock.schemas import LLMTransaction
 from app.chat.schemas import ChatWithLatestMessage, ItemTitleResponse
+from app.config import settings
 from app.database.models import LLM, Chat, Message
 from app.database.table import ChatTable
 from tests.mock_request import fail_test
@@ -862,6 +863,8 @@ class TestUserChatsV1:
 
         assert len(messages) == 6, f"Expected 6 messages, but got {len(messages)}"
         input_token = 0
+        cache_read_token = 0
+        cache_write_token = 0
         for idx, message in enumerate(messages):
             llm_id = message.llm_id
             execute = await db_session.execute(select(LLM).filter(LLM.id == llm_id))
@@ -874,7 +877,11 @@ class TestUserChatsV1:
             if idx % 2 == 0:
                 # number of input tokens are saved in the user message, not stored in the assistant message.
                 # therefore need to capture input token from previous user message.
+                # tokens holds only the *uncached* input tokens; the cached portions of the
+                # prefix are recorded separately and billed at different rates.
                 input_token = message.tokens
+                cache_read_token = message.cache_read_tokens or 0
+                cache_write_token = message.cache_write_tokens or 0
                 assert message.completion_cost is None, "Cost calculation does not apply to user messages"
 
             # check cost calculation assistant message
@@ -893,6 +900,15 @@ class TestUserChatsV1:
                     )
                 )
 
-                completion_cost = (input_token * llm_input_cost_per_token) + (output_token * llm_output_cost_per_token)
+                # Cache reads are discounted and cache writes carry a premium, so billable
+                # input is not simply the token count.
+                billable_input_tokens = (
+                    Decimal(input_token)
+                    + (Decimal(cache_read_token) * Decimal(str(settings.cache_read_cost_multiplier)))
+                    + (Decimal(cache_write_token) * Decimal(str(settings.cache_write_cost_multiplier)))
+                )
+                completion_cost = (billable_input_tokens * llm_input_cost_per_token) + (
+                    output_token * llm_output_cost_per_token
+                )
                 assert message_cost > 0
-                assert message_cost == completion_cost
+                assert message_cost == round(completion_cost, 10)

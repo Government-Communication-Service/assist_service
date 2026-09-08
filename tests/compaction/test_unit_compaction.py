@@ -1,8 +1,15 @@
 import logging
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from app.compaction.service import (
     estimate_message_tokens,
+    estimate_prefix_tokens,
+    find_last_assistant_message_id,
+    messages_since_compaction,
+    should_compact,
 )
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -48,3 +55,96 @@ def test_estimate_message_tokens_various_lengths():
     for content, expected in test_cases:
         result = estimate_message_tokens(content)
         assert result == expected, f"For content '{content}' expected {expected}, got {result}"
+
+
+# --- estimate_prefix_tokens ----------------------------------------------------------------
+
+
+def test_estimate_prefix_tokens_sums_across_messages():
+    formatted_messages = [
+        {"role": "user", "content": "abcd"},  # 4/3.5 -> 1
+        {"role": "assistant", "content": "abcdefg"},  # 7/3.5 -> 2
+    ]
+    assert estimate_prefix_tokens(formatted_messages) == 3
+
+
+def test_estimate_prefix_tokens_empty_list():
+    assert estimate_prefix_tokens([]) == 0
+
+
+# --- find_last_assistant_message_id ---------------------------------------------------------
+
+
+def _msg(message_id, role):
+    return SimpleNamespace(id=message_id, role=role)
+
+
+def test_find_last_assistant_message_id_finds_the_last_one():
+    messages = [_msg(1, "user"), _msg(2, "assistant"), _msg(3, "user"), _msg(4, "assistant"), _msg(5, "user")]
+    assert find_last_assistant_message_id(messages) == 4
+
+
+def test_find_last_assistant_message_id_none_when_no_assistant_message():
+    messages = [_msg(1, "user")]
+    assert find_last_assistant_message_id(messages) is None
+
+
+def test_find_last_assistant_message_id_empty_list():
+    assert find_last_assistant_message_id([]) is None
+
+
+# --- messages_since_compaction -------------------------------------------------------------
+
+
+def test_messages_since_compaction_counts_everything_when_never_compacted():
+    messages = [_msg(1, "user"), _msg(2, "assistant")]
+    assert messages_since_compaction(messages, None) == 2
+
+
+def test_messages_since_compaction_counts_only_messages_after_the_cut_point():
+    messages = [_msg(1, "user"), _msg(2, "assistant"), _msg(3, "user"), _msg(4, "assistant")]
+    compaction = SimpleNamespace(up_to_message_id=2)
+    assert messages_since_compaction(messages, compaction) == 2
+
+
+# --- should_compact -----------------------------------------------------------------------
+
+
+def test_should_compact_below_threshold():
+    with (
+        patch.object(settings, "compaction_token_threshold", 1000),
+        patch.object(settings, "compaction_min_messages", 1),
+    ):
+        assert should_compact(999, 6) is False
+
+
+def test_should_compact_at_threshold():
+    with (
+        patch.object(settings, "compaction_token_threshold", 1000),
+        patch.object(settings, "compaction_min_messages", 1),
+    ):
+        assert should_compact(1000, 6) is True
+
+
+def test_should_compact_respects_feature_flag():
+    with patch.object(settings, "compaction_enabled", False):
+        with patch.object(settings, "compaction_token_threshold", 1000):
+            assert should_compact(50000, 6) is False
+
+
+def test_should_compact_respects_min_messages_even_over_threshold():
+    """A chat with very few messages since the last compaction, but one huge one, can cross
+    the token threshold without there being much worth summarising yet."""
+    with (
+        patch.object(settings, "compaction_token_threshold", 1000),
+        patch.object(settings, "compaction_min_messages", 6),
+    ):
+        assert should_compact(50000, 2) is False
+
+
+def test_should_compact_at_min_messages():
+    with (
+        patch.object(settings, "compaction_token_threshold", 1000),
+        patch.object(settings, "compaction_min_messages", 6),
+    ):
+        assert should_compact(50000, 6) is True

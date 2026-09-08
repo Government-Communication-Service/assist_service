@@ -63,6 +63,9 @@ jobs:
             # calls pos_tag/sent_tokenize/word_tokenize, never the vulnerable train/save/load
             # APIs, so there's no attacker-controlled path reaching them through our API.
             PYSEC-2026-3740
+            # unstructured SSRF via partition(url=...) (CVE-2026-71428). We never pass
+            # url= to partition/partition_html/partition_md, only file= with uploaded bytes.
+            CVE-2026-71428
 
       - name: Install Bandit
         run: pip install bandit
