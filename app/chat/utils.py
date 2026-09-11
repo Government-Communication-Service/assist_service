@@ -244,16 +244,16 @@ def prepare_message_objects_for_llm(
 
     for msg in messages_to_send:
         # Determine content to use based on priority:
-        # 1. If RAG-enhanced content exists, use it
-        # 2. Otherwise, use original content
-        if hasattr(msg, "content_enhanced_with_rag") and msg.content_enhanced_with_rag is not None:
+        # 1. Legacy per-message summary, if present — historical rows compacted under the old
+        #    per-message scheme, before ChatCompaction existed. New messages never populate this.
+        # 2. If RAG-enhanced content exists, use it
+        # 3. Otherwise, use original content
+        if hasattr(msg, "summary") and msg.summary is not None:
+            content_to_use = msg.summary
+        elif hasattr(msg, "content_enhanced_with_rag") and msg.content_enhanced_with_rag is not None:
             content_to_use = msg.content_enhanced_with_rag
-            logger.debug(f"Using RAG content for message {getattr(msg, 'id', 'unknown')}: {len(content_to_use)} chars")
         else:
             content_to_use = msg.content
-            logger.debug(
-                f"Using original content for message {getattr(msg, 'id', 'unknown')}: {len(content_to_use)} chars"
-            )
 
         # check if this is a user message and if the last message was also a user message
         # then merge this message to the previous user message collapsing them into a single one.

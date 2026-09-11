@@ -66,14 +66,31 @@ def test_prefers_rag_enhanced_content():
     assert result == [{"role": "user", "content": "enhanced with sources"}]
 
 
-def test_legacy_per_message_summary_is_ignored():
-    """The old mechanism substituted msg.summary for content. It must no longer do so.
+def test_legacy_summary_takes_priority_over_rag_enhanced_content():
+    message = make_message(1, "user", "plain", content_enhanced_with_rag="enhanced with sources")
+    message.summary = "a lossy summary"
 
-    Historical rows in prod still carry summaries from the per-message approach; those chats
-    should now send their full content rather than the lossy per-message summaries.
+    result = prepare_message_objects_for_llm([message])
+
+    assert result == [{"role": "user", "content": "a lossy summary"}]
+
+
+def test_legacy_per_message_summary_is_used_when_populated():
+    """Historical rows compacted under the old per-message scheme still carry a summary.
+
+    Those chats have no ChatCompaction row of their own (that table postdates them), so
+    without this fallback they'd send full, uncompacted history instead of the old summary.
     """
     message = make_message(1, "user", "the full original content")
     message.summary = "a lossy summary"
+
+    result = prepare_message_objects_for_llm([message])
+
+    assert result == [{"role": "user", "content": "a lossy summary"}]
+
+
+def test_new_messages_never_populate_summary_so_use_full_content():
+    message = make_message(1, "user", "the full original content")
 
     result = prepare_message_objects_for_llm([message])
 
