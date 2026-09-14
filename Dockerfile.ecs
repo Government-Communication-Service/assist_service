@@ -1,0 +1,62 @@
+# Image for the ECS preview environment (infra/).
+#
+# Differs from the local-dev Dockerfile: no DEBUG_MODE/debugpy, no
+# bind-mounted source, entrypoint baked in as ENTRYPOINT (not set via the ECS
+# task definition's `command`).
+#
+# Build context is the repo root:
+#   docker build --platform linux/amd64 -f Dockerfile.ecs -t copilot-api .
+FROM amazonlinux:2023
+
+ENV PANDOC_VERSION=3.1.1
+ENV PANDOC_SHA256=52b25f0115517e32047a06d821e63729108027bd06d9605fe8eac0fa83e0bf81
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN dnf -y update && \
+    dnf -y install \
+    gzip \
+    postgresql-devel \
+    python3.12 \
+    poppler-utils \
+    tar \
+    file \
+    file-devel \
+    mesa-libGL \
+    shadow-utils && \
+    dnf clean all
+
+# Install pandoc from binary, checksum-verified
+RUN curl -L https://github.com/jgm/pandoc/releases/download/$PANDOC_VERSION/pandoc-$PANDOC_VERSION-linux-amd64.tar.gz -o pandoc.tar.gz && \
+    echo "$PANDOC_SHA256  pandoc.tar.gz" | sha256sum -c - && \
+    tar -xvzf pandoc.tar.gz && \
+    cp -r pandoc-$PANDOC_VERSION/bin/* /usr/local/bin/ && \
+    rm -rf pandoc.tar.gz pandoc-$PANDOC_VERSION
+
+# Configure python3.12 + pip as defaults
+RUN ln -sf /usr/bin/python3.12 /usr/bin/python
+RUN python -m ensurepip --upgrade && \
+    python -m pip install --upgrade pip
+RUN ln -sf /usr/bin/pip3.12 /usr/bin/pip
+
+WORKDIR /app
+
+# Install dependencies first for better layer caching
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy only what the app needs to run
+COPY app ./app
+COPY logging.ini ./
+
+# Entrypoint runs migrations then starts the server.
+COPY infra/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+RUN groupadd -r app && useradd -r -g app app && chown -R app:app /app
+ENV HOME=/app
+USER app
+
+EXPOSE 8000
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

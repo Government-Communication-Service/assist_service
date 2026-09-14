@@ -45,10 +45,11 @@ def verify_connection_to_opensearch():
         response = client.indices.get_alias("*")
         assert response and len(response) > 0, "No indexes found"
         logger.info("Connection to OpenSearch succesful")
-    except Exception as ex:
-        traceback_str = traceback.format_exc()
-        raise ConnectionError(f"Error connecting with OpenSearch: \n{traceback_str}\n\n") from ex
-    logger.info("Succesfully connected to OpenSearch.")
+    except Exception:
+        # Logged, not raised: a broken OpenSearch connection shouldn't take
+        # the whole app down at startup - features that don't touch search
+        # should stay up.
+        logger.error("Error connecting to OpenSearch:\n%s", traceback.format_exc())
     return
 
 

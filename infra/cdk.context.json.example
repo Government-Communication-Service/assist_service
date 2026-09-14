@@ -1,0 +1,19 @@
+{
+  "account": "XXXXXXXXXXXX",
+  "region": "eu-west-2",
+  "vpc_id": "vpc-xxxxxxxxxxxxxxxxx",
+  "public_subnet_ids": ["subnet-xxxxxxxxxxxxxxxxx", "subnet-xxxxxxxxxxxxxxxxx"],
+  "private_subnet_ids": ["subnet-xxxxxxxxxxxxxxxxx", "subnet-xxxxxxxxxxxxxxxxx"],
+  "availability_zones": ["eu-west-2a", "eu-west-2b"],
+  "rds_endpoint": "example-db.xxxxxxxxxxxx.eu-west-2.rds.amazonaws.com",
+  "rds_security_group_id": "sg-xxxxxxxxxxxxxxxxx",
+  "postgres_user": "example_preview_user",
+  "alb_ingress_prefix_list_id": "pl-xxxxxxxxxxxxxxxxx",
+  "waf_web_acl_arn": "arn:aws:wafv2:eu-west-2:XXXXXXXXXXXX:regional/webacl/example-waf/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "bastion_name_tag": "example-db-bastion",
+  "app_secret_name": "copilot_preview_secrets",
+  "secrets_policy_arn": "arn:aws:iam::XXXXXXXXXXXX:policy/getCopilotSecrets",
+  "hosted_zone_id": "ZXXXXXXXXXXXXXXXXX",
+  "hosted_zone_name": "api.copilot.example.gov.uk",
+  "gcs_data_api_url": "https://dev.api.example.gov.uk"
+}

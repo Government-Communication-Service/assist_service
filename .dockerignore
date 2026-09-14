@@ -1,0 +1,9 @@
+.git
+.env
+.env.*
+!.env.example
+infra/cdk.context.json
+infra/.envrc
+infra/.venv/
+infra/cdk.out/
+infra/**/__pycache__/
