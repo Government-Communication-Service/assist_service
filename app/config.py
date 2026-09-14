@@ -152,7 +152,7 @@ class AppSettings(BaseSettings):
 
     # --- compaction ---
     compaction_enabled: bool = True
-    compaction_token_threshold: int = 80_000
+    compaction_token_threshold: int = 120_000
     compaction_max_summary_tokens: int = 12_000
     # Never compact until at least this many messages since the last compaction
     compaction_min_messages: int = 4
