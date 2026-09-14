@@ -47,6 +47,15 @@ logger = logging.getLogger(__name__)
 RECENT_TURNS_FOR_DECISION = 6
 
 
+def _sanitise_bool(value: str | bool | int | float) -> bool:
+    if isinstance(value, bool | int | float):
+        return bool(value)
+    try:
+        return {"true": True, "false": False}[value.lower()]
+    except Exception as e:
+        raise ValueError(f"Cannot coerce {value!r} to boolean") from e
+
+
 def _build_recent_context(messages: Optional[List[Message]]) -> str:
     """Format recent raw conversation turns as an XML block for decision-making prompts."""
     if not messages:
@@ -155,7 +164,7 @@ async def check_index_relevance(
         for block in response.content:
             if isinstance(block, ToolUseBlock):
                 tool_input = block.input
-                requires_index = tool_input.get("requires_index", False)
+                requires_index = _sanitise_bool(tool_input.get("requires_index", False))
                 reasoning = tool_input.get("reasoning", "No reasoning provided")
                 break
 

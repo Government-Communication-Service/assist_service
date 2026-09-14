@@ -1,16 +1,39 @@
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from anthropic.types import ToolUseBlock
 
 from app.central_guidance.schemas import RetrievalResult
-from app.central_guidance.service_rag import create_chunk_mappings, evaluate_chunks_relevance, search_and_filter_chunks
+from app.central_guidance.service_rag import (
+    check_index_relevance,
+    create_chunk_mappings,
+    evaluate_chunks_relevance,
+    search_and_filter_chunks,
+)
 
 
 def make_tool_use_block(evaluations):
     block = MagicMock(spec=ToolUseBlock)
     block.input = {"evaluations": evaluations}
     return block
+
+
+def make_tool_use_block_with_input(tool_input):
+    block = MagicMock(spec=ToolUseBlock)
+    block.input = tool_input
+    return block
+
+
+def make_index_relevance_db_session(llm, mapping):
+    """db_session whose execute() answers the LLM lookup first, then the mapping insert."""
+    llm_result = MagicMock()
+    llm_result.scalar_one.return_value = llm
+    insert_result = MagicMock()
+    insert_result.scalar_one.return_value = mapping
+    session = MagicMock()
+    session.execute = AsyncMock(side_effect=[llm_result, insert_result])
+    return session
 
 
 def make_llm_response(evaluations):
@@ -265,6 +288,116 @@ class TestEvaluateChunksRelevance:
 
             with pytest.raises(RuntimeError, match="Bedrock unavailable"):
                 await evaluate_chunks_relevance([retrieval_result], "query", mock_db_session)
+
+
+class TestCheckIndexRelevanceBooleanSanitisation:
+    """Regression: the index-router tool call sometimes returns requires_index as a string
+    ('true'/'false') rather than a JSON boolean - it must still be coerced correctly before
+    being written to MessageSearchIndexMapping.use_index."""
+
+    @pytest.fixture
+    def index(self):
+        index = MagicMock()
+        index.id = 7
+        index.name = "Central Guidance"
+        index.description = "GCS central guidance documents"
+        return index
+
+    @pytest.fixture
+    def llm(self):
+        return MagicMock(model="claude-3-5-haiku-20241022-v1:0", max_tokens=512)
+
+    @pytest.mark.asyncio
+    async def test_string_true_is_coerced_and_saved_as_boolean_true(self, index, llm):
+        mapping = MagicMock()
+        db_session = make_index_relevance_db_session(llm, mapping)
+        response = MagicMock()
+        response.content = [make_tool_use_block_with_input({"requires_index": "true", "reasoning": "needs docs"})]
+        response.llm_internal_response_id = 55
+
+        with patch("app.central_guidance.service_rag.BedrockHandler") as mock_bedrock:
+            mock_bedrock.return_value.invoke_async = AsyncMock(return_value=response)
+            result = await check_index_relevance("what is the style guide?", index, message_id=1, db_session=db_session)
+
+        assert result is mapping
+        insert_stmt = db_session.execute.call_args_list[1].args[0]
+        assert insert_stmt.compile().params["use_index"] is True
+
+    @pytest.mark.asyncio
+    async def test_string_false_is_coerced_and_saved_as_boolean_false(self, index, llm):
+        mapping = MagicMock()
+        db_session = make_index_relevance_db_session(llm, mapping)
+        response = MagicMock()
+        response.content = [make_tool_use_block_with_input({"requires_index": "False", "reasoning": "off-topic"})]
+        response.llm_internal_response_id = 55
+
+        with patch("app.central_guidance.service_rag.BedrockHandler") as mock_bedrock:
+            mock_bedrock.return_value.invoke_async = AsyncMock(return_value=response)
+            result = await check_index_relevance("what's the weather?", index, message_id=1, db_session=db_session)
+
+        assert result is mapping
+        insert_stmt = db_session.execute.call_args_list[1].args[0]
+        assert insert_stmt.compile().params["use_index"] is False
+
+    @pytest.mark.asyncio
+    async def test_unparseable_requires_index_value_is_caught_and_logged(self, index, llm, caplog):
+        db_session = make_index_relevance_db_session(llm, MagicMock())
+        response = MagicMock()
+        response.content = [make_tool_use_block_with_input({"requires_index": "maybe", "reasoning": "unsure"})]
+        response.llm_internal_response_id = 55
+
+        with patch("app.central_guidance.service_rag.BedrockHandler") as mock_bedrock:
+            mock_bedrock.return_value.invoke_async = AsyncMock(return_value=response)
+            with caplog.at_level(logging.ERROR, logger="app.central_guidance.service_rag"):
+                result = await check_index_relevance("query", index, message_id=1, db_session=db_session)
+
+        # graceful degradation: caller gets None rather than a crash, but the underlying
+        # ValueError is still logged with exc_info for diagnosis.
+        assert result is None
+        error_record = next(r for r in caplog.records if r.levelno == logging.ERROR)
+        assert error_record.exc_info is not None
+        assert "Cannot coerce 'maybe' to boolean" in str(error_record.exc_info[1])
+
+
+class TestCheckIndexRelevanceErrorBubblesToBugsnag:
+    """The app convention is that any ERROR-level log record propagates to the root logger's
+    BugsnagHandler (see app/logs/bugsnag_logger.py). check_index_relevance relies on this via
+    logger.exception rather than calling bugsnag.notify directly - this proves that path
+    actually carries the informative ValueError through to the handler."""
+
+    @pytest.mark.asyncio
+    async def test_unparseable_requires_index_reaches_bugsnag_with_informative_detail(self):
+        import bugsnag.handlers
+
+        index = MagicMock(id=7, name="Central Guidance", description="GCS central guidance documents")
+        llm = MagicMock(model="claude-3-5-haiku-20241022-v1:0", max_tokens=512)
+        db_session = make_index_relevance_db_session(llm, MagicMock())
+        response = MagicMock()
+        response.content = [make_tool_use_block_with_input({"requires_index": "maybe", "reasoning": "unsure"})]
+        response.llm_internal_response_id = 55
+
+        bugsnag_handler = bugsnag.handlers.BugsnagHandler()
+        bugsnag_handler.setLevel(logging.ERROR)
+        root_logger = logging.getLogger()
+
+        with (
+            patch("app.central_guidance.service_rag.BedrockHandler") as mock_bedrock,
+            patch.object(bugsnag.handlers.BugsnagHandler, "emit") as mock_emit,
+        ):
+            mock_bedrock.return_value.invoke_async = AsyncMock(return_value=response)
+            root_logger.addHandler(bugsnag_handler)
+            try:
+                result = await check_index_relevance("query", index, message_id=1, db_session=db_session)
+            finally:
+                root_logger.removeHandler(bugsnag_handler)
+
+        assert result is None
+        # The app may already have its own BugsnagHandler attached to the root logger (from
+        # app startup), so more than one instance can emit - assert ours received the record.
+        mock_emit.assert_called()
+        emitted_record = mock_emit.call_args.args[0]
+        assert emitted_record.exc_info is not None
+        assert "Cannot coerce 'maybe' to boolean" in str(emitted_record.exc_info[1])
 
 
 class TestCreateChunkMappings:
