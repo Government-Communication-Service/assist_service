@@ -20,7 +20,7 @@ dev = [
     "pre-commit==4.6.2",
     "pytest-xdist==3.6.*",
     "streamlit==1.63.0",
-    "plotly==6.9.0",
+    "plotly==7.0.0",
     "moto[s3]==5.2.3"
 ]
 
