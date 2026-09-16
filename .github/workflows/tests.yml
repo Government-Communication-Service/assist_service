@@ -116,7 +116,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest --ignore=scripts/api_tests -n logical --dist loadscope --cov --cov-report=term-missing --junit-xml=test-output/test-output.xml --cov-report xml:test-output/coverage.xml
+          pytest --ignore=scripts/api_tests -n logical --dist loadscope -q --tb=line --show-capture=no -o log_cli=false --cov --cov-report=term --junit-xml=test-output/test-output.xml --cov-report xml:test-output/coverage.xml
 
       - name: Persist test reports
         uses: actions/upload-artifact@v7
