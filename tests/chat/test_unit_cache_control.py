@@ -78,6 +78,42 @@ def test_no_cache_control_when_disabled():
     assert isinstance(result[-1]["content"], str)
 
 
+def test_compaction_cache_control_enabled_caches_even_when_general_caching_is_off():
+    """compaction_cache_control_enabled is independent of message_cache_control_enabled: it
+    can keep caching the compaction-reused prefix even with general caching disabled."""
+    messages = [
+        make_message(1, "user", LONG_CONTENT),
+        make_message(2, "assistant", LONG_CONTENT),
+        make_message(3, "user", "the newest question"),
+    ]
+
+    prepared = prepare_message_objects_for_llm(messages)
+    with (
+        patch.object(settings, "message_cache_control_enabled", False),
+        patch.object(settings, "compaction_cache_control_enabled", True),
+    ):
+        result = apply_compaction_aware_cache_control(prepared, should_compact=True)
+
+    assert result[1]["content"] == [{"type": "text", "text": LONG_CONTENT, "cache_control": {"type": "ephemeral"}}]
+
+
+def test_no_cache_control_when_both_general_and_compaction_caching_are_off():
+    messages = [
+        make_message(1, "user", LONG_CONTENT),
+        make_message(2, "assistant", LONG_CONTENT),
+        make_message(3, "user", "the newest question"),
+    ]
+
+    prepared = prepare_message_objects_for_llm(messages)
+    with (
+        patch.object(settings, "message_cache_control_enabled", False),
+        patch.object(settings, "compaction_cache_control_enabled", False),
+    ):
+        result = apply_compaction_aware_cache_control(prepared, should_compact=True)
+
+    assert all(isinstance(msg["content"], str) for msg in result)
+
+
 def test_skipped_below_minimum_cacheable_prefix():
     """Below the model's minimum prefix nothing is cached, so the breakpoint is wasted."""
     messages = [make_message(1, "user", "tiny"), make_message(2, "assistant", "tiny reply")]

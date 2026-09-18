@@ -160,6 +160,7 @@ class AppSettings(BaseSettings):
     compaction_use_conversation_summary: bool = True
     # A compaction lock older than this is treated as stale and can be reacquired
     compaction_lock_stale_after_minutes: int = 5
+    compaction_cache_control_enabled: bool = True
 
     # --- prompt caching (conversation) ---
     message_cache_control_enabled: bool = True

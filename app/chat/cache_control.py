@@ -34,10 +34,15 @@ def apply_compaction_aware_cache_control(new_messages: list[dict], should_compac
 
     Returns:
         A copy of new_messages with the breakpoint applied, or new_messages unchanged if
-        caching is disabled, the conversation is below the minimum cacheable prefix, or (when
-        `should_compact` is set) there is no assistant message to mark.
+        caching is disabled (via `message_cache_control_enabled`, or via
+        `compaction_cache_control_enabled` when `should_compact` is set), the conversation is
+        below the minimum cacheable prefix, or (when `should_compact` is set) there is no
+        assistant message to mark.
     """
-    if not new_messages or not settings.message_cache_control_enabled:
+    cache_control_enabled = settings.message_cache_control_enabled or (
+        should_compact and settings.compaction_cache_control_enabled
+    )
+    if not new_messages or not cache_control_enabled:
         return new_messages
 
     # Below the model's minimum cacheable prefix nothing is stored at all, so the breakpoint
