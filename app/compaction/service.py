@@ -54,7 +54,7 @@ def estimate_prefix_tokens(formatted_messages: list[dict]) -> int:
 
     Used to decide whether to compact *before* the LLM call happens, so there is no real
     usage number yet. Must run on the plain-string form of the messages — once
-    `apply_final_turn_cache_control` converts an entry's content into a block list,
+    `apply_compaction_aware_cache_control` converts an entry's content into a block list,
     `estimate_message_tokens` can no longer read it as a string.
     """
     return sum(estimate_message_tokens(msg["content"]) for msg in formatted_messages)

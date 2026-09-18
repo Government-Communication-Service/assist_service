@@ -26,6 +26,7 @@ from app.bedrock.service import llm_transaction
 from app.bedrock.thinking import thinking_kwargs
 from app.central_guidance.schemas import RagRequest
 from app.central_guidance.service_rag import search_central_guidance
+from app.chat.cache_control import apply_compaction_aware_cache_control
 from app.chat.config import SLEEP_TIME_MESSAGE_DELETION
 from app.chat.constants import DELETION_NOTICE
 from app.chat.prompts import build_chat_system_prompt, build_session_system_prompt_block
@@ -54,7 +55,7 @@ from app.chat.schemas import (
     UserChatsResponse,
     UserDocumentSource,
 )
-from app.chat.utils import apply_final_turn_cache_control, cap_enhanced_prompt_size, prepare_message_objects_for_llm
+from app.chat.utils import cap_enhanced_prompt_size, prepare_message_objects_for_llm
 from app.compaction.service import (
     estimate_prefix_tokens,
     find_last_assistant_message_id,
@@ -1051,22 +1052,19 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         compaction=compaction,
     )
 
-    # Compaction decided before the call, so that both the user prompt and the compaction
-    # can use the same cache
-    estimated_prefix_tokens = estimate_prefix_tokens(formatted_messages)
+    # Excludes m_user: compaction can't touch the current turn, so it shouldn't count toward the threshold.
+    prefix_before_current_turn = prepare_message_objects_for_llm(messages, compaction=compaction)
+    estimated_prefix_tokens = estimate_prefix_tokens(prefix_before_current_turn)
     last_assistant_message_id = find_last_assistant_message_id(messages)
     over_compaction_threshold = last_assistant_message_id is not None and should_compact(
         estimated_prefix_tokens, messages_since_compaction(messages, compaction)
     )
 
     if over_compaction_threshold and await is_compaction_locked(chat_id, db_session):
-        # Compaction already in flight for this chat - skip the cache write meant for it too.
-        logger.debug(f"Chat {chat_id} is already being compacted; not setting up a cache breakpoint this turn")
+        logger.debug(f"Chat {chat_id} is already being compacted; not scheduling another compaction this turn")
         over_compaction_threshold = False
 
-    if over_compaction_threshold:
-        # Guaranteed cache usage: prompt and compaction
-        formatted_messages = apply_final_turn_cache_control(formatted_messages)
+    formatted_messages = apply_compaction_aware_cache_control(formatted_messages, over_compaction_threshold)
 
     effective_thinking_level = input_data.thinking_level or CHAT_THINKING_LEVEL
     llm_thinking_kwargs = thinking_kwargs(effective_thinking_level)

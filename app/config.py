@@ -162,7 +162,6 @@ class AppSettings(BaseSettings):
     compaction_lock_stale_after_minutes: int = 5
 
     # --- prompt caching (conversation) ---
-    # The cache breakpoint is placed only on turns that are also compacting
     message_cache_control_enabled: bool = True
     message_cache_ttl: CacheTtl = CacheTtl.five_minutes
     cache_read_cost_multiplier: float = 0.1

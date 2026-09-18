@@ -10,8 +10,7 @@ from app.auth.utils import verify_and_parse_uuid
 from app.auth.verify_service import verify_and_get_user_from_header
 from app.chat.constants import PRIVATE_SHARE_ACCESS_DENIED
 from app.compaction.prompts import build_compaction_summary_message
-from app.compaction.service import estimate_message_tokens
-from app.config import CHAT_MODEL_CONTEXT_WINDOW_TOKENS, MAX_ENHANCED_PROMPT_CHARS, CacheTtl, settings
+from app.config import CHAT_MODEL_CONTEXT_WINDOW_TOKENS, MAX_ENHANCED_PROMPT_CHARS, settings
 from app.database.db_operations import DbOperations
 from app.database.db_session import get_db_session
 from app.database.models import Chat, ChatCompaction, Message, User
@@ -22,8 +21,6 @@ from app.database.table import (
 
 logger = getLogger(__name__)
 
-# Sonnet 5's minimum cacheable prefix. Shorter prefixes are not stored at all.
-MIN_CACHEABLE_PREFIX_TOKENS = 1024
 # Rule-of-thumb token estimate, matching app.compaction.service.estimate_message_tokens.
 CHARS_PER_TOKEN_ESTIMATE = 3.5
 
@@ -124,55 +121,6 @@ def verify_shared_user_uuid_from_path(shared_user_uuid: str = Path(..., descript
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"'shared_user_uuid' parameter '{shared_user_uuid}' is not a valid UUID",
         ) from e
-
-
-def message_cache_control() -> dict:
-    """The cache_control marker for the conversation breakpoint.
-
-    A 5-minute TTL is the API default, so it is expressed by omitting `ttl` entirely.
-    """
-    block = {"type": "ephemeral"}
-    if settings.message_cache_ttl == CacheTtl.one_hour:
-        block["ttl"] = settings.message_cache_ttl.value
-    return block
-
-
-def apply_final_turn_cache_control(new_messages: list[dict]) -> list[dict]:
-    """Return a copy with a cache breakpoint on the last assistant message.
-
-    If there is a final user message, the cache breakpoint will be on the turn
-    before it. This is so that a prompt and compaction request can reuse the
-    same cache.
-    """
-    if not new_messages or not settings.message_cache_control_enabled:
-        return new_messages
-
-    # Below the model's minimum cacheable prefix nothing is stored at all, so the breakpoint
-    # would simply be wasted.
-    estimated_tokens = sum(estimate_message_tokens(msg["content"]) for msg in new_messages)
-    if estimated_tokens < MIN_CACHEABLE_PREFIX_TOKENS:
-        logger.debug(
-            f"Conversation is ~{estimated_tokens} tokens, below the {MIN_CACHEABLE_PREFIX_TOKENS}-token "
-            "minimum for caching; skipping the cache breakpoint"
-        )
-        return new_messages
-
-    for index in range(len(new_messages) - 1, -1, -1):
-        if new_messages[index]["role"] == "assistant":
-            marked_messages = list(new_messages)
-            marked_messages[index] = {
-                **marked_messages[index],
-                "content": [
-                    {
-                        "type": "text",
-                        "text": marked_messages[index]["content"],
-                        "cache_control": message_cache_control(),
-                    }
-                ],
-            }
-            return marked_messages
-
-    return new_messages
 
 
 def cap_enhanced_prompt_size(
