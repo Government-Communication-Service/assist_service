@@ -442,6 +442,17 @@ class DocumentChunk(Base):
         nullable=False,
     )  # This is not an ID anywhere in the PostgreSQL database, but it is the id in the opensearch index.
 
+    # Postgres creates no index for a foreign key, and without one every deletion scanned the
+    # whole table. Partial because every live query on document_id also filters deleted_at.
+    __table_args__ = (
+        Index(
+            "idx_document_chunk_document_id_active",
+            "document_id",
+            postgresql_include=["id_opensearch"],
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
+
     def __str__(self):
         return f"name=('{self.name}'), content_truncated=('{self.content[0:20]}...{self.content[-20]}')"
 

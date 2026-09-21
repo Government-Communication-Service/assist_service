@@ -90,6 +90,7 @@ async def _get_document_content_for_style_guide(
                 chunks_query = await db_session.execute(
                     select(DocumentChunk)
                     .where(DocumentChunk.document_id == document.id)
+                    .where(DocumentChunk.deleted_at.is_(None))
                     .order_by(DocumentChunk.id)
                 )
                 chunks = chunks_query.scalars().all()

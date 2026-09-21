@@ -133,8 +133,12 @@ class DbOperations:
         Returns:
             None
         """
+        # deleted_at IS NULL both skips chunks already marked and lets this use the partial
+        # index on document_chunk (document_id) WHERE deleted_at IS NULL.
         update_chunks_stmt = (
-            update(DocumentChunk).where(DocumentChunk.document_id == document_id).values(deleted_at=datetime.now())
+            update(DocumentChunk)
+            .where(DocumentChunk.document_id == document_id, DocumentChunk.deleted_at.is_(None))
+            .values(deleted_at=datetime.now())
         )
 
         update_document_stmt = update(Document).where(Document.id == document_id).values(deleted_at=datetime.now())
