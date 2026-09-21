@@ -44,6 +44,7 @@ def mock_llm_smart_targets_choice(mocker):
 @pytest.fixture
 def mock_messages():
     mock_message = Mock()
+    mock_message.role = "user"
     mock_message.content = "Test content"
     mock_message.content_enhanced_with_rag = "Test content enhanced with rag"
     mock_message.summary = "Test summary"

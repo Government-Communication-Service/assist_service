@@ -6,7 +6,7 @@ from anthropic.types import ToolUseBlock
 from httpx import AsyncClient, HTTPError, HTTPStatusError
 
 from app.bedrock.bedrock import BedrockHandler, RunMode
-from app.chat.utils import prepare_message_objects_for_llm
+from app.chat.utils import prepare_recent_turns_for_decision
 from app.config import LLM_SMART_TARGETS_MODEL
 from app.database.models import Message
 from app.database.table import LLMTable
@@ -37,6 +37,11 @@ from app.smart_targets.tools import (
 
 logger = getLogger(__name__)
 
+# LLM_SMART_TARGETS_MODEL has a much smaller context window than the main chat model, and this
+# service receives the full, unbounded (uncompacted) message history, so unlike the main chat
+# completion it must not send the whole conversation - see prepare_recent_turns_for_decision.
+NUM_RECENT_TURNS_FOR_DECISION = 6
+
 
 class SmartTargetsService:
     def __init__(self):
@@ -56,10 +61,7 @@ class SmartTargetsService:
             raise SmartTargetsConnectionError("Failed to verify connection with the GCS Data API") from e
 
     def _wrap_chat_messages(self, messages: list[Message]) -> str:
-        # It's important to use this function so that the appropriate message
-        # content is actually sent to the LLM. This prevents us blowing up the
-        # context.
-        messages_prep: list[dict] = prepare_message_objects_for_llm(messages)
+        messages_prep: list[dict] = prepare_recent_turns_for_decision(messages, num_turns=NUM_RECENT_TURNS_FOR_DECISION)
         all_but_final_messages = messages_prep[0:-1]
         last_message = messages_prep[-1]
 
