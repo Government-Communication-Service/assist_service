@@ -11,18 +11,27 @@ infra/README.md). `auth_secret_key` still needs a one-time handoff to the
 frontend team, since it's a shared bearer token, not something generated
 independently on each side.
 
-Characters that would break shell/SQL/JSON quoting are excluded so the
-generated values can be interpolated into those contexts safely.
+Punctuation is excluded from generation (alphanumeric only) so the generated
+values can be safely pasted into shells, consoles, and HTTP headers without
+needing escaping - at password_length=40 this loses negligible entropy.
+
+`opensearch_password` is the exception: OpenSearch's own master-password
+policy rejects a password with no special character at all (requires at
+least one upper, lower, digit, and symbol), so full exclude_punctuation
+would make every future rotation of this one secret fail domain-side
+validation. It keeps a small shell-safe symbol set (-_.,) instead.
 """
 
 import json
+import string
 
 from aws_cdk import RemovalPolicy
 from aws_cdk import aws_secretsmanager as secretsmanager
 from config import Settings
 from constructs import Construct
 
-QUOTING_UNSAFE_CHARACTERS = "\"'@/\\`$"
+OPENSEARCH_SAFE_SYMBOLS = "-_.,"
+OPENSEARCH_EXCLUDED_CHARACTERS = "".join(c for c in string.punctuation if c not in OPENSEARCH_SAFE_SYMBOLS)
 
 
 def _dynamic_ref(secret_name: str) -> str:
@@ -38,9 +47,7 @@ class GeneratedSecrets(Construct):
             "PostgresPassword",
             secret_name=settings.postgres_password_secret_name,
             description="Generated password for preview_gcs_llm_copilot_user - see infra/README.md",
-            generate_secret_string=secretsmanager.SecretStringGenerator(
-                exclude_characters=QUOTING_UNSAFE_CHARACTERS, password_length=40
-            ),
+            generate_secret_string=secretsmanager.SecretStringGenerator(exclude_punctuation=True, password_length=40),
             removal_policy=RemovalPolicy.DESTROY,
         )
 
@@ -49,9 +56,7 @@ class GeneratedSecrets(Construct):
             "AuthSecretKey",
             secret_name=settings.auth_secret_key_secret_name,
             description="Generated Auth-Token value for preview - see infra/README.md",
-            generate_secret_string=secretsmanager.SecretStringGenerator(
-                exclude_characters=QUOTING_UNSAFE_CHARACTERS, password_length=40
-            ),
+            generate_secret_string=secretsmanager.SecretStringGenerator(exclude_punctuation=True, password_length=40),
             removal_policy=RemovalPolicy.DESTROY,
         )
 
@@ -61,7 +66,7 @@ class GeneratedSecrets(Construct):
             secret_name=settings.opensearch_password_secret_name,
             description="Generated OpenSearch master password, wired directly into the domain in Data",
             generate_secret_string=secretsmanager.SecretStringGenerator(
-                exclude_characters=QUOTING_UNSAFE_CHARACTERS, password_length=40
+                exclude_characters=OPENSEARCH_EXCLUDED_CHARACTERS, password_length=40
             ),
             removal_policy=RemovalPolicy.DESTROY,
         )

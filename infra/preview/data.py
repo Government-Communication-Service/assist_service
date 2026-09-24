@@ -52,7 +52,7 @@ class Data(Construct):
             domain_name=settings.opensearch_domain_name,
             version=opensearch.EngineVersion.OPENSEARCH_2_13,
             capacity=opensearch.CapacityConfig(
-                data_node_instance_type="t3.small.search",
+                data_node_instance_type="r6g.large.search",
                 data_nodes=1,
                 master_nodes=0,
             ),
