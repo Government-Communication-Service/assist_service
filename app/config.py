@@ -126,6 +126,8 @@ class AppSettings(BaseSettings):
     llm_smart_targets_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
     llm_style_guide_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
     chat_thinking_level: ThinkingLevel = ThinkingLevel.disabled
+    # Total attempts (not retries) for the combined title+classification Haiku call; 1 = no retry.
+    classification_title_max_attempts: int = 2
 
     # --- System prompt constants ---
     system_prompt_caching_enabled: bool = True
@@ -229,6 +231,7 @@ class AppSettings(BaseSettings):
         "max_enhanced_prompt_chars",
         "chat_model_context_window_tokens",
         "aws_bedrock_regions_max_retries",
+        "classification_title_max_attempts",
         mode="after",
     )
     @classmethod

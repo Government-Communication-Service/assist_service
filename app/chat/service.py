@@ -6,7 +6,6 @@ from typing import Dict, Optional
 from uuid import UUID
 
 import sqlalchemy
-from anthropic.types import TextBlock
 from fastapi import Body, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import cast, select, update
@@ -40,7 +39,6 @@ from app.chat.schemas import (
     ChatRequestData,
     ChatShareResponse,
     ChatSuccessResponse,
-    ChatTitleRequest,
     ChatWithAllMessages,
     ChatWithLatestMessage,
     DocumentAccessError,
@@ -68,7 +66,6 @@ from app.compaction.service import (
 from app.config import (
     CHAT_THINKING_LEVEL,
     LLM_CHAT_RESPONSE_MODEL,
-    LLM_CHAT_TITLE_MODEL,
     SMART_TARGETS_SERVICE_DISABLED,
     TEST_USER_GROUPS,
     USE_RAG,
@@ -94,7 +91,6 @@ from app.database.table import (
     async_db_session,
 )
 from app.document_upload.service import search_uploaded_documents
-from app.error_messages import ErrorMessages
 from app.gov_uk_search.service import assess_if_next_message_should_use_gov_uk_search, enhance_user_prompt
 from app.logs.logs_handler import logger
 from app.smart_targets.service import SmartTargetsService
@@ -329,41 +325,6 @@ async def chat_add_message(chat: Chat, data):
             **chat.client_response(),
             message=message.client_response(),
         )
-
-
-async def update_chat_title(db_session: AsyncSession, chat: Chat, data) -> ChatSuccessResponse:
-    # update chat title
-    title = await chat_create_title(db_session, chat, ChatTitleRequest(**data.to_dict()))
-    chat_result = await DbOperations.chat_update_title(db_session, chat, title)
-
-    return ChatSuccessResponse(**chat_result.client_response())
-
-
-async def patch_chat_title(db_session: AsyncSession, chat: Chat, title) -> ChatSuccessResponse:
-    """
-    Updates the title of a chat.
-
-    Args:
-        db_session (AsyncSession): The active database session for performing the update.
-        chat (Chat): The chat object to be updated.
-        title (str): The new title to be assigned to the chat.
-
-    Returns:
-        ChatSuccessResponse: Response object containing:
-            - uuid: The chat's unique identifier
-            - created_at: Original creation timestamp
-            - updated_at: Last update timestamp
-            - title: The updated chat title
-            - status: Success status
-            - status_message: Success message
-
-    Note:
-        This method is wrapped with api_wrapper decorator for consistent error handling
-        and uses existing DbOperations.chat_update_title for the actual database update.
-    """
-    chat_result = await DbOperations.chat_update_title(db_session, chat, title)
-
-    return ChatSuccessResponse(**chat_result.client_response())
 
 
 async def patch_chat_favourite(db_session: AsyncSession, chat: Chat, favourite: bool) -> ChatSuccessResponse:
@@ -618,84 +579,6 @@ async def chat_create(input_data: ChatCreateInput) -> ChatWithLatestMessage:
         return message
 
     return ChatWithLatestMessage(**chat_obj.dict(), message=message.dict())
-
-
-async def chat_create_title(db_session: AsyncSession, chat: Chat, data: ChatTitleRequest):
-    try:
-        system_prompt_title = """You are a title generator. \
-You create short titles with a maximum of 5 words. \
-You create titles that are useful for identifying the subject of the provided human query. \
-It is not your job to _respond_ to the human query, only to generate a title so that \
-the query can be easily identified in a list of other queries. \
-You do not have all of the context of the conversation, but \
-you can assume that all the needed context is in the conversation and just generate a title. \
-You may be provided with a list of names of uploaded documents \
-but that is all the context you will have about the documents. \
-Some useful context (do not include this context in the title, this is just to help you \
-understand the type of conversations you are generating titles for):
-   - The user is a government communications professional for UK government
-   - GCS is Government Communications Service
-   - OASIS refers to a framework for planning comms strategy
-   - MCOM is the Modern Communications Operating Model
-The human query is provided between XML tags as shown:
-<human-query>This is an example message from the human.</human-query>
-If the query is too long it will be truncated with ellipsis. \
- When responding, you only provide the title. \
-Do not provide ANY chain of thought in your response. You ONLY provide the title. \
-Titles are in sentence case, with a capitalised first letter, proper nouns and acronyms. Not title case. \
-Do not use a full stop at the end of the title. \
-Do not enclose the title in quotes. \
-You always generate a title, even if the user query is vague or appears to be missing information. \
-Example query:
-<human-query>What can you do with this document?</human-query>
-Example good title: Request for document capabilities
-Example bad title: <wrong>The document is missing, so I cannot provide a title </wrong>.
-    """
-        # Add doc names to system prompt if there are documents used in the chat
-        documents_used_in_chat = await DbOperations.fetch_undeleted_chat_documents(db_session, chat.user_id, chat.id)
-        document_names_used_in_chat = (
-            [f"- {doc.name}\n" for doc in documents_used_in_chat] if documents_used_in_chat else []
-        )
-        if document_names_used_in_chat:
-            system_prompt_title += "\nThe following documents are used in the chat:\n" + "".join(
-                document_names_used_in_chat
-            )
-        system_prompt_title += "\nThe following message is the human query for which you need to generate a title."
-        logger.debug(f"Constructed title_system: {system_prompt_title}")
-
-        llm_obj = LLMTable().get_by_model(LLM_CHAT_TITLE_MODEL)
-        chat = BedrockHandler(system=system_prompt_title, mode=RunMode.ASYNC, llm=llm_obj)
-
-        user_query_for_title_generation = (
-            data.query if len(data.query) < 200 else data.query[0:100] + "... " + data.query[-96:-1]
-        )
-        logger.debug(f"Query extract for title generation: {user_query_for_title_generation}")
-
-        formatted_user_query_for_title_generation = f"<human-query>{user_query_for_title_generation}</human-query>"
-        messages = chat.format_content_for_chat_title(formatted_user_query_for_title_generation)
-
-        result = await chat.create_chat_title(messages)
-
-        logger.debug(f"Raw LLM result: {result.content}")
-        if isinstance(result.content, list):
-            content = [m.text for m in result.content if isinstance(m, TextBlock)]
-            if len(content) > 0:
-                title = content[0].split("\n")[0]
-            else:
-                title = ""
-        else:
-            title = result.content
-
-        if len(title) > 255:
-            logger.warning(f"Title exceeds 255 characters. Truncating: {title}")
-            title = title[:252] + "..."
-            logger.debug(f"Truncated title: {title}")
-
-        logger.info(f"Chat title created: {title}")
-        return title
-    except Exception as error:
-        logger.error(f"Error in chat_create_title: {str(error)}", exc_info=True)
-        raise Exception(ErrorMessages.CHAT_TITLE_NOT_CREATED, error) from error
 
 
 async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db_session: AsyncSession):

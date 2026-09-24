@@ -1,9 +1,10 @@
 import logging
 import uuid
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+from anthropic.types import ToolUseBlock
 from pydantic import ValidationError
 
 # from pydantic import ValidationError
@@ -12,8 +13,8 @@ from sqlalchemy.future import select
 from app.api.endpoints import ENDPOINTS
 from app.auth.constants import AUTH_TOKEN_ALIAS, SESSION_AUTH_ALIAS, USER_KEY_UUID_ALIAS
 from app.bedrock import BedrockHandler
-from app.bedrock.schemas import LLMTransaction
 from app.chat.schemas import ChatWithLatestMessage, ItemTitleResponse
+from app.classification_and_title.prompts import TOOL_NAME_TITLE_AND_CLASSIFICATION
 from app.config import settings
 from app.database.models import LLM, Chat, Message
 from app.database.table import ChatTable
@@ -23,6 +24,18 @@ api = ENDPOINTS()
 
 
 logger = logging.getLogger(__name__)
+
+
+def make_title_and_classification_response(title, category="Other", task_type="Unknown", discipline="Unknown"):
+    """Build a mock BedrockHandler.invoke_async return value for the title+classification tool call."""
+    block = MagicMock(spec=ToolUseBlock)
+    block.name = TOOL_NAME_TITLE_AND_CLASSIFICATION
+    block.input = {"title": title, "category": category, "task_type": task_type, "discipline": discipline}
+    response = MagicMock()
+    response.content = [block]
+    response.llm_internal_response_id = None
+    return response
+
 
 pytestmark = [
     pytest.mark.e2e,
@@ -622,20 +635,15 @@ class TestUserChatsV1:
         Creates two chat and chat titles, and checks second chat title does not use messages constructed for the first
         chat. Each chat title creation should use its own messages, and should not interfere with other chat messages.
         """
+        # BedrockHandler.invoke_async is shared with the main chat-response flow, so the mock is
+        # scoped to just the title PUT calls below, leaving chat creation to run unmocked.
+        mocked_first_chat_content = "random chat text"
+
         with patch.object(
             BedrockHandler,
-            "create_chat_title",
-            return_value=LLMTransaction(
-                input_tokens=1,
-                output_tokens=1,
-                input_cost=0,
-                output_cost=0,
-                completion_cost=0,
-                content="",
-            ),
-        ) as mock_create_chat_title:
-            mocked_first_chat_content = "random chat text"
-
+            "invoke_async",
+            return_value=make_title_and_classification_response(title="Random title"),
+        ) as mock_invoke_async:
             create_chat_title_url = api.create_chat_title(user_uuid=user_id, chat_uuid=chat.uuid)
             await async_http_requester(
                 "test_create_chat_title_does_not_interfere_with_previous_chats",
@@ -644,28 +652,33 @@ class TestUserChatsV1:
                 json={"query": mocked_first_chat_content, "use_rag": False},
             )
 
-            args, kwargs = mock_create_chat_title.call_args
+            args, kwargs = mock_invoke_async.call_args
 
             assert len(args) == 1  # check only one-message length array constructed when calling LLM
             function_arg = args[0]
             title_content_dict = function_arg[0]  # it is a list with dictionary
             assert mocked_first_chat_content in title_content_dict["content"]
 
-            # make another chat
-            url = api.chats(user_uuid=user_id)
-            response = await async_http_requester(
-                "chat_endpoint",
-                async_client.post,
-                url,
-                json={
-                    "query": "generate a number between 0 and 10 and only include the number in the response",
-                    "use_rag": False,
-                },
-            )
-            mocked_second_chat_content = "this is a different chat"
+        # make another chat
+        url = api.chats(user_uuid=user_id)
+        response = await async_http_requester(
+            "chat_endpoint",
+            async_client.post,
+            url,
+            json={
+                "query": "generate a number between 0 and 10 and only include the number in the response",
+                "use_rag": False,
+            },
+        )
+        mocked_second_chat_content = "this is a different chat"
 
-            chat2 = ChatWithLatestMessage(**response)
+        chat2 = ChatWithLatestMessage(**response)
 
+        with patch.object(
+            BedrockHandler,
+            "invoke_async",
+            return_value=make_title_and_classification_response(title="Random title 2"),
+        ) as mock_invoke_async:
             # generate chat title for the second chat
             create_chat_title_url = api.create_chat_title(user_uuid=user_id, chat_uuid=chat2.uuid)
             await async_http_requester(
@@ -675,7 +688,7 @@ class TestUserChatsV1:
                 json={"query": mocked_second_chat_content, "use_rag": False},
             )
 
-            args, _ = mock_create_chat_title.call_args
+            args, _ = mock_invoke_async.call_args
 
             assert len(args) == 1  # check only one-message length array constructed when calling LLM
             function_arg = args[0]
@@ -717,15 +730,8 @@ class TestUserChatsV1:
         """
         with patch.object(
             BedrockHandler,
-            "create_chat_title",
-            return_value=LLMTransaction(
-                input_tokens=1,
-                output_tokens=1,
-                input_cost=0,
-                output_cost=0,
-                completion_cost=0,
-                content="X" * 256,
-            ),
+            "invoke_async",
+            return_value=make_title_and_classification_response(title="X" * 256),
         ):
             chat_content = chat.message.content
             create_chat_title_url = api.create_chat_title(user_uuid=user_id, chat_uuid=chat.uuid)
@@ -739,32 +745,33 @@ class TestUserChatsV1:
             chat_response = ItemTitleResponse(**title_response)
             title = chat_response.title
             assert len(title) == 255
-            assert "Title exceeds 255 characters. Truncating:" in caplog.text
+            assert "Generated title exceeds 255 characters. Truncating:" in caplog.text
             chat_model = ChatTable().get_by_uuid(chat.uuid)
             assert chat_model.title == title
 
-    async def test_create_chat_title_throws_exception(self, async_client, user_id, chat, async_http_requester, caplog):
+    async def test_create_chat_title_exhausts_retries_and_keeps_existing_title(
+        self, async_client, user_id, chat, async_http_requester, caplog
+    ):
         """
-        Creates a new chat and tests the chat_create_title function throwing an exception.
-        Mocks the BedrockHandler create_chat_title method to throw an exception.
-        Checks an exception is thrown and logged.
+        Creates a new chat and mocks BedrockHandler.invoke_async to always fail for the
+        title+classification call. After exhausting settings.classification_title_max_attempts,
+        the endpoint should still return 200 and leave the chat's existing title untouched
+        (rather than overwriting it with an empty title or bubbling up a 500).
         """
-        excepted_exception = Exception("An error occurred")
-        with patch.object(BedrockHandler, "create_chat_title", side_effect=excepted_exception):
+        with patch.object(BedrockHandler, "invoke_async", side_effect=Exception("An error occurred")):
             chat_content = chat.message.content
             create_chat_title_url = api.create_chat_title(user_uuid=user_id, chat_uuid=chat.uuid)
 
-            with pytest.raises(Exception) as ex:
-                await async_http_requester(
-                    "test_create_chat_title_too_long_is_logged",
-                    async_client.put,
-                    create_chat_title_url,
-                    response_code=500,
-                    json={"query": chat_content, "use_rag": False},
-                )
-                assert ex == excepted_exception
+            response = await async_http_requester(
+                "test_create_chat_title_exhausts_retries_and_keeps_existing_title",
+                async_client.put,
+                create_chat_title_url,
+                response_code=200,
+                json={"query": chat_content, "use_rag": False},
+            )
 
-            assert "Error in chat_create_title:" in caplog.text
+        assert response["title"] == chat.title
+        assert f"Classification failed after {settings.classification_title_max_attempts} attempts" in caplog.text
 
     # Chat message id and parent id association test
     @pytest.mark.asyncio

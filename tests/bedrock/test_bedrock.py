@@ -36,24 +36,6 @@ def test_bedrock_service_with_no_cross_region_inference_with_selected_llm_model(
     assert bedrock.model == "gpt-4o-2024-05-13"
 
 
-@patch("app.bedrock.bedrock.BedrockHandler._create_chat_title")
-async def test_aws_region_failover_for_create_chat_title_success(mock_create_chat_title):
-    bedrock = BedrockHandler(mode=RunMode.ASYNC)
-    mock_create_chat_title.side_effect = [Exception("Transient error"), {"result": "success"}]
-    title_message = {"role": "user", "content": "content"}
-    result = await bedrock.create_chat_title([title_message])
-    assert result == {"result": "success"}
-
-
-@patch("app.bedrock.bedrock.BedrockHandler._create_chat_title")
-async def test_aws_region_failover_for_create_chat_title_fail(mock_create_chat_title):
-    bedrock = BedrockHandler(mode=RunMode.ASYNC)
-    mock_create_chat_title.side_effect = Exception("Transient error1")
-    title_message = {"role": "user", "content": "content"}
-    with pytest.raises(BedrockError, match="Transient error1"):
-        await bedrock.create_chat_title([title_message])
-
-
 @patch("app.bedrock.bedrock.BedrockHandler._invoke_async")
 async def test_aws_region_failover_for_llm_invoke_success(mock_invoke):
     bedrock = BedrockHandler(mode=RunMode.ASYNC)

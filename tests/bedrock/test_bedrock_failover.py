@@ -13,7 +13,6 @@ from app.config import AWS_BEDROCK_REGION1, AWS_BEDROCK_REGION2
 
 bedrock = BedrockHandler()
 bedrock_async = BedrockHandler(mode=RunMode.ASYNC)
-original_create_chat_title_function = bedrock_async._create_chat_title
 original_invoke_async_function = bedrock_async._invoke_async
 original_invoke_async_with_call_cost_details_function = bedrock_async._invoke_async_with_call_cost_details
 original_bedrock_stream_function = bedrock_async._stream
@@ -231,16 +230,6 @@ async def test_failover_on_stream_timeout_no_first_chunk(monkeypatch):
     assert collected == "Hi"
     # Should have tried West (timed out), then East (succeeded)
     assert stream_regions == [AWS_BEDROCK_REGION1, AWS_BEDROCK_REGION2]
-
-
-@patch("app.bedrock.bedrock.BedrockHandler._create_chat_title")
-async def test_aws_region_failover_for_create_chat_title_success(mock_create_chat_title, caplog):
-    title_message = {"role": "user", "content": "hello"}
-    params = [title_message]
-    mock_create_chat_title.side_effect = [Exception("fail"), await original_create_chat_title_function(params)]
-    llm_transaction = await bedrock_async.create_chat_title(params)
-    assert isinstance(llm_transaction, LLMTransaction)
-    assert "Error in bedrock handler: fail, swapping" in caplog.text
 
 
 @patch("app.bedrock.bedrock.BedrockHandler._invoke_async")

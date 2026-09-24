@@ -13,6 +13,7 @@ from sqlalchemy.orm import contains_eager
 from app.database.models import (
     LLM,
     Chat,
+    ChatClassification,
     ChatDocumentMapping,
     ChatShareUserMapping,
     Document,
@@ -562,6 +563,14 @@ class DbOperations:
 
         result = await LogsHandler.with_logging(Action.DB_REVIVE_THEME, db_session.execute(stmt))
 
+        return result.scalars().all()
+
+    @staticmethod
+    async def get_classifications(db_session: AsyncSession) -> list[ChatClassification]:
+        stmt = (
+            select(ChatClassification).filter(ChatClassification.deleted_at.is_(None)).order_by(ChatClassification.id)
+        )
+        result = await db_session.execute(stmt)
         return result.scalars().all()
 
     @staticmethod

@@ -13,7 +13,6 @@ from app.auth.verify_service import (
 )
 from app.chat.schemas import (
     ChatCreateInput,
-    ChatRequest,
     ChatSuccessResponse,
     ChatWithAllMessages,
     ChatWithLatestMessage,
@@ -31,17 +30,12 @@ from app.chat.service import (
     clean_expired_message_content,
     get_all_user_chats,
     patch_chat_favourite,
-    patch_chat_title,
-    update_chat_title,
 )
 from app.chat.utils import (
     chat_validator,
 )
 from app.database.db_session import get_db_session
 from app.database.models import User  # noqa: F401 — used via Depends(verify_and_get_user_from_path_and_header)
-from app.database.table import (
-    async_db_session,
-)
 
 router = APIRouter()
 
@@ -104,76 +98,6 @@ async def get_chat_messages(
 ):
     logger.info("Calling chat messages")
     return await chat_get_messages(chat)
-
-
-@router.put(
-    path=ENDPOINTS.CHAT_TITLE,
-    dependencies=[
-        Depends(verify_auth_token),
-        Depends(verify_and_get_user_from_path_and_header),
-        Depends(verify_and_get_auth_session_from_header),
-    ],
-)
-async def create_chat_title(
-    chat=Depends(chat_validator),
-    data: ChatRequest = Body(...),
-) -> ChatSuccessResponse:
-    async with async_db_session() as db_session:
-        return await update_chat_title(db_session=db_session, chat=chat, data=data)
-
-
-@router.get(
-    path=ENDPOINTS.CHAT_TITLE,
-    dependencies=[
-        Depends(verify_auth_token),
-        Depends(verify_and_get_user_from_path_and_header),
-        Depends(verify_and_get_auth_session_from_header),
-    ],
-)
-async def get_chat_title(chat=Depends(chat_validator)) -> ChatSuccessResponse:
-    """
-    Get the title of a chat.
-
-    Args:
-        chat: Chat object from chat_validator dependency
-
-    Returns:
-        ChatSuccessResponse: Response containing chat details including title
-    """
-    return ChatSuccessResponse(uuid=chat.uuid, created_at=chat.created_at, updated_at=chat.updated_at, title=chat.title)
-
-
-@router.patch(
-    path=ENDPOINTS.CHAT_TITLE,
-    dependencies=[
-        Depends(verify_auth_token),
-        Depends(verify_and_get_user_from_path_and_header),
-        Depends(verify_and_get_auth_session_from_header),
-    ],
-)
-async def user_update_chat_title(
-    chat=Depends(chat_validator),
-    title: str = Body(..., embed=True),
-    db_session: AsyncSession = Depends(get_db_session),
-) -> ChatSuccessResponse:
-    """
-    Update the title of an existing chat.
-
-    Args:
-        chat (Chat): Chat object obtained from chat_validator dependency.
-            Contains the existing chat details and validates user permissions.
-        title (str): The new title to be assigned to the chat.
-
-    Returns:
-        ChatSuccessResponse: Response object containing:
-            - uuid: The chat's unique identifier
-            - created_at: Original creation timestamp
-            - updated_at: Last update timestamp
-            - title: The newly updated chat title
-            - status: Success status
-            - status_message: Success message
-    """
-    return await patch_chat_title(db_session=db_session, chat=chat, title=title)
 
 
 @router.get(

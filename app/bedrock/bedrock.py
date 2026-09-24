@@ -2,7 +2,6 @@ import logging
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
-from anthropic.types import MessageParam
 from anthropic.types.message import Message as AnthropicMessage
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -209,18 +208,6 @@ class BedrockHandler:
         )
         return llm_transaction(self.llm, payload)
 
-    def _format_chat_title_response(self, response: AnthropicMessage) -> LLMTransaction:
-        cache_read_tokens, cache_write_tokens = extract_cache_tokens(response.usage)
-        result = LLMResponse(
-            content=response.content[0].text,
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-            cache_read_tokens=cache_read_tokens,
-            cache_write_tokens=cache_write_tokens,
-        )
-
-        return llm_transaction(self.llm, result)
-
     async def _invoke_async(self, messages, db_session: AsyncSession | None = None, **data) -> BedrockMessage:
         logger.debug("LLM _invoke_async started")
         config = self.config | data
@@ -270,20 +257,6 @@ class BedrockHandler:
     @handle_region_failover_with_retries
     async def invoke_async_with_call_cost_details(self, messages, **data) -> LLMTransaction:
         return await self._invoke_async_with_call_cost_details(messages, **data)
-
-    async def _create_chat_title(self, messages: List[MessageParam]):
-        """
-        Create a chat title using the LLM model configured in the init with the
-        Returns a LLMTransaction object encapsulating the title and the cost of generating it.
-        """
-
-        response = await self.async_client.messages.create(messages=messages, **self.config)
-        logger.debug(f"Messages sent to LLM {messages}")
-        return self._format_chat_title_response(response)
-
-    @handle_region_failover_with_retries
-    async def create_chat_title(self, messages: List[MessageParam]) -> LLMTransaction:
-        return await self._create_chat_title(messages)
 
     def _stream(
         self,

@@ -7,6 +7,8 @@ import app.auth.routes as auth
 import app.central_guidance.routes as central_guidance
 import app.chat.routes as chat
 import app.chat.share_routes as chat_share
+import app.classification_and_title.routes as classification
+import app.classification_and_title.title_routes as chat_title
 import app.document_upload.routes as document_upload
 import app.feedback.routes as feedback
 import app.healthcheck.routes as healthcheck
@@ -30,6 +32,8 @@ routers = [
     RouterConfig(auth.router, "/v1", ["Auth Sessions"]),
     RouterConfig(chat.router, "/v1", ["Chat Sessions"]),
     RouterConfig(chat_share.router, "/v1", ["Chat Sharing"]),
+    RouterConfig(chat_title.router, "/v1", ["Chat Title"]),
+    RouterConfig(classification.router, "/v1", ["Classification"]),
     RouterConfig(feedback.router, "/v1", ["Message Feedback"]),
     RouterConfig(user.router, "/v1", ["User Data"]),
     RouterConfig(personal_prompts.router, "/v1", ["User Prompts"]),

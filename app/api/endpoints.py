@@ -23,6 +23,9 @@ class ENDPOINTS:
     CHAT_ARCHIVE = "/chats/users/{user_uuid}/chats/{chat_uuid}/archive"
     #
     #
+    CLASSIFICATIONS = "/classifications"
+    CLASSIFICATIONS_BULK = "/classifications/bulk"
+    #
     PROMPTS_BULK = "/prompts/bulk"
     PROMPTS_THEMES = "/prompts/themes"
     PROMPTS_THEME = "/prompts/themes/{theme_uuid}"

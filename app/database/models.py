@@ -604,6 +604,32 @@ class UseGovUkSearchDecision(Base):
     decision = Column(Boolean, nullable=False)
 
 
+class ChatClassification(Base):
+    """Bespoke classification taxonomy for chat analytics. Admin-managed list of categories."""
+
+    __tablename__ = "chat_classification"
+
+    title = Column(Text, nullable=False)
+    description = Column(Text, nullable=True)
+
+
+class ChatClassificationMapping(Base):
+    """Stores the LLM-inferred classification for a chat, produced during title generation.
+
+    One row per classification event; analytics should query the latest row per chat_id.
+    classification_id is nullable (NULL = "Other" / could not be mapped to a known category).
+    llm_internal_response_id links to cost/token tracking for the classification call.
+    """
+
+    __tablename__ = "chat_classification_mapping"
+
+    chat_id = Column(Integer, ForeignKey("chat.id"), nullable=False)
+    classification_id = Column(Integer, ForeignKey("chat_classification.id"), nullable=True)
+    task_type = Column(Text, nullable=True)
+    discipline = Column(Text, nullable=True)
+    llm_internal_response_id = Column(Integer, ForeignKey("llm_internal_response.id"), nullable=True)
+
+
 engine = create_engine(database_url())
 Session = sessionmaker(bind=engine)
 
@@ -671,3 +697,4 @@ Index("ix_message_uuid", Message.uuid)
 Index("ix_auth_session_uuid", AuthSession.uuid)
 Index("ix_feedback_message_id", Feedback.message_id)
 Index("ix_user_prompt_created_at", UserPrompt.created_at)
+Index("ix_chat_classification_mapping_chat_id", ChatClassificationMapping.chat_id)
