@@ -1,0 +1,16 @@
+[project]
+name = "usage-analysis"
+version = "0.1.0"
+description = "ROI/usage analysis of chat data exports"
+requires-python = ">=3.12"
+dependencies = [
+    "editdistance>=0.8.1",
+    "marimo>=0.24.0",
+    "numpy>=2.5.2",
+    "plotly>=7.0.0",
+    "polars>=1.44.1",
+    "pyarrow>=25.0.1",
+    "scikit-learn>=1.9.0",
+    "scipy>=1.18.1",
+    "statsmodels>=0.15.0",
+]
