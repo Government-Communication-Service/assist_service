@@ -8,7 +8,8 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import contains_eager
+from sqlalchemy.orm import contains_eager, load_only
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.database.models import (
     LLM,
@@ -222,35 +223,58 @@ class DbOperations:
            user_id (int): The ID of the user
 
         Returns:
-           Chat: The chat with messages and documents referenced in the chat.
+           Chat: The chat with messages and documents referenced in the chat. Messages only have the
+           columns needed for display loaded; accessing any other Message column will fail.
         """
-        stmt = (
-            select(Chat)
-            .outerjoin(Message, Chat.id == Message.chat_id)
-            .outerjoin(ChatDocumentMapping, Chat.id == ChatDocumentMapping.chat_id)
-            .outerjoin(Document, Document.uuid == ChatDocumentMapping.document_uuid)
-            .outerjoin(
-                DocumentUserMapping,
-                (DocumentUserMapping.document_id == Document.id) & (DocumentUserMapping.user_id == user_id),
-            )
-            .options(
-                contains_eager(Chat.chat_document_mapping)
-                .contains_eager(ChatDocumentMapping.document)
-                .contains_eager(Document.user_mappings)
-            )
-            .options(contains_eager(Chat.messages))
-            .where(Chat.id == chat_id, Chat.user_id == user_id, Chat.deleted_at.is_(None))
-            .order_by(Message.created_at, Document.created_at)
-        )
-
-        result = await LogsHandler.with_logging(Action.DB_RETRIEVE_CHAT, db_session.execute(stmt))
-        chat_result = result.scalars().unique().first()
-        if not chat_result:
+        # Messages and documents are loaded in separate queries. Joining both collections onto the
+        # chat in a single query returns one row per message x document pair, each repeating the full
+        # message text, which exhausted worker memory on chats with many messages and documents.
+        chat_stmt = select(Chat).where(Chat.id == chat_id, Chat.user_id == user_id, Chat.deleted_at.is_(None))
+        chat_result = await LogsHandler.with_logging(Action.DB_RETRIEVE_CHAT, db_session.execute(chat_stmt))
+        chat = chat_result.scalars().first()
+        if not chat:
             raise DatabaseError(
                 code=DatabaseExceptionErrorCode.GET_BY_UUID_ERROR,
                 message="Chat not found or has been archived",
             )
-        return chat_result
+
+        # Large columns not shown to the user (content_enhanced_with_rag, summary) are not loaded.
+        messages_stmt = (
+            select(Message)
+            .options(
+                load_only(
+                    Message.uuid,
+                    Message.created_at,
+                    Message.updated_at,
+                    Message.content,
+                    Message.role,
+                    Message.interrupted,
+                    Message.citation,
+                    Message.sources,
+                )
+            )
+            .where(Message.chat_id == chat_id)
+            .order_by(Message.created_at, Message.id)
+        )
+        messages_result = await LogsHandler.with_logging(Action.DB_RETRIEVE_CHAT, db_session.execute(messages_stmt))
+
+        documents_stmt = (
+            select(ChatDocumentMapping)
+            .join(Document, Document.uuid == ChatDocumentMapping.document_uuid)
+            .outerjoin(
+                DocumentUserMapping,
+                (DocumentUserMapping.document_id == Document.id) & (DocumentUserMapping.user_id == user_id),
+            )
+            .options(contains_eager(ChatDocumentMapping.document).contains_eager(Document.user_mappings))
+            .where(ChatDocumentMapping.chat_id == chat_id)
+            .order_by(Document.created_at)
+        )
+        documents_result = await LogsHandler.with_logging(Action.DB_RETRIEVE_CHAT, db_session.execute(documents_stmt))
+
+        # Populate the relationships as already loaded, so they are not lazy loaded or flushed as changes.
+        set_committed_value(chat, "messages", messages_result.scalars().all())
+        set_committed_value(chat, "chat_document_mapping", documents_result.scalars().unique().all())
+        return chat
 
     @staticmethod
     async def fetch_undeleted_chat_documents(
