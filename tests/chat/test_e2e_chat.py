@@ -343,6 +343,44 @@ class TestChatArchive:
             response_code=404,
         )
 
+    @pytest.mark.asyncio
+    async def test_archived_chat_rejects_new_message(self, chat, user_id, async_client, async_http_requester):
+        """Test that adding a message to an archived chat (e.g. from a stale tab) returns 404"""
+        archive_endpoint = f"/v1/chats/users/{user_id}/chats/{chat.uuid}/archive"
+        await async_http_requester("archive chat", async_client.patch, archive_endpoint)
+
+        chat_endpoint = f"/v1/chats/users/{user_id}/chats/{chat.uuid}"
+        await async_http_requester(
+            "put message to archived chat",
+            async_client.put,
+            chat_endpoint,
+            json={"query": "how are you", "use_rag": False},
+            response_code=404,
+        )
+
+        stream_endpoint = api.get_chat_stream(user_id, chat.uuid)
+        await async_http_requester(
+            "put message to archived chat stream",
+            async_client.put,
+            stream_endpoint,
+            json={"query": "how are you", "use_rag": False},
+            response_code=404,
+        )
+
+    @pytest.mark.asyncio
+    async def test_archived_chat_rejects_favourite(self, chat, user_id, async_client, async_http_requester):
+        """Test that other chat_validator routes also reject an archived chat"""
+        archive_endpoint = f"/v1/chats/users/{user_id}/chats/{chat.uuid}/archive"
+        await async_http_requester("archive chat", async_client.patch, archive_endpoint)
+
+        await async_http_requester(
+            "favourite archived chat",
+            async_client.patch,
+            f"/v1/chats/users/{user_id}/chats/{chat.uuid}/favourite",
+            json={"favourite": True},
+            response_code=404,
+        )
+
 
 class TestUserChatsV1:
     async def test_accessing_another_user_chat_denied(

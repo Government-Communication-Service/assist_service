@@ -11,6 +11,7 @@ from app.auth.verify_service import verify_and_get_user_from_header
 from app.chat.constants import PRIVATE_SHARE_ACCESS_DENIED
 from app.compaction.prompts import build_compaction_summary_message
 from app.config import CHAT_MODEL_CONTEXT_WINDOW_TOKENS, MAX_ENHANCED_PROMPT_CHARS, settings
+from app.database.database_exception import DatabaseError, DatabaseExceptionErrorCode
 from app.database.db_operations import DbOperations
 from app.database.db_session import get_db_session
 from app.database.models import Chat, ChatCompaction, Message, User
@@ -47,6 +48,13 @@ def chat_validator(chat_uuid: str = Path(..., description="Chat UUID"), user_uui
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Access denied to chat '{chat_uuid}'",
+        )
+
+    if chat.deleted_at is not None:
+        logger.info("Attempt to access archived chat '%s'", chat_uuid)
+        raise DatabaseError(
+            code=DatabaseExceptionErrorCode.GET_BY_UUID_ERROR,
+            message="Chat has been archived",
         )
 
     return chat
