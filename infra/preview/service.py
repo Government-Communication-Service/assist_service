@@ -4,7 +4,7 @@ Container has no `command` override — `Dockerfile.ecs` bakes the entrypoint
 in as `ENTRYPOINT` (see `infra/docker-entrypoint.sh`).
 """
 
-from aws_cdk import Duration
+from aws_cdk import Duration, Tags
 from aws_cdk import aws_certificatemanager as acm
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_ecr as ecr
@@ -50,6 +50,11 @@ class Service(Construct):
             execution_role=execution_role,
             task_role=task_role,
         )
+        # `git-commit` (added app-wide in app.py) records the infra commit that
+        # last deployed this resource via CDK; `image-tag` records which app
+        # image the revision runs. `deploy.sh` registers new revisions outside
+        # CDK - it carries `git-commit` over unchanged and sets `image-tag`.
+        Tags.of(task_definition).add("image-tag", image_tag)
 
         container = task_definition.add_container(
             "App",
@@ -88,6 +93,10 @@ class Service(Construct):
                 ecs.CapacityProviderStrategy(capacity_provider=capacity_provider_name, weight=1)
             ],
             enable_execute_command=True,
+            # Copy the task definition's tags (`image-tag`, `git-commit`) onto
+            # each running task, so a task shows which image it was started on.
+            # `deploy.sh` sets the same value on update-service.
+            propagate_tags=ecs.PropagatedTagSource.TASK_DEFINITION,
             circuit_breaker=ecs.DeploymentCircuitBreaker(rollback=True),
             # Startup runs a DB check + `alembic upgrade head` before gunicorn even
             # binds the port, then 3 workers each re-import the full app - without

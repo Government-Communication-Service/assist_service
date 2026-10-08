@@ -111,6 +111,22 @@ Both options register a new task definition revision and update the service. For
 the very first-ever deploy, use Option B — the service doesn't exist yet, and
 Option A only updates an existing one. After that, pick either.
 
+### Which version is running?
+
+Two tags tell infra and app versions apart:
+
+- `git-commit` — on every CDK-managed resource: the repo commit `cdk deploy` last
+  ran from for that resource. Stacks are deployed independently, so e.g. the
+  cluster (`PreviewFoundation`) and service (`PreviewService`) can differ.
+- `image-tag` — on the task definition revision and each running task: the app
+  image tag it runs. Set by both Option A and Option B. A revision registered by
+  `deploy.sh` keeps the previous revision's `git-commit`, since its non-image
+  settings still come from that CDK deploy.
+
+```sh
+aws ecs list-tags-for-resource --resource-arn <task-def-or-task-arn>
+```
+
 ## Connecting to the database
 
 ```sh

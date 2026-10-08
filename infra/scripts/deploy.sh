@@ -2,6 +2,11 @@
 # Registers a new task-def revision for the preview ECS service with a new
 # image tag, and forces a redeploy. Does not touch CDK.
 #
+# Tags: the new revision keeps the previous revision's tags - including
+# `git-commit`, the infra commit CDK last deployed it from - and gets
+# `image-tag=IMAGE_TAG`, the app version it runs. The service propagates
+# task-definition tags to its tasks, so running tasks carry both too.
+#
 # Usage:
 #   infra/scripts/deploy.sh --tag IMAGE_TAG
 #
@@ -32,14 +37,19 @@ SERVICE=$(aws ecs list-services --region "$REGION" --cluster "$CLUSTER" --query 
 [[ -z "$SERVICE" || "$SERVICE" == "None" ]] && { echo "ERROR: no service found on cluster $CLUSTER — deploy PreviewFoundation then PreviewService in infra/ first"; exit 1; }
 
 echo "Reading current task definition ($FAMILY)..."
-CURRENT=$(aws ecs describe-task-definition --task-definition "$FAMILY" --region "$REGION" --query 'taskDefinition')
+CURRENT=$(aws ecs describe-task-definition --task-definition "$FAMILY" --region "$REGION" --include TAGS)
 
-NEW_DEF=$(echo "$CURRENT" | jq --arg IMAGE "$IMAGE" '
-  .containerDefinitions[0].image = $IMAGE
+# `aws:`-prefixed tags are reserved (set by CloudFormation) and can't be
+# passed to register-task-definition.
+NEW_DEF=$(echo "$CURRENT" | jq --arg IMAGE "$IMAGE" --arg TAG "$TAG" '
+  (.tags // [] | map(select(.key | startswith("aws:") | not) | select(.key != "image-tag"))) as $tags
+  | .taskDefinition
+  | .containerDefinitions[0].image = $IMAGE
   | del(
       .taskDefinitionArn, .revision, .status, .requiresAttributes,
       .compatibilities, .registeredAt, .registeredBy
     )
+  | .tags = $tags + [{key: "image-tag", value: $TAG}]
 ')
 
 echo "Registering new revision with image $IMAGE..."
@@ -48,7 +58,7 @@ NEW_ARN=$(aws ecs register-task-definition --region "$REGION" --cli-input-json "
 
 echo "Updating service $SERVICE -> $NEW_ARN..."
 aws ecs update-service --region "$REGION" --cluster "$CLUSTER" --service "$SERVICE" \
-  --task-definition "$NEW_ARN" --force-new-deployment > /dev/null
+  --task-definition "$NEW_ARN" --propagate-tags TASK_DEFINITION --force-new-deployment > /dev/null
 
 echo "Done. Watch rollout with:"
 echo "  aws ecs describe-services --region $REGION --cluster $CLUSTER --services $SERVICE --query 'services[0].deployments'"
