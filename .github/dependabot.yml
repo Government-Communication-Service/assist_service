@@ -39,6 +39,10 @@ updates:
       - dependency-name: "unstructured"
       # Kept in lockstep with unstructured 0.18.18 (pinned to its tested 1.0.5); bump together.
       - dependency-name: "unstructured-inference"
+      # Held on 2.x: pandas 3's C parser raises a bare TypeError on read_csv(sep=None) instead of
+      # falling back to the python engine, crashing CSV uploads. See requirements.txt.
+      - dependency-name: "pandas"
+        update-types: ["version-update:semver-major"]
     groups:
       python-production:
         applies-to: version-updates

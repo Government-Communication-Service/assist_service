@@ -24,7 +24,9 @@ python-json-logger~=4.1.0
 alembic==1.20.0
 psycopg2-binary==2.9.13
 asyncpg==0.31.0
-SQLAlchemy[asyncpg]==2.0.52
+# asyncio extra pulls in greenlet, which SQLAlchemy's async engine needs. 2.0 installed it
+# implicitly on most platforms; 2.1 does not, so it must be requested explicitly.
+SQLAlchemy[asyncio,asyncpg]==2.0.52
 
 
 # Document parsing
