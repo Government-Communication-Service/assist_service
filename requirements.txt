@@ -70,7 +70,7 @@ anthropic~=0.103
 opensearch-py~=2.7
 
 # HTML document processing
-beautifulsoup4~=4.14.3
+beautifulsoup4~=4.15.0
 
 # Testing
 requests~=2.34
