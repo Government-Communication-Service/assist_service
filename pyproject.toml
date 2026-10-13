@@ -19,8 +19,8 @@ dev = [
     "ruff==0.15.*",
     "pre-commit==4.6.2",
     "pytest-xdist==3.6.*",
-    "streamlit==1.63.0",
-    "plotly==7.0.0",
+    "streamlit==1.65.0",
+    "plotly==7.1.0",
     "moto[s3]==5.2.3"
 ]
 
