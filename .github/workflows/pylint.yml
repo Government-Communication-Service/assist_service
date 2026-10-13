@@ -84,7 +84,7 @@ jobs:
         run: ruff check --output-format=github .
 
       - name: Secret Scanning with Trufflehog
-        uses: trufflesecurity/trufflehog@4b7d1d3a6827691637eff750b6482042e06462d0 # main, pinned since it's a moving branch ref
+        uses: trufflesecurity/trufflehog@3bcf19f51e91a9655d84ddb623728c7620be482a # main, pinned since it's a moving branch ref
         with:
           base: ""
           head: ${{ github.ref_name }}
