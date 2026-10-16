@@ -13,7 +13,10 @@ from sqlalchemy import func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bedrock import BedrockHandler, RunMode
+from app.bedrock.bedrock_types import BedrockError, BedrockErrorType
+from app.bedrock.call_log import LlmCallContext
 from app.chat.schemas import ChatRequest, ChatSuccessResponse, ChatTitleRequest
+from app.chat.utils import truncate_query_for_helper_call
 from app.classification_and_title.prompts import (
     TOOL_NAME_TITLE_AND_CLASSIFICATION,
     build_title_and_classification_system_prompt,
@@ -50,27 +53,33 @@ def _extract_tool_input(response, tool_name: str) -> dict | None:
 
 
 async def create_title_and_classification(
-    db_session: AsyncSession,
     chat,
     data: ChatTitleRequest,
 ) -> TitleAndClassificationResult:
     """Generate a chat title and infer category in a single forced-tool Haiku call.
 
-    Replaces chat_create_title in app/chat/service.py. The full user query is sent
-    (no truncation) so both title quality and classification signal are maximised.
+    Replaces chat_create_title in app/chat/service.py. The user query is cut to
+    `helper_call_max_query_chars` (start and end kept), so a pasted document can't exceed the
+    model's context window. A request that is still too long is not retried.
 
     Returns a TitleAndClassificationResult. If classification fields cannot be parsed
     the result still contains a valid title so the caller can safely save it.
+
+    The reads run in their own short session, which is closed before the LLM calls so no
+    transaction is held open across the retry loop.
     """
     try:
-        classifications = await DbOperations.get_classifications(db_session)
+        async with async_db_session() as db_session:
+            classifications = await DbOperations.get_classifications(db_session)
 
-        documents_used_in_chat = await DbOperations.fetch_undeleted_chat_documents(db_session, chat.user_id, chat.id)
-        document_names = [doc.name for doc in documents_used_in_chat] if documents_used_in_chat else []
+            documents_used_in_chat = await DbOperations.fetch_undeleted_chat_documents(
+                db_session, chat.user_id, chat.id
+            )
+            document_names = [doc.name for doc in documents_used_in_chat] if documents_used_in_chat else []
 
-        user_result = await db_session.execute(select(User).where(User.id == chat.user_id))
-        user = user_result.scalar_one_or_none()
-        job_title = user.job_title if user and user.job_title else None
+            user_result = await db_session.execute(select(User).where(User.id == chat.user_id))
+            user = user_result.scalar_one_or_none()
+            job_title = user.job_title if user and user.job_title else None
 
         system_prompt = build_title_and_classification_system_prompt(classifications, document_names, job_title)
         tool_schema = build_title_and_classification_tool(classifications)
@@ -78,7 +87,7 @@ async def create_title_and_classification(
         llm_obj = LLMTable().get_by_model(LLM_CHAT_TITLE_MODEL)
         handler = BedrockHandler(system=system_prompt, mode=RunMode.ASYNC, llm=llm_obj)
 
-        formatted_query = f"<human-query>{data.query}</human-query>"
+        formatted_query = f"<human-query>{truncate_query_for_helper_call(data.query)}</human-query>"
         messages = handler.format_content_for_chat_title(formatted_query)
 
         max_attempts = settings.classification_title_max_attempts
@@ -88,12 +97,14 @@ async def create_title_and_classification(
             try:
                 response = await handler.invoke_async(
                     messages,
-                    db_session=db_session,
+                    context=LlmCallContext(purpose="title_and_classification", chat_id=chat.id),
                     tools=[tool_schema],
                     tool_choice={"type": "tool", "name": TOOL_NAME_TITLE_AND_CLASSIFICATION},
                 )
             except Exception as error:
                 logger.warning(f"Classification attempt {attempt}/{max_attempts} failed for chat_id={chat.id}: {error}")
+                if isinstance(error, BedrockError) and error.error_type == BedrockErrorType.INPUT_TOO_LONG:
+                    break
                 continue
 
             tool_input = _extract_tool_input(response, TOOL_NAME_TITLE_AND_CLASSIFICATION)
@@ -171,7 +182,8 @@ async def update_chat_title(chat: Chat, data: ChatRequest) -> ChatSuccessRespons
     """Generate title + classification and persist both, each in its own transaction.
 
     Transactions:
-        1. Generate: reads and the LLM call, which writes llm_internal_response.
+        1. Generate: a short read session, then the LLM call with no session open (the call
+           log writes llm_internal_response in its own session).
         2. Title: writes the chat title. Failure propagates.
         3. Classification: writes the mapping. Failure is logged and swallowed.
 
@@ -182,8 +194,7 @@ async def update_chat_title(chat: Chat, data: ChatRequest) -> ChatSuccessRespons
     Returns:
         ChatSuccessResponse for the chat, with the new title if one was generated.
     """
-    async with async_db_session() as db_session:
-        result = await create_title_and_classification(db_session, chat, ChatTitleRequest(**data.to_dict()))
+    result = await create_title_and_classification(chat, ChatTitleRequest(**data.to_dict()))
 
     if result.title:
         try:

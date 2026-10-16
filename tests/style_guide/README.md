@@ -8,13 +8,9 @@ Comprehensive test suite for the GOV.UK Style Guide checking feature.
 
 #### `test_unit_service.py`
 Tests for service-level functions:
-- **Conversation Context Wrapping**: Tests `_wrap_conversation_context()` with various message configurations
-- **Router Agent**: Tests `should_run_full_style_guide_analysis()` decision logic
-  - Initial messages always trigger full analysis
-  - Follow-ups with modification requests route to simple responses
-  - Follow-ups with new check requests route to full analysis
-  - Error handling and fallback behavior
-- **Simple Response Handler**: Tests `_handle_simple_response()` conversational responses
+- **Document Text**: Tests `_get_document_text()` access checks and errors
+- **Tool Arguments**: Tests that `CheckStyleGuideArgs` takes exactly one of `text` or `document_id`
+- **Issue Formatting**: Tests `_format_issue()`, which turns each violation into data for the chat model
 
 #### `test_unit_checker.py`
 Tests for core checker functions:
@@ -27,13 +23,13 @@ Tests for core checker functions:
 ### Integration Tests
 
 #### `test_integration_service.py`
-Tests for the complete service flow:
-- **Initial Call Flow**: Full analysis with deterministic + LLM checks
-- **Follow-up Routing**: Router directing to simple response vs full analysis
+Tests for the `check_style_guide` tool's service flow:
+- **Findings**: Issues come back as data, with no formatting instructions or corrected version
 - **No Violations**: Proper handling of clean content
-- **Error Handling**: Graceful degradation on errors
-- **Conversation Context**: Context propagation through the flow
-- **End-to-End Detection**: Real deterministic violation detection
+- **Error Handling**: Failures are raised for the agent loop to report, including failed LLM validation
+- **Checker Context and Logging**: The assistant's optional `context` and the chat's LlmCallContext reach the validation calls
+- **Document Size Handling**: Size guard and chunked validation
+- **Sources**: What gets checked: the `text` given, or one attached document by `document_id`
 
 ### End-to-End Tests
 

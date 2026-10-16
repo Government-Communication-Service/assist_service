@@ -1,0 +1,182 @@
+[
+  {
+    "uuid": "665bce74-4bdc-4164-8bb1-cc4246de2400",
+    "job_title": "Senior Communications Officer",
+    "region": "London",
+    "sector": "Central government",
+    "organisation": "Department for Education",
+    "grade": "Grade 6",
+    "communicator_role": true
+  },
+  {
+    "uuid": "859b0f5e-8dab-4577-9848-f9d0278ceafa",
+    "job_title": "Head of Digital Communications",
+    "region": "Scotland",
+    "sector": "Central government",
+    "organisation": "DEFRA",
+    "grade": "Grade 7",
+    "communicator_role": true
+  },
+  {
+    "uuid": "b77f62e4-1c9b-4737-976c-645e059d330a",
+    "job_title": "Campaign Manager",
+    "region": "West Midlands",
+    "sector": "Central government",
+    "organisation": "Department for Transport",
+    "grade": "SEO",
+    "communicator_role": true
+  },
+  {
+    "uuid": "bcb88634-48d1-4de2-892b-360e49853c6b",
+    "job_title": "Insight and Evaluation Lead",
+    "region": "South West",
+    "sector": "Central government",
+    "organisation": "Department of Health and Social Care",
+    "grade": "HEO",
+    "communicator_role": true
+  },
+  {
+    "uuid": "69cbe66c-a40b-4ac8-b12f-4803e2342e39",
+    "job_title": "Press Officer",
+    "region": "Yorkshire and the Humber",
+    "sector": "Central government",
+    "organisation": "DWP",
+    "grade": "Senior Civil Servant",
+    "communicator_role": true
+  },
+  {
+    "uuid": "61345fcc-db36-431c-b4cb-70b3963078a8",
+    "job_title": "Content Designer",
+    "region": "South East",
+    "sector": "Central government",
+    "organisation": "Ministry of Justice",
+    "grade": "Grade 6",
+    "communicator_role": true
+  },
+  {
+    "uuid": "e3fc6dfd-027b-4df7-a27e-27943a32da3c",
+    "job_title": "Strategic Communications Adviser",
+    "region": "East of England",
+    "sector": "Central government",
+    "organisation": "Home Office",
+    "grade": "Grade 7",
+    "communicator_role": true
+  },
+  {
+    "uuid": "5e1c1561-67e8-4377-9deb-2534264b5e5d",
+    "job_title": "Communications Director",
+    "region": "North West",
+    "sector": "Central government",
+    "organisation": "DCMS",
+    "grade": "SEO",
+    "communicator_role": true
+  },
+  {
+    "uuid": "4bd246ad-461e-4ef5-a00f-136b4b20ff6b",
+    "job_title": "Internal Communications Manager",
+    "region": "Wales",
+    "sector": "Central government",
+    "organisation": "Cabinet Office",
+    "grade": "HEO",
+    "communicator_role": true
+  },
+  {
+    "uuid": "37df842b-c537-4656-8da2-33b826892966",
+    "job_title": "Marketing Executive",
+    "region": "North East",
+    "sector": "Central government",
+    "organisation": "HM Treasury",
+    "grade": "Senior Civil Servant",
+    "communicator_role": true
+  },
+  {
+    "uuid": "f8206796-280c-4d30-8263-8f92f59f29d1",
+    "job_title": "Senior Communications Officer",
+    "region": "London",
+    "sector": "Central government",
+    "organisation": "Department for Education",
+    "grade": "Grade 6",
+    "communicator_role": true
+  },
+  {
+    "uuid": "9de78803-fcd4-4acc-8f8f-85c842dfe9d0",
+    "job_title": "Head of Digital Communications",
+    "region": "Scotland",
+    "sector": "Central government",
+    "organisation": "DEFRA",
+    "grade": "Grade 7",
+    "communicator_role": true
+  },
+  {
+    "uuid": "b6373a46-8591-44a3-851d-dcfdb6c0c265",
+    "job_title": "Campaign Manager",
+    "region": "West Midlands",
+    "sector": "Central government",
+    "organisation": "Department for Transport",
+    "grade": "SEO",
+    "communicator_role": true
+  },
+  {
+    "uuid": "038e59ae-3b1a-4cd9-bfc1-944bc67e0871",
+    "job_title": "Insight and Evaluation Lead",
+    "region": "South West",
+    "sector": "Central government",
+    "organisation": "Department of Health and Social Care",
+    "grade": "HEO",
+    "communicator_role": true
+  },
+  {
+    "uuid": "8554749b-2c00-434b-be5e-15eec122ed4c",
+    "job_title": "Press Officer",
+    "region": "Yorkshire and the Humber",
+    "sector": "Central government",
+    "organisation": "DWP",
+    "grade": "Senior Civil Servant",
+    "communicator_role": true
+  },
+  {
+    "uuid": "6c69a998-22a4-49d0-9fe8-dfeb7911dc02",
+    "job_title": "Content Designer",
+    "region": "South East",
+    "sector": "Central government",
+    "organisation": "Ministry of Justice",
+    "grade": "Grade 6",
+    "communicator_role": true
+  },
+  {
+    "uuid": "5c82bbd6-5271-4878-9162-a6e8c9720cf5",
+    "job_title": "Strategic Communications Adviser",
+    "region": "East of England",
+    "sector": "Central government",
+    "organisation": "Home Office",
+    "grade": "Grade 7",
+    "communicator_role": true
+  },
+  {
+    "uuid": "f98441ad-1076-4e5e-8227-322f3efce249",
+    "job_title": "Communications Director",
+    "region": "North West",
+    "sector": "Central government",
+    "organisation": "DCMS",
+    "grade": "SEO",
+    "communicator_role": true
+  },
+  {
+    "uuid": "0d843e4c-a2ed-405a-8571-a72c9c42c21c",
+    "job_title": "Internal Communications Manager",
+    "region": "Wales",
+    "sector": "Central government",
+    "organisation": "Cabinet Office",
+    "grade": "HEO",
+    "communicator_role": true
+  },
+  {
+    "uuid": "d2c29091-0e3c-43d4-916f-76666e797354",
+    "job_title": "Marketing Executive",
+    "region": "North East",
+    "sector": "Central government",
+    "organisation": "HM Treasury",
+    "grade": "Senior Civil Servant",
+    "communicator_role": true
+  }
+]

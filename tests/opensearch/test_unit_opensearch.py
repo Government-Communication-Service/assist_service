@@ -306,7 +306,7 @@ class TestOpensearch:
                             {
                                 "multi_match": {
                                     "query": query,
-                                    "fields": ["document_name", "chunk_name", "chunk_content"],
+                                    "fields": ["chunk_content"],
                                 }
                             }
                         ],

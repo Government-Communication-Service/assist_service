@@ -37,9 +37,10 @@ FORMATTED_MESSAGES = [
 ]
 
 
-def make_response(summary: str = "A summary of the conversation."):
+def make_response(summary: str = "A summary of the conversation.", stop_reason: str = "end_turn"):
     return SimpleNamespace(
         content=[SimpleNamespace(type="text", text=summary)],
+        stop_reason=stop_reason,
         usage=SimpleNamespace(output_tokens=120, cache_read_input_tokens=149_000, cache_creation_input_tokens=0),
         llm_internal_response_id=77,
     )
@@ -47,7 +48,12 @@ def make_response(summary: str = "A summary of the conversation."):
 
 @asynccontextmanager
 async def fake_session(session):
-    yield session
+    session.open_sessions += 1
+    session.sessions_opened += 1
+    try:
+        yield session
+    finally:
+        session.open_sessions -= 1
 
 
 def _acquire_result(acquired: bool):
@@ -74,6 +80,8 @@ def make_session(previous_compaction=None, lock_acquired=True):
     session.execute = AsyncMock(side_effect=side_effect)
     session.commit = AsyncMock()
     session.add = MagicMock()
+    session.open_sessions = 0
+    session.sessions_opened = 0
     return session
 
 
@@ -158,6 +166,7 @@ async def test_writes_the_compaction_row():
     invoke_async = AsyncMock(
         return_value=SimpleNamespace(
             content=[SimpleNamespace(type="text", text="Earlier the user asked about pensions.")],
+            stop_reason="end_turn",
             usage=SimpleNamespace(output_tokens=120, cache_read_input_tokens=149_000, cache_creation_input_tokens=900),
             llm_internal_response_id=77,
         )
@@ -179,6 +188,24 @@ async def test_writes_the_compaction_row():
     # the real async_db_session()'s transaction block, not by application code, so nothing
     # here calls session.commit() directly.
     assert session.execute.await_count == 3
+    # acquire, read, write and release each get their own short session.
+    assert session.sessions_opened == 4
+
+
+@pytest.mark.asyncio
+async def test_no_session_is_open_during_the_llm_call():
+    """The summarisation can take minutes, so no transaction may be held across it."""
+    session = make_session()
+    open_during_call = []
+
+    async def invoke_async(*args, **kwargs):
+        open_during_call.append(session.open_sessions)
+        return make_response()
+
+    compaction, _ = await run_compaction(invoke_async, session=session)
+
+    assert compaction is not None
+    assert open_during_call == [0]
 
 
 @pytest.mark.asyncio
@@ -217,6 +244,21 @@ async def test_discards_an_empty_summary():
 
     assert compaction is None
     session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stop_reason", ["tool_use", "max_tokens"])
+async def test_discards_a_summary_that_did_not_end_cleanly(stop_reason, caplog):
+    """A preamble before a tool call, or a truncated summary, must never replace the history."""
+    invoke_async = AsyncMock(return_value=make_response("I'll check the guidance first.", stop_reason=stop_reason))
+
+    with caplog.at_level(logging.ERROR, logger="app.compaction.service"):
+        compaction, session = await run_compaction(invoke_async)
+
+    assert compaction is None
+    session.add.assert_not_called()
+    assert f"stop_reason={stop_reason!r}" in caplog.text
+    assert "30 chars" in caplog.text
 
 
 @pytest.mark.asyncio

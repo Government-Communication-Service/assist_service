@@ -2,7 +2,6 @@
 import logging
 
 from fastapi import APIRouter, Body, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
 from app.api.endpoints import ENDPOINTS
@@ -34,7 +33,7 @@ from app.chat.service import (
 from app.chat.utils import (
     chat_validator,
 )
-from app.database.db_session import get_db_session
+from app.database.db_session import DbSession
 from app.database.models import User  # noqa: F401 — used via Depends(verify_and_get_user_from_path_and_header)
 
 router = APIRouter()
@@ -109,7 +108,7 @@ async def get_chat_messages(
     response_model=UserChatsResponse,
 )
 async def get_user_chats(
-    db_session: AsyncSession = Depends(get_db_session),
+    db_session: DbSession,
     user: User = Depends(verify_and_get_user_from_path_and_header),
 ):
     """
@@ -149,7 +148,7 @@ async def add_new_message_stream(chat=Depends(chat_validator), data=Depends(chat
     dependencies=[Depends(verify_auth_token)],
     response_model=MessageCleanupResponse,
 )
-async def delete_expired_message_content(db_session: AsyncSession = Depends(get_db_session)):
+async def delete_expired_message_content(db_session: DbSession):
     """
     Remove content from messages older than 1 year for data protection compliance.
 
@@ -188,9 +187,9 @@ async def delete_expired_message_content(db_session: AsyncSession = Depends(get_
     response_model=ChatSuccessResponse,
 )
 async def update_chat_favourite(
+    db_session: DbSession,
     chat=Depends(chat_validator),
     favourite: bool = Body(False, embed=True),
-    db_session: AsyncSession = Depends(get_db_session),
 ) -> ChatSuccessResponse:
     """
     Update the favourite status of a chat.
@@ -216,8 +215,8 @@ async def update_chat_favourite(
     response_model=ChatSuccessResponse,
 )
 async def archive_chat(
+    db_session: DbSession,
     chat=Depends(chat_validator),
-    db_session: AsyncSession = Depends(get_db_session),
 ) -> ChatSuccessResponse:
     """
     Archive a chat by setting the deleted_at timestamp.

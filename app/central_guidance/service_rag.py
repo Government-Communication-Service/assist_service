@@ -1,31 +1,32 @@
 import logging
+from dataclasses import dataclass
 from typing import Dict, List, Optional
 
-from anthropic.types import ToolUseBlock
-from sqlalchemy import insert, update
+from pydantic import ValidationError
+from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.bedrock import BedrockHandler, RunMode
-from app.central_guidance.constants import (
-    CENTRAL_RAG_INDEX_NAME,
+from app.bedrock.call_log import LlmCallContext
+from app.bedrock.tool_schema import ToolResponseError
+from app.central_guidance.constants import CENTRAL_RAG_INDEX_NAME
+from app.central_guidance.prompts import (
     SYSTEM_PROMPT_CHUNK_RELEVANCE_EVALUATOR,
-    SYSTEM_PROMPT_INDEX_RELEVANCE_EVALUATOR,
-    SYSTEM_PROMPT_OPENSEARCH_QUERY_GENERATOR,
-    TOOL_CHUNK_RELEVANCE_EVALUATOR,
-    TOOL_INDEX_RELEVANCE_EVALUATOR,
-    TOOL_NAME_CHUNK_RELEVANCE_EVALUATOR,
-    TOOL_NAME_INDEX_RELEVANCE_EVALUATOR,
-    TOOL_NAME_OPENSEARCH_QUERY_GENERATOR,
-    TOOL_OPENSEARCH_QUERY_GENERATOR,
+    TOOL_RESULT_NO_QUERIES,
+    TOOL_RESULT_NO_RELEVANT_PASSAGES,
+    TOOL_RESULT_RELEVANCE_CHECK_FAILED,
+    already_shown_note,
+    unchecked_note,
+    wrap_tool_result,
 )
 from app.central_guidance.schemas import RetrievalResult
-from app.central_guidance.utils import sanitise_keyword_queries
+from app.central_guidance.tools import CHUNK_RELEVANCE
 from app.chat.utils import prepare_recent_turns_for_decision
 from app.config import (
+    CENTRAL_GUIDANCE_EVALUATOR_RECENT_TURNS,
+    CENTRAL_GUIDANCE_MAX_TOOL_QUERIES,
     LLM_CHUNK_REVIEWER,
-    LLM_INDEX_ROUTER,
-    LLM_OPENSEARCH_QUERY_GENERATOR,
     MAX_CENTRAL_GUIDANCE_CHUNK_CHARS,
     MAX_CENTRAL_GUIDANCE_RESULTS,
 )
@@ -39,29 +40,17 @@ from app.database.models import (
     RewrittenQuery,
     SearchIndex,
 )
+from app.database.table import async_db_session
 from app.opensearch.service import AsyncOpenSearchOperations
 
 logger = logging.getLogger(__name__)
-
-# How many recent messages to give the index router, query rewriter, and chunk evaluator, so
-# they can resolve follow-up references (pronouns, "that", "the third one") in the query.
-RECENT_TURNS_FOR_DECISION = 6
-
-
-def _sanitise_bool(value: str | bool | int | float) -> bool:
-    if isinstance(value, bool | int | float):
-        return bool(value)
-    try:
-        return {"true": True, "false": False}[value.lower()]
-    except Exception as e:
-        raise ValueError(f"Cannot coerce {value!r} to boolean") from e
 
 
 def _build_recent_context(messages: Optional[List[Message]]) -> str:
     """Format recent raw conversation turns as an XML block for decision-making prompts."""
     if not messages:
         return ""
-    recent = prepare_recent_turns_for_decision(messages, num_turns=RECENT_TURNS_FOR_DECISION)
+    recent = prepare_recent_turns_for_decision(messages, num_turns=CENTRAL_GUIDANCE_EVALUATOR_RECENT_TURNS)
     if not recent:
         return ""
     turns = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in recent)
@@ -69,47 +58,120 @@ def _build_recent_context(messages: Optional[List[Message]]) -> str:
 
 
 # =============================================================================
-# MAIN ENTRY POINT - Must maintain exact interface for compatibility
+# MAIN ENTRY POINT - search_central_guidance tool
 # =============================================================================
 
 
-async def search_central_guidance(
-    query: str, message_id: int, db_session: AsyncSession, messages: Optional[List[Message]] = None
-):
+async def search_central_guidance_for_tool(
+    queries: list[str],
+    message_id: int,
+    user_query: str,
+    llm_internal_response_id: int | None,
+    db_session: AsyncSession,
+    recent_messages: Optional[List[Message]] = None,
+    remove_duplicates: bool = False,
+) -> tuple[str, list[dict], bool]:
+    """Search central guidance with the chat model's own keyword queries.
+
+    Holds no DB connection during the OpenSearch and relevance-check calls: the lookups run first
+    in their own short session, and db_session is only used at the end, to record the search
+    (message_search_index_mapping), the queries (rewritten_query) and each chunk's relevance
+    decision (message_document_chunk_mapping).
+
+    Args:
+        queries: Keyword queries from the model; blanks and duplicates dropped, first
+            CENTRAL_GUIDANCE_MAX_TOOL_QUERIES used.
+        message_id: This turn's user message id.
+        user_query: This turn's user message text, for the chunk evaluator.
+        llm_internal_response_id: The logged model call that requested the search.
+        db_session: Session to record analytics in. Not touched until the network calls are done.
+        recent_messages: Earlier messages in the chat, for the chunk evaluator.
+        remove_duplicates: Skip chunks already cited earlier in the chat, this turn included.
+
+    Returns:
+        The tool result text, the citations for the passages returned, and whether the search
+        failed (the relevance check gave no decision for any candidate).
     """
-    Runs RAG process to search information related to the user's query and
-    inject that information to the user query sent to the LLM model.
+    unique_queries = list(dict.fromkeys(q.strip() for q in queries if q.strip()))[:CENTRAL_GUIDANCE_MAX_TOOL_QUERIES]
+    if not unique_queries:
+        return wrap_tool_result(TOOL_RESULT_NO_QUERIES), [], False
 
-    This is the main entry point called by chat_create_message.
+    unique_hits_by_id: Dict[str, dict] = {}
+    for query in unique_queries:
+        for hit in await AsyncOpenSearchOperations.search_for_chunks(query, CENTRAL_RAG_INDEX_NAME):
+            existing = unique_hits_by_id.get(hit["_id"])
+            if existing is None or hit["_score"] > existing["_score"]:
+                unique_hits_by_id[hit["_id"]] = hit
 
-    messages: prior messages in the chat (not including this turn's), used to resolve
-    follow-up references in the query for the index router, query rewriter, and chunk
-    evaluator - not passed on to the final compiled prompt segment.
-    """
-    logger.debug("starting to run rag with query: %s", query)
-    try:
-        recent_context = _build_recent_context(messages)
+    async with async_db_session() as read_session:
+        index = await get_central_guidance_index(read_session)
+        previously_cited_chunk_ids = (
+            await get_previously_cited_chunk_ids(read_session, message_id, include_message=True)
+            if remove_duplicates
+            else set()
+        )
+        candidates = await resolve_chunks(
+            read_session, list(unique_hits_by_id.values()), index, message_id, previously_cited_chunk_ids
+        )
+        llm = (await read_session.execute(select(LLM).filter(LLM.model == LLM_CHUNK_REVIEWER))).scalar_one()
+    already_shown = len(unique_hits_by_id) - len(candidates)
 
-        # Step 1: Get index and check relevance
-        index = await get_central_guidance_index(db_session)
-        index_mapping = await check_index_relevance(query, index, message_id, db_session, recent_context)
+    decisions: list[bool | None] = []
+    if candidates:
+        relevance = await evaluate_chunks_relevance(
+            candidates,
+            user_query,
+            llm,
+            _build_recent_context(recent_messages),
+            LlmCallContext(purpose="central_guidance_relevance", message_id=message_id),
+        )
+        decisions = relevance.decisions
+        for candidate, decision in zip(candidates, decisions, strict=True):
+            candidate.message_document_chunk_mapping.llm_internal_response_id = relevance.llm_internal_response_id
+            candidate.message_document_chunk_mapping.use_document_chunk = bool(decision)
 
-        # Step 2: Search and filter (if relevant)
-        if index_mapping and index_mapping.use_index:
-            retrieval_results = await search_and_filter_chunks(query, index, message_id, db_session, recent_context)
-        else:
-            retrieval_results = []
+    db_session.add(
+        MessageSearchIndexMapping(
+            search_index_id=index.id,
+            message_id=message_id,
+            llm_internal_response_id=llm_internal_response_id,
+            use_index=True,
+        )
+    )
+    await db_session.execute(
+        insert(RewrittenQuery),
+        [
+            {
+                "search_index_id": index.id,
+                "message_id": message_id,
+                "llm_internal_response_id": llm_internal_response_id,
+                "content": query,
+            }
+            for query in unique_queries
+        ],
+    )
+    db_session.add_all(c.message_document_chunk_mapping for c in candidates)
 
-        # Step 3: Compile results
-        mappings = [index_mapping] if index_mapping else []
-        prompt_segment, citations = await compile_results(retrieval_results, mappings, db_session)
+    relevant_results = [c for c, decision in zip(candidates, decisions, strict=True) if decision]
+    unchecked = sum(decision is None for decision in decisions)
+    logger.info(
+        f"Central guidance tool search: {len(unique_hits_by_id)} hits, {already_shown} already cited, "
+        f"{len(relevant_results)} relevant, {unchecked} unchecked"
+    )
 
-        logger.info(f"Central guidance citation message: {citations}")
-        return (prompt_segment, citations)
+    if candidates and unchecked == len(candidates):
+        return wrap_tool_result(TOOL_RESULT_RELEVANCE_CHECK_FAILED), [], True
 
-    except Exception:
-        logger.exception("Rag process got error - returning empty results for graceful degradation")
-        return ("", [])
+    notes = []
+    if unchecked:
+        notes.append(unchecked_note(unchecked))
+    if relevant_results:
+        content, citations = compile_results_with_citations(relevant_results, notes)
+        return content, citations, False
+
+    if already_shown:
+        notes.append(already_shown_note(already_shown))
+    return wrap_tool_result(" ".join([TOOL_RESULT_NO_RELEVANT_PASSAGES, *notes])), [], False
 
 
 # =============================================================================
@@ -125,191 +187,33 @@ async def get_central_guidance_index(db_session: AsyncSession) -> SearchIndex:
     return search_index_query.scalar_one()
 
 
-async def check_index_relevance(
-    query: str, index: SearchIndex, message_id: int, db_session: AsyncSession, recent_context: str = ""
-) -> Optional[MessageSearchIndexMapping]:
-    """Use LLM to determine if the central guidance index is relevant to the user's query."""
-    try:
-        logger.info("Checking if query requires rag from central guidance index...")
-
-        # Get LLM for index routing
-        execute = await db_session.execute(select(LLM).filter(LLM.model == LLM_INDEX_ROUTER))
-        llm = execute.scalar_one()
-
-        # Use modern tool-based approach for evaluation
-        bedrock_handler = BedrockHandler(llm=llm, mode=RunMode.ASYNC)
-
-        # Prepare the evaluation message with structured format
-        evaluation_message = (
-            f"{recent_context}"
-            f"<User-Query>{query}</User-Query>\n\n"
-            f"<Search-Index>\n"
-            f"<Index-Name>{index.name}</Index-Name>\n"
-            f"<Index-Description>{index.description}</Index-Description>\n"
-            f"</Search-Index>"
-        )
-
-        response = await bedrock_handler.invoke_async(
-            db_session=db_session,
-            max_tokens=llm.max_tokens,
-            system=SYSTEM_PROMPT_INDEX_RELEVANCE_EVALUATOR,
-            messages=[{"role": "user", "content": evaluation_message}],
-            tools=[TOOL_INDEX_RELEVANCE_EVALUATOR],
-            tool_choice={"type": "tool", "name": TOOL_NAME_INDEX_RELEVANCE_EVALUATOR},
-        )
-
-        # Extract tool response
-        requires_index = False
-        reasoning = "Error parsing response"
-
-        for block in response.content:
-            if isinstance(block, ToolUseBlock):
-                tool_input = block.input
-                requires_index = _sanitise_bool(tool_input.get("requires_index", False))
-                reasoning = tool_input.get("reasoning", "No reasoning provided")
-                break
-
-        logger.info(f"Index relevance decision: requires_index={requires_index}, reasoning={reasoning}")
-
-        # Create and save index mapping
-        stmt = (
-            insert(MessageSearchIndexMapping)
-            .values(
-                search_index_id=index.id,
-                message_id=message_id,
-                llm_internal_response_id=response.llm_internal_response_id,
-                use_index=requires_index,
-            )
-            .returning(MessageSearchIndexMapping)
-        )
-
-        result = await db_session.execute(stmt)
-        return result.scalar_one()
-
-    except Exception:
-        logger.exception("Error checking index relevance")
-        return None
-
-
-async def search_and_filter_chunks(
-    query: str, index: SearchIndex, message_id: int, db_session: AsyncSession, recent_context: str = ""
-) -> List[RetrievalResult]:
-    """Search the index with rewritten queries and filter results using LLM evaluation."""
-    logger.info("Retrieving relevant chunks from central guidance index...")
-
-    # Step 1: Generate rewritten queries using LLM
-    rewritten_queries = await generate_rewritten_queries(query, index, message_id, db_session, recent_context)
-
-    # Step 2: Search with each rewritten query, deduplicating hits by OpenSearch ID up front
-    # so the same chunk isn't evaluated twice. Keep the highest score seen across queries.
-    unique_hits_by_id: Dict[str, dict] = {}
-    for rewritten_query in rewritten_queries:
-        chunks = await AsyncOpenSearchOperations.search_for_chunks(rewritten_query, index.name)
-        for hit in chunks:
-            existing = unique_hits_by_id.get(hit["_id"])
-            if existing is None or hit["_score"] > existing["_score"]:
-                unique_hits_by_id[hit["_id"]] = hit
-
-    if not unique_hits_by_id:
-        return []
-
-    # Step 3: Create mappings only for chunks not already cited earlier in this chat - avoids
-    # an insert immediately followed by an update for chunks we already know to discard.
-    previously_cited_chunk_ids = await get_previously_cited_chunk_ids(db_session, message_id)
-    candidates = await create_chunk_mappings(
-        list(unique_hits_by_id.values()), index, message_id, db_session, previously_cited_chunk_ids
-    )
-    if not candidates:
-        return []
-
-    logger.debug(f"Filtering {len(candidates)} unique, not-yet-cited retrieval results")
-
-    # Step 4: Evaluate all remaining candidate chunks' relevance in a single LLM call.
-    try:
-        evaluated_results = await evaluate_chunks_relevance(candidates, query, db_session, recent_context)
-    except Exception:
-        logger.exception("Error evaluating chunk relevance")
-        return []
-
-    final_results = [result for result in evaluated_results if result.message_document_chunk_mapping.use_document_chunk]
-    logger.info(f"Processed results from central guidance index: {len(final_results)} chunks")
-    return final_results
-
-
-async def compile_results(
-    retrieval_results: List[RetrievalResult],
-    message_search_index_mappings: List[MessageSearchIndexMapping],
-    db_session: AsyncSession,
-) -> tuple[str, list]:
-    """Compile prompt segments and citations from retrieval results."""
-    if retrieval_results:
-        return compile_results_with_citations(retrieval_results)
-
-    # Handle case where no results found but index was searched
-    return await compile_no_results_message(message_search_index_mappings, db_session)
-
-
 # =============================================================================
 # LLM OPERATIONS (kept separate for maintainability)
 # =============================================================================
 
 
-async def generate_rewritten_queries(
-    query: str, index: SearchIndex, message_id: int, db_session: AsyncSession, recent_context: str = ""
-) -> List[str]:
-    """Generate rewritten queries using LLM for better search results."""
-    logger.info("Generating OpenSearch queries...")
+@dataclass
+class ChunkRelevance:
+    """The relevance check's verdict on each candidate chunk.
 
-    # Get LLM for query generation
-    execute = await db_session.execute(select(LLM).filter(LLM.model == LLM_OPENSEARCH_QUERY_GENERATOR))
-    llm = execute.scalar_one()
+    Args:
+        decisions: One per candidate, in order: True if relevant, False if not, None if the
+            response gave no valid decision for it.
+        llm_internal_response_id: The logged evaluator call.
+    """
 
-    # Use LLM to generate rewritten queries
-    bedrock_handler = BedrockHandler(llm=llm, mode=RunMode.ASYNC)
-    response = await bedrock_handler.invoke_async(
-        db_session=db_session,
-        max_tokens=llm.max_tokens,
-        system=SYSTEM_PROMPT_OPENSEARCH_QUERY_GENERATOR,
-        messages=[{"role": "user", "content": f"{recent_context}{query}"}],
-        tools=[TOOL_OPENSEARCH_QUERY_GENERATOR],
-        tool_choice={"type": "tool", "name": TOOL_NAME_OPENSEARCH_QUERY_GENERATOR},
-    )
-
-    # Extract queries from tool response
-    raw_queries = None
-    for block in response.content:
-        if isinstance(block, ToolUseBlock):
-            raw_queries = block.input.get("keyword_queries")
-            break
-    opensearch_queries = sanitise_keyword_queries(raw_queries, fallback_query=query)
-
-    logger.info(f"OpenSearch keyword queries generated by LLM: {opensearch_queries}")
-
-    # Save rewritten queries for analytics
-    query_models = [
-        {
-            "search_index_id": index.id,
-            "message_id": message_id,
-            "llm_internal_response_id": response.llm_internal_response_id,
-            "content": rewritten_query,
-        }
-        for rewritten_query in opensearch_queries
-    ]
-    if query_models:
-        await db_session.execute(insert(RewrittenQuery), query_models)
-
-    return opensearch_queries
+    decisions: list[bool | None]
+    llm_internal_response_id: int | None
 
 
 async def evaluate_chunks_relevance(
-    retrieval_results: List[RetrievalResult], user_query: str, db_session: AsyncSession, recent_context: str = ""
-) -> List[RetrievalResult]:
-    """Evaluate every candidate chunk's relevance to the query in a single LLM call."""
-    # Get LLM for chunk evaluation
-    execute = await db_session.execute(select(LLM).filter(LLM.model == LLM_CHUNK_REVIEWER))
-    llm = execute.scalar_one()
-
-    # Use modern tool-based approach for evaluation
+    retrieval_results: List[RetrievalResult],
+    user_query: str,
+    llm: LLM,
+    recent_context: str = "",
+    context: LlmCallContext | None = None,
+) -> ChunkRelevance:
+    """Evaluate every candidate chunk's relevance to the query in a single LLM call. Uses no DB session."""
     bedrock_handler = BedrockHandler(llm=llm, mode=RunMode.ASYNC)
 
     chunk_blocks = [
@@ -328,54 +232,41 @@ async def evaluate_chunks_relevance(
 
     try:
         response = await bedrock_handler.invoke_async(
-            db_session=db_session,
+            context=context,
             max_tokens=llm.max_tokens,
             system=SYSTEM_PROMPT_CHUNK_RELEVANCE_EVALUATOR,
             messages=[{"role": "user", "content": evaluation_message}],
-            tools=[TOOL_CHUNK_RELEVANCE_EVALUATOR],
-            tool_choice={"type": "tool", "name": TOOL_NAME_CHUNK_RELEVANCE_EVALUATOR},
+            tools=[CHUNK_RELEVANCE.spec],
+            tool_choice=CHUNK_RELEVANCE.forced_choice,
         )
     except Exception as e:
         logger.exception(f"Error invoking LLM for chunk evaluation: {e}")
         raise
 
-    # A chunk missing from the response defaults to not relevant. chunk_index is coerced to
-    # int, since the model doesn't strictly honor the declared integer type.
-    evaluations_by_index: Dict[int, dict] = {}
-    for block in response.content:
-        if isinstance(block, ToolUseBlock):
-            for evaluation in block.input.get("evaluations", []):
-                chunk_index = evaluation.get("chunk_index")
-                if chunk_index is not None:
-                    try:
-                        evaluations_by_index[int(chunk_index)] = evaluation
-                    except (TypeError, ValueError):
-                        logger.warning(f"Chunk evaluation had non-integer chunk_index: {chunk_index!r}")
-            break
-
-    updated_results = []
-    for i, result in enumerate(retrieval_results):
-        evaluation = evaluations_by_index.get(i, {})
-        is_relevant_raw = evaluation.get("is_relevant", False)
-        # If the LLM returns a texty 'True'/'False' value here we need to coerce to boolean
-        use_chunk = is_relevant_raw is True or str(is_relevant_raw).lower() == "true"
-        reasoning = evaluation.get("reasoning", "No reasoning provided")
-
-        logger.debug(f"Chunk {i} evaluation result: use_chunk={use_chunk}, reasoning={reasoning}")
-
-        updated_mapping = await update_chunk_mapping(
-            db_session, result.message_document_chunk_mapping.id, response.llm_internal_response_id, use_chunk
+    try:
+        evaluations_by_index = {e.chunk_index: e for e in CHUNK_RELEVANCE.parse_response(response).evaluations}
+    except (ToolResponseError, ValidationError):
+        logger.error(
+            f"Chunk evaluation response didn't validate (stop_reason={getattr(response, 'stop_reason', None)!r}); "
+            f"none of the {len(retrieval_results)} chunks could be checked",
+            exc_info=True,
         )
-        updated_results.append(
-            RetrievalResult(
-                search_index=result.search_index,
-                document_chunk=result.document_chunk,
-                document=result.document,
-                message_document_chunk_mapping=updated_mapping,
-            )
+        evaluations_by_index = {}
+
+    decisions: list[bool | None] = []
+    for i in range(len(retrieval_results)):
+        evaluation = evaluations_by_index.get(i)
+        decisions.append(evaluation.is_relevant if evaluation else None)
+        logger.debug(
+            f"Chunk {i} evaluation result: use_chunk={decisions[-1]}, "
+            f"reasoning={evaluation.reasoning if evaluation else 'No evaluation returned'}"
         )
 
-    return updated_results
+    missing = sum(d is None for d in decisions)
+    if evaluations_by_index and missing:
+        logger.warning(f"Chunk evaluation gave no decision for {missing} of {len(retrieval_results)} chunks")
+
+    return ChunkRelevance(decisions=decisions, llm_internal_response_id=response.llm_internal_response_id)
 
 
 # =============================================================================
@@ -383,85 +274,76 @@ async def evaluate_chunks_relevance(
 # =============================================================================
 
 
-async def create_chunk_mappings(
-    chunks: List[dict],
+async def resolve_chunks(
+    db_session: AsyncSession,
+    hits: List[dict],
     index: SearchIndex,
     message_id: int,
-    db_session: AsyncSession,
     skip_chunk_ids: Optional[set] = None,
 ) -> List[RetrievalResult]:
-    """Create database mappings for document chunks and return RetrievalResult objects.
+    """Look up the chunk and document for each OpenSearch hit, in hit order.
 
-    Chunks whose DocumentChunk.id is in skip_chunk_ids are resolved (to check membership)
-    but no mapping row is created for them - used to avoid mapping rows for chunks already
-    known to be discarded (e.g. already cited earlier in this chat).
+    Each result carries a new, unsaved MessageDocumentChunkMapping for the caller to fill in and
+    add. Hits with no DocumentChunk, or whose chunk id is in skip_chunk_ids (already cited earlier
+    in this chat), are left out and get no mapping.
     """
+    if not hits:
+        return []
+    rows = await db_session.execute(
+        select(DocumentChunk, Document)
+        .join(Document, Document.id == DocumentChunk.document_id)
+        .filter(DocumentChunk.id_opensearch.in_([hit["_id"] for hit in hits]))
+    )
+    by_opensearch_id = {chunk.id_opensearch: (chunk, document) for chunk, document in rows.all()}
+
     retrieval_results = []
-    for hit in chunks:
-        id_opensearch = hit["_id"]
-        logger.debug("create_chunk_mappings-id_opensearch %s", id_opensearch)
-
-        execute = await db_session.execute(select(DocumentChunk).filter(DocumentChunk.id_opensearch == id_opensearch))
-        doc_chunk = execute.scalar_one_or_none()
-        if not doc_chunk:
-            logger.warning(f"DocumentChunk not found for id_opensearch: {id_opensearch}")
+    for hit in hits:
+        found = by_opensearch_id.get(hit["_id"])
+        if found is None:
+            logger.warning(f"DocumentChunk not found for id_opensearch: {hit['_id']}")
             continue
-
+        doc_chunk, document = found
         if skip_chunk_ids and doc_chunk.id in skip_chunk_ids:
             logger.debug(f"Skipping chunk {doc_chunk.id} - already cited earlier in this chat")
             continue
-
-        # Create mapping for analytics
-        message_document_chunk_mapping = MessageDocumentChunkMapping(
-            message_id=message_id, document_chunk_id=doc_chunk.id, opensearch_score=hit["_score"]
+        retrieval_results.append(
+            RetrievalResult(
+                search_index=index,
+                document_chunk=doc_chunk,
+                document=document,
+                message_document_chunk_mapping=MessageDocumentChunkMapping(
+                    message_id=message_id, document_chunk_id=doc_chunk.id, opensearch_score=hit["_score"]
+                ),
+            )
         )
-        db_session.add(message_document_chunk_mapping)
-
-        # Get associated document
-        execute = await db_session.execute(select(Document).filter(Document.id == doc_chunk.document_id))
-        document = execute.scalar_one()
-
-        retrieval_result = RetrievalResult(
-            search_index=index,
-            document_chunk=doc_chunk,
-            document=document,
-            message_document_chunk_mapping=message_document_chunk_mapping,
-        )
-
-        retrieval_results.append(retrieval_result)
 
     return retrieval_results
 
 
-async def get_previously_cited_chunk_ids(db_session: AsyncSession, message_id: int) -> set:
-    """Document chunk IDs already cited (and judged relevant) earlier in this message's chat."""
+async def get_previously_cited_chunk_ids(
+    db_session: AsyncSession, message_id: int, include_message: bool = False
+) -> set:
+    """Document chunk IDs already cited (and judged relevant) earlier in this message's chat.
+
+    Args:
+        db_session: Session to query.
+        message_id: The current user message.
+        include_message: Also count chunks cited for message_id itself (earlier tool calls this turn).
+    """
+    conditions = [
+        Message.chat_id == select(Message.chat_id).where(Message.id == message_id).scalar_subquery(),
+        MessageDocumentChunkMapping.use_document_chunk.is_(True),
+    ]
+    if not include_message:
+        conditions.append(Message.id != message_id)
     stmt = (
         select(MessageDocumentChunkMapping.document_chunk_id)
         .join(Message, Message.id == MessageDocumentChunkMapping.message_id)
-        .where(
-            Message.chat_id == select(Message.chat_id).where(Message.id == message_id).scalar_subquery(),
-            Message.id != message_id,
-            MessageDocumentChunkMapping.use_document_chunk.is_(True),
-        )
+        .where(*conditions)
         .distinct()
     )
     result = await db_session.execute(stmt)
     return set(result.scalars().all())
-
-
-async def update_chunk_mapping(
-    db_session: AsyncSession, mapping_id: int, llm_response_id: Optional[int], use_chunk: bool
-) -> MessageDocumentChunkMapping:
-    """Update document chunk mapping with LLM decision for analytics."""
-    stmt = (
-        update(MessageDocumentChunkMapping)
-        .where(MessageDocumentChunkMapping.id == mapping_id)
-        .values(llm_internal_response_id=llm_response_id, use_document_chunk=use_chunk)
-        .returning(MessageDocumentChunkMapping)
-    )
-
-    result = await db_session.execute(stmt)
-    return result.scalar_one()
 
 
 # =============================================================================
@@ -469,14 +351,21 @@ async def update_chunk_mapping(
 # =============================================================================
 
 
-def compile_results_with_citations(retrieval_results: List[RetrievalResult]) -> tuple[str, list]:
-    """Compile prompt segments when we have retrieval results, keeping the highest-scoring chunks."""
+def compile_results_with_citations(
+    retrieval_results: List[RetrievalResult], notes: Optional[List[str]] = None
+) -> tuple[str, list]:
+    """Compile prompt segments when we have retrieval results, keeping the highest-scoring chunks.
+
+    Args:
+        retrieval_results: The relevant chunks.
+        notes: Lines for the model, added after the results inside the results tag.
+    """
     ranked_results = sorted(
         retrieval_results, key=lambda result: result.message_document_chunk_mapping.opensearch_score, reverse=True
     )[:MAX_CENTRAL_GUIDANCE_RESULTS]
 
     citations = {}
-    prompt_parts = ["<government-comms-central-guidance-search-results>"]
+    prompt_parts = []
 
     for i, result in enumerate(ranked_results):
         document = result.document
@@ -495,46 +384,8 @@ def compile_results_with_citations(retrieval_results: List[RetrievalResult]) -> 
             f"<section-title>{doc_chunk.name}</section-title>\n"
             f"<content>{content}</content>"
         )
-        prompt_parts.append(f"\n<result-{i}>\n{content_ref}\n</result-{i}>")
+        prompt_parts.append(f"<result-{i}>\n{content_ref}\n</result-{i}>")
 
-    prompt_parts.append("\n</government-comms-central-guidance-search-results>")
+    prompt_parts.extend(notes or [])
 
-    return ("\n".join(prompt_parts), list(citations.values()))
-
-
-async def compile_no_results_message(
-    message_search_index_mappings: List[MessageSearchIndexMapping], db_session: AsyncSession
-) -> tuple[str, list]:
-    """Compile message when no results found but the central guidance index was searched."""
-    searched_index_ids = [mapping.search_index_id for mapping in message_search_index_mappings if mapping.use_index]
-
-    if not searched_index_ids:
-        return ("", [])
-
-    # Get documents that were searched but yielded no results
-    prompt_parts = [
-        "<government-comms-central-guidance-search-results>",
-        "The following document(s) were searched but no relevant material was found:",
-    ]
-
-    for index_id in searched_index_ids:
-        documents = await get_documents_for_index(db_session, index_id)
-        for document in documents:
-            prompt_parts.append(f"\n<document-title>{document.name}</document-title>")
-
-    prompt_parts.append("\n</government-comms-central-guidance-search-results>")
-
-    return ("\n".join(prompt_parts), [])
-
-
-async def get_documents_for_index(db_session: AsyncSession, index_id: int) -> List[Document]:
-    """Get all documents associated with the central guidance search index."""
-    stmt = (
-        select(Document)
-        .distinct(Document.id)
-        .join(DocumentChunk, DocumentChunk.document_id == Document.id)
-        .join(SearchIndex, SearchIndex.id == DocumentChunk.search_index_id)
-        .where(SearchIndex.id == index_id)
-    )
-    result = await db_session.execute(stmt)
-    return result.scalars().all()
+    return wrap_tool_result("\n\n".join(prompt_parts)), list(citations.values())

@@ -1,134 +1,31 @@
 from logging import getLogger
 
-from sqlalchemy import select
+from sqlalchemy import func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import config
-from app.central_guidance.schemas import RagRequest, RetrievalResult
+from app.config import UPLOADED_DOCUMENTS_MAX_READ_CHARS, UPLOADED_DOCUMENTS_MAX_TOOL_QUERIES
 from app.database.db_operations import DbOperations
 from app.database.models import (
     Document,
     DocumentChunk,
-    Message,
+    MessageDocumentChunkMapping,
     MessageSearchIndexMapping,
+    RewrittenQuery,
     SearchIndex,
 )
 from app.database.table import async_db_session
 from app.document_upload.constants import PERSONAL_DOCUMENTS_INDEX_NAME
-from app.document_upload.personal_document_rag import personal_document_rag
+from app.document_upload.personal_document_rag import select_chunks_for_tool
+from app.document_upload.utils import (
+    PositionedChunk,
+    chunk_positions,
+    get_document_chunk_mappings,
+    get_previously_returned_opensearch_ids,
+)
 from app.opensearch.service import AsyncOpenSearchOperations
 
 logger = getLogger(__name__)
-
-
-def format_doc_chunk_for_prompt(doc_chunk: DocumentChunk, document: Document):
-    result_string = (
-        f"<document-title>{document.name}</document-title>\n"
-        f"<section-title>{doc_chunk.name}</section-title>\n"
-        f"<content>{doc_chunk.content}</content>"
-    )
-    return result_string
-
-
-async def search_uploaded_documents(rag_request: RagRequest, message: Message, db_session: AsyncSession):
-    """
-    Runs RAG process to search information related to the user's query and
-    inject that information to the user query sent to the LLM model.
-    """
-    logger.debug("starting to run rag with %s", rag_request)
-    try:
-        return await rag_pdu(rag_request, message, db_session)
-    except Exception:
-        logger.exception("Rag process got error")
-        raise
-
-
-async def rag_pdu(rag_request: RagRequest, message: Message, db_session: AsyncSession):
-    # rag with personal document index
-    pdu_rag_output = (
-        await personal_document_rag(
-            rag_request,
-            message,
-            db_session,
-        )
-        if rag_request.document_uuids
-        else {}
-    )
-
-    # Unpack the data
-    pdu_retrieval_results = pdu_rag_output.get("retrieval_results", [])
-
-    pdu_message_search_index_mappings = pdu_rag_output.get("message_search_index_mappings", [])
-
-    # Use the search results to create an enriched query
-    # If the list of retrieval_results is empty, then the returned query will simply be the original user query.
-    # The citation_message is appended to the AI message.
-    prompt_segment_user_retrieval, citation_message = await compile_document_upload_prompt_segments(
-        rag_request,
-        pdu_message_search_index_mappings,
-        pdu_retrieval_results,
-    )
-    logger.info("Citation is %s", citation_message)
-    return (prompt_segment_user_retrieval, citation_message)
-
-
-async def compile_document_upload_prompt_segments(
-    rag_request: RagRequest,
-    user_message_search_index_mappings: list[MessageSearchIndexMapping],
-    user_retrieval_results: list[RetrievalResult],
-):
-    # initial citation and prompt segment values
-    citation_message = []
-    prompt_segment_user_retrieval = ""
-
-    if user_retrieval_results:
-        citation_message = []
-        if user_retrieval_results:
-            prompt_segment_user_retrieval = "<uploaded-documents-search-results>"
-            # user retrievals are stored in single index
-            # keep a single doc citation if multiple chunks used from same document.
-            user_doc_citations = {}
-
-            for i, retrieval_result in enumerate(user_retrieval_results):
-                document = retrieval_result.document
-                user_doc_citations[str(document.uuid)] = {"docname": document.name, "docurl": document.url}
-
-                doc_chunk = retrieval_result.document_chunk
-                result_string = format_doc_chunk_for_prompt(doc_chunk, document)
-                prompt_segment_user_retrieval += f"\n<result-{i}>\n{result_string}\n</result-{i}>"
-            prompt_segment_user_retrieval += "\n</uploaded-documents-search-results>"
-            citation_message = citation_message + list(user_doc_citations.values())
-
-        return (prompt_segment_user_retrieval, citation_message)
-
-    # central index results
-    async with async_db_session() as session:
-        # check user indexes
-        if (len(user_retrieval_results) == 0) and (len(user_message_search_index_mappings) > 0):
-            prompt_segment_user_retrieval = (
-                "<uploaded-documents-search-results>\n"
-                "The following document(s) were searched but no relevant material was found:\n"
-            )
-            user_searched_index_ids = [
-                message_search_index_mapping.search_index_id
-                for message_search_index_mapping in user_message_search_index_mappings
-                if message_search_index_mapping.use_index
-            ]
-            for searched_index_id in user_searched_index_ids:
-                execute = await session.execute(
-                    select(Document)
-                    .distinct(Document.id)
-                    .join(DocumentChunk, DocumentChunk.document_id == Document.id)
-                    .join(SearchIndex, SearchIndex.id == DocumentChunk.search_index_id)
-                    .where(SearchIndex.id == searched_index_id)
-                    .where(Document.uuid.in_(rag_request.document_uuids))
-                )
-                documents = execute.scalars().all()
-                for document in documents:
-                    prompt_segment_user_retrieval += f"\n<document-title>{document.name}</document-title>"
-            prompt_segment_user_retrieval += "\n</uploaded-documents-search-results>"
-
-        return (prompt_segment_user_retrieval, citation_message)
 
 
 async def clean_expired_documents(db_session: AsyncSession):
@@ -201,3 +98,228 @@ async def clean_expired_documents(db_session: AsyncSession):
     except Exception:
         logger.exception("Error during document cleanup")
         raise
+
+
+UPLOADED_DOCUMENTS_TAG = "uploaded-documents-search-results"
+READ_DOCUMENT_TAG = "uploaded-document"
+MAX_CHUNKS_PER_READ = 200
+"""Cap on chunks loaded for one read, whatever their size; the continuation note covers the rest."""
+
+
+def _tagged(tag: str, text: str) -> str:
+    return f"<{tag}>\n{text}\n</{tag}>"
+
+
+def _scope_documents(document_ids: list[str] | None, attached: list[str]) -> tuple[list[str], str | None]:
+    """Resolve the documents a tool call asks for against the ones attached to the chat.
+
+    Args:
+        document_ids: Ids from the model; None or empty means all attached documents.
+        attached: Documents attached to the chat, from the request context.
+
+    Returns:
+        The attached documents to use, and an error message if any requested id isn't attached.
+    """
+    requested = [d.strip() for d in document_ids or [] if d.strip()]
+    if not requested:
+        return attached, None
+    by_lower = {u.lower(): u for u in attached}
+    unknown = [d for d in requested if d.lower() not in by_lower]
+    if unknown:
+        return [], (
+            f"Unknown document id(s): {', '.join(unknown)}. Use ids from the list of attached documents: "
+            f"{', '.join(attached)}."
+        )
+    return list(dict.fromkeys(by_lower[d.lower()] for d in requested)), None
+
+
+async def _describe_scope(db_session: AsyncSession, searched: list[str], attached: list[str]) -> str:
+    """One line saying which documents a search covered, so a misapplied scope is visible to the model."""
+    if len(searched) == len(attached):
+        return f"Searched all {len(attached)} attached document(s)."
+    names = (
+        (await db_session.execute(select(Document.name).where(Document.uuid.in_(searched)).order_by(Document.name)))
+        .scalars()
+        .all()
+    )
+    return f"Searched {len(searched)} of {len(attached)} attached documents: {', '.join(names)}."
+
+
+def format_chunk_for_prompt(result: PositionedChunk) -> str:
+    return (
+        f"<document-title>{result.document.name}</document-title>\n"
+        f"<document-id>{result.document.uuid}</document-id>\n"
+        f"<position>chunk {result.position} of {result.total_chunks}</position>\n"
+        f"<content>{result.document_chunk.content}</content>"
+    )
+
+
+async def search_uploaded_documents_for_tool(
+    queries: list[str],
+    document_uuids: list[str],
+    message_id: int,
+    llm_internal_response_id: int | None,
+    db_session: AsyncSession,
+    remove_duplicates: bool = False,
+    document_ids: list[str] | None = None,
+) -> tuple[str, list[dict], bool]:
+    """Search the chat's uploaded documents with the chat model's own keyword queries.
+
+    Records the search (message_search_index_mapping), the queries (rewritten_query)
+    and the chunks returned (message_document_chunk_mapping).
+
+    Holds no DB connection during the OpenSearch queries: the previously returned chunks are read
+    in a short session of their own, and everything else runs on `db_session` once the search is done.
+
+    Args:
+        queries: Keyword queries from the model; blanks and duplicates dropped, first
+            UPLOADED_DOCUMENTS_MAX_TOOL_QUERIES used.
+        document_uuids: Documents attached to the chat, from the request context.
+        message_id: This turn's user message id.
+        llm_internal_response_id: The logged model call that requested the search.
+        db_session: Session to query and record analytics in, used only after the search.
+        remove_duplicates: Skip chunks already returned earlier in the chat, this turn included.
+        document_ids: Documents to restrict the search to; None or empty for all attached.
+
+    Returns:
+        The tool result text, the citations for the documents returned, and whether the call failed.
+    """
+    if not document_uuids:
+        return (_tagged(UPLOADED_DOCUMENTS_TAG, "No documents are attached to this chat."), [], False)
+
+    search_uuids, scope_error = _scope_documents(document_ids, document_uuids)
+    if scope_error:
+        return _tagged(UPLOADED_DOCUMENTS_TAG, scope_error), [], True
+
+    unique_queries = list(dict.fromkeys(q.strip() for q in queries if q.strip()))[:UPLOADED_DOCUMENTS_MAX_TOOL_QUERIES]
+    already_returned = set()
+    if remove_duplicates:
+        async with async_db_session() as read_session:
+            already_returned = await get_previously_returned_opensearch_ids(read_session, message_id)
+    chunks, skipped = await select_chunks_for_tool(unique_queries, search_uuids, already_returned)
+
+    search_index = (
+        await db_session.execute(select(SearchIndex).where(SearchIndex.name == PERSONAL_DOCUMENTS_INDEX_NAME))
+    ).scalar_one()
+    db_session.add(
+        MessageSearchIndexMapping(
+            search_index_id=search_index.id,
+            message_id=message_id,
+            llm_internal_response_id=llm_internal_response_id,
+            use_index=True,
+        )
+    )
+    if unique_queries:
+        await db_session.execute(
+            insert(RewrittenQuery),
+            [
+                {
+                    "search_index_id": search_index.id,
+                    "message_id": message_id,
+                    "llm_internal_response_id": llm_internal_response_id,
+                    "content": query,
+                }
+                for query in unique_queries
+            ],
+        )
+    results = await get_document_chunk_mappings(chunks, search_uuids, message_id, db_session, use_chunk=True)
+    logger.info(f"Uploaded documents tool search: {len(results)} chunks returned, {skipped} already returned")
+
+    scope = await _describe_scope(db_session, search_uuids, document_uuids)
+    note = f"{skipped} matching passage(s) were already provided earlier in the conversation." if skipped else ""
+    if not results:
+        return (_tagged(UPLOADED_DOCUMENTS_TAG, f"{scope}\nNo new relevant passages found. {note}"), [], False)
+
+    results.sort(key=lambda r: (r.document.name, r.document.id, r.position))
+    citations = {}
+    parts = [f"<{UPLOADED_DOCUMENTS_TAG}>", scope]
+    for i, result in enumerate(results):
+        citations[str(result.document.uuid)] = {"docname": result.document.name, "docurl": result.document.url}
+        parts.append(f"<result-{i}>\n{format_chunk_for_prompt(result)}\n</result-{i}>")
+    if note:
+        parts.append(note)
+    parts.append(f"</{UPLOADED_DOCUMENTS_TAG}>")
+    return ("\n".join(parts), list(citations.values()), False)
+
+
+async def read_uploaded_document_for_tool(
+    document_id: str,
+    start_chunk: int,
+    document_uuids: list[str],
+    message_id: int,
+    db_session: AsyncSession,
+    end_chunk: int | None = None,
+) -> tuple[str, list[dict], bool]:
+    """Return a stretch of one uploaded document in reading order, and how to continue.
+
+    Whole chunks are returned, at least one, until UPLOADED_DOCUMENTS_MAX_READ_CHARS is reached. The
+    chunks are recorded against the message so a later search with remove_duplicates skips them.
+
+    Args:
+        document_id: The document to read; must be one attached to the chat.
+        start_chunk: 1-based chunk to start from.
+        document_uuids: Documents attached to the chat, from the request context.
+        message_id: This turn's user message id.
+        db_session: Session to query and record in.
+        end_chunk: 1-based last chunk to return; None for as many as fit.
+
+    Returns:
+        The tool result text, the citation for the document, and whether the call failed.
+    """
+
+    def failure(message: str) -> tuple[str, list[dict], bool]:
+        return _tagged(READ_DOCUMENT_TAG, message), [], True
+
+    if not document_uuids:
+        return failure("No documents are attached to this chat.")
+    read_uuids, scope_error = _scope_documents([document_id], document_uuids)
+    if scope_error:
+        return failure(scope_error)
+
+    if end_chunk is not None and end_chunk < start_chunk:
+        return failure(f"end_chunk {end_chunk} is before start_chunk {start_chunk}.")
+
+    positions = chunk_positions(read_uuids)
+    stretch = select(DocumentChunk, Document, positions.c.position, positions.c.total_chunks)
+    stretch = stretch.join(positions, positions.c.chunk_id == DocumentChunk.id)
+    stretch = stretch.join(Document, Document.id == DocumentChunk.document_id)
+    stretch = stretch.where(positions.c.position >= start_chunk)
+    if end_chunk is not None:
+        stretch = stretch.where(positions.c.position <= end_chunk)
+    rows = (await db_session.execute(stretch.order_by(positions.c.position).limit(MAX_CHUNKS_PER_READ))).all()
+
+    if not rows:
+        total = (await db_session.execute(select(func.count()).select_from(positions))).scalar_one()
+        if total == 0:
+            return failure("This document has no readable text yet: it may still be processing, or have none.")
+        return failure(f"This document has {total} chunk(s); start_chunk {start_chunk} is past the end.")
+
+    chosen = []
+    chars_used = 0
+    for row in rows:
+        size = len(row.DocumentChunk.content)
+        if chosen and chars_used + size > UPLOADED_DOCUMENTS_MAX_READ_CHARS:
+            break
+        chosen.append(row)
+        chars_used += size
+
+    document = chosen[0].Document
+    first, last, total = chosen[0].position, chosen[-1].position, chosen[0].total_chunks
+    db_session.add_all(
+        MessageDocumentChunkMapping(
+            message_id=message_id, document_chunk_id=row.DocumentChunk.id, opensearch_score=0.0, use_document_chunk=True
+        )
+        for row in chosen
+    )
+    if last < total:
+        where = (
+            f"Chunks {first}-{last} of {total}. To continue, call read_uploaded_document with "
+            f'document_id="{document.uuid}" and start_chunk={last + 1}.'
+        )
+    else:
+        where = f"Chunks {first}-{last} of {total}. End of document."
+    name = document.name.replace('"', "'")
+    parts = [f'<{READ_DOCUMENT_TAG} id="{document.uuid}" name="{name}">', where]
+    parts.extend(f'<chunk n="{row.position}">{row.DocumentChunk.content}</chunk>' for row in chosen)
+    parts.append(f"</{READ_DOCUMENT_TAG}>")
+    return "\n".join(parts), [{"docname": document.name, "docurl": document.url}], False

@@ -109,6 +109,7 @@ async def old_chat_factory(user, auth_session):
                         chat_id=chat_id,
                         content=content,
                         content_enhanced_with_rag=content,
+                        raw_messages=[{"role": "assistant", "content": [{"type": "text", "text": content}]}],
                         role="user",
                         tokens=10,
                         auth_session_id=auth_session.id,

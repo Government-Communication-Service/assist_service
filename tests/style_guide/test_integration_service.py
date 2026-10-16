@@ -1,21 +1,19 @@
 """
 Integration tests for style guide service.
-Tests the full check_content_against_style_guide flow with mocked components.
+Tests the check_style_guide_for_tool / analysis flow with mocked components.
 """
+
 import logging
-from pathlib import Path
-from unittest.mock import Mock, patch
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from anthropic.types import Message as AnthropicMessage
-from anthropic.types import TextBlock, Usage
 
-from app.database.models import Message
+from app.bedrock.call_log import LlmCallContext
 from app.style_guide.service import (
-    _filter_violations_for_chunk,
-    _generate_chunked_summary_and_fix,
     _run_llm_validation_on_chunks,
-    check_content_against_style_guide,
+    analyse_content_for_style_guide,
+    check_style_guide_for_tool,
 )
 
 logger = logging.getLogger(__name__)
@@ -24,389 +22,216 @@ pytestmark = [
     pytest.mark.integration,
 ]
 
-
-def create_mock_message(role: str, content: str, message_id: int = 1) -> Message:
-    """Helper to create mock Message objects."""
-    message = Mock(spec=Message)
-    message.id = message_id
-    message.role = role
-    message.content = content
-    message.content_enhanced_with_rag = content
-    message.summary = None  # Needed for prepare_message_objects_for_llm
-    return message
+CONTEXT = LlmCallContext(purpose="style_guide_validation", chat_id=7, message_id=9)
 
 
-def create_mock_llm_response(text: str) -> AnthropicMessage:
-    """Helper to create mock Anthropic LLM response."""
-    return AnthropicMessage(
-        id="msg_test",
-        content=[TextBlock(text=text, type="text")],
-        model="test-model",
-        role="assistant",
-        stop_reason="end_turn",
-        type="message",
-        usage=Usage(input_tokens=100, output_tokens=50),
+async def check_style_guide(
+    text: str | None = None,
+    document_id: str | None = None,
+    checker_context: str | None = None,
+    document_uuids: list | None = None,
+) -> tuple[str, bool]:
+    """Call the tool's service entry point with sensible defaults."""
+    return await check_style_guide_for_tool(
+        text=text,
+        document_id=document_id,
+        checker_context=checker_context,
+        document_uuids=document_uuids or [],
+        user_id=1,
+        context=CONTEXT,
     )
 
 
-class TestStyleGuideIntegration:
-    """Integration tests for check_content_against_style_guide."""
+class TestStyleGuideAnalysis:
+    """The findings returned to the chat model."""
 
     @pytest.mark.asyncio
+    @patch("app.style_guide.service.check_case_sensitive_rules", return_value=[])
+    @patch("app.style_guide.service.check_case_insensitive_rules", return_value=[])
     @patch("app.style_guide.service.check_llm_validation_rules")
-    @patch("app.style_guide.service.generate_summary_and_fix")
-    async def test_initial_call_full_analysis(
-        self, mock_generate_summary, mock_check_llm_rules
-    ):
-        """Test that initial call runs full analysis."""
-        # Mock no LLM violations
-        mock_check_llm_rules.return_value = []
+    async def test_no_violations_says_so(self, mock_llm_rules, *_):
+        mock_llm_rules.return_value = []
 
-        # Mock summary generation
-        mock_generate_summary.return_value = {
-            "summary": "Found violations in the document.",
-            "fixed_document": "This is the fixed document.",
-        }
+        content, failed = await check_style_guide("This is clean text.")
 
-        content = "The Prime Minister announced today."
-
-        prompt_segment = await check_content_against_style_guide(
-            content=content,
-            messages=None  # No messages = initial call
-        )
-
-        # Should run full analysis
-        mock_check_llm_rules.assert_called_once()
-
-        # Should have formatted prompt segment
-        assert prompt_segment is not None
-        assert "style-guide-analysis" in prompt_segment
+        assert not failed
+        assert content.startswith("<style-guide-check>")
+        assert "<checked>the text passed in</checked>" in content
+        assert "No issues found" in content
+        assert "<issue>" not in content
 
     @pytest.mark.asyncio
-    @patch("app.style_guide.service.determine_style_guide_content_type")
-    async def test_follow_up_routes_to_simple_response(
-        self, mock_content_type_router
-    ):
-        """Test that follow-up modification request returns None (main LLM handles it)."""
-        from app.style_guide.service import StyleGuideContentType
-
-        # Router decides simple response - main LLM should handle
-        mock_content_type_router.return_value = StyleGuideContentType.SIMPLE_RESPONSE
-
-        # Create follow-up conversation
-        messages = [
-            create_mock_message("user", "Check this text", 1),
-            create_mock_message("assistant", "Found violations", 2),
-            create_mock_message("user", "Remove the sort code", 3),
+    @patch("app.style_guide.service.check_case_sensitive_rules", return_value=[])
+    @patch("app.style_guide.service.check_llm_validation_rules")
+    async def test_lists_issues_without_instructions_or_rewrite(self, mock_llm_rules, _):
+        """Findings come back as data: no formatting orders for the chat model and no corrected version."""
+        mock_llm_rules.return_value = [
+            {
+                "rule_id": "rule_002",
+                "rule_title": "A level",
+                "validation_type": "llm",
+                "violation_reason": "Hyphenated",
+                "occurrences": ["A-levels"],
+            }
         ]
 
-        content = "Remove the sort code"
+        content, failed = await check_style_guide("She has three A-levels and an A star.")
 
-        prompt_segment = await check_content_against_style_guide(
-            content=content,
-            messages=messages
-        )
-
-        # Should call router
-        mock_content_type_router.assert_called_once()
-
-        # Should return None - main LLM will handle follow-up naturally
-        assert prompt_segment is None
+        assert not failed
+        assert content.count("<issue>") >= 2  # the LLM finding plus the deterministic "a star" rule
+        assert "<reason>Hyphenated</reason>" in content
+        assert "MUST" not in content
+        assert "corrected" not in content.lower()
 
     @pytest.mark.asyncio
-    @patch("app.style_guide.service.determine_style_guide_content_type")
-    @patch("app.style_guide.service.check_llm_validation_rules")
-    @patch("app.style_guide.service.generate_summary_and_fix")
-    async def test_follow_up_routes_to_full_analysis(
-        self, mock_generate_summary, mock_check_llm_rules, mock_content_type_router
-    ):
-        """Test that follow-up check request routes to full analysis."""
-        from app.style_guide.service import StyleGuideContentType
-
-        # Router decides query text check
-        mock_content_type_router.return_value = StyleGuideContentType.QUERY_TEXT
-
-        # Mock LLM validation - return a violation to trigger summary
-        mock_check_llm_rules.return_value = [{"rule_id": "test", "rule_name": "Test Rule"}]
-
-        # Mock summary generation
-        mock_generate_summary.return_value = {
-            "summary": "New violations found.",
-            "fixed_document": "Fixed text.",
-        }
-
-        # Create follow-up conversation asking for new check
-        messages = [
-            create_mock_message("user", "Check this text", 1),
-            create_mock_message("assistant", "Found violations", 2),
-            create_mock_message("user", "Check this new paragraph", 3),
+    @patch("app.style_guide.service.MAX_ISSUES", 3)
+    @patch("app.style_guide.service.check_case_sensitive_rules", return_value=[])
+    @patch("app.style_guide.service.check_llm_validation_rules", return_value=[])
+    @patch("app.style_guide.service.check_case_insensitive_rules")
+    async def test_caps_issues_keeping_the_most_frequent(self, mock_insensitive, *_):
+        mock_insensitive.return_value = [
+            {"rule_id": f"r{i}", "rule_title": f"Rule {i}", "match_count": i, "sentences": [f"S{i}."]}
+            for i in range(1, 6)
         ]
 
-        content = "Check this new paragraph with violations."
+        content, failed = await check_style_guide("Some text.")
 
-        prompt_segment = await check_content_against_style_guide(
-            content=content,
-            messages=messages
-        )
-
-        # Should call router
-        mock_content_type_router.assert_called_once()
-
-        # Should run full analysis
-        mock_check_llm_rules.assert_called_once()
-
-        # Should generate summary
-        mock_generate_summary.assert_called_once()
-
-        # Should return prompt segment
-        assert prompt_segment is not None
+        assert not failed
+        assert "<result>5 issues found.</result>" in content
+        assert content.count("<issue>") == 3
+        assert "<rule>Rule 5</rule>" in content and "<rule>Rule 3</rule>" in content
+        assert "<rule>Rule 2</rule>" not in content
+        assert "The other 2 were left out" in content
 
     @pytest.mark.asyncio
-    @patch("app.style_guide.service.check_llm_validation_rules")
-    async def test_no_violations_returns_clean_message(self, mock_check_llm_rules):
-        """Test that content with no violations returns appropriate message."""
-        # Mock no violations
-        mock_check_llm_rules.return_value = []
+    @patch("app.style_guide.service.check_case_sensitive_rules", return_value=[])
+    @patch("app.style_guide.service.check_llm_validation_rules", return_value=[])
+    async def test_guidance_given_once_per_rule(self, *_):
+        """Words to avoid gives an issue per word matched; its long guidance should appear only once."""
+        content, failed = await check_style_guide("We will deliver and leverage this.")
 
-        content = "This is clean text."
-
-        prompt_segment = await check_content_against_style_guide(
-            content=content
-        )
-
-        # Should have clean message
-        assert prompt_segment is not None
-        assert "No style guide violations" in prompt_segment
-        assert "GOV.UK style guide principles" in prompt_segment
+        assert not failed
+        words_to_avoid = content.count("<rule>Words to avoid</rule>")
+        assert words_to_avoid >= 2
+        assert content.count("<guidance>") == content.count("<issue>") - words_to_avoid + 1
 
     @pytest.mark.asyncio
     @patch("app.style_guide.service.check_case_insensitive_rules")
-    async def test_error_handling_returns_none(self, mock_check_rules):
-        """Test that errors are handled gracefully."""
-        # Simulate error in checking
+    async def test_errors_are_raised_for_the_loop_to_handle(self, mock_check_rules):
+        """Errors propagate; the agent loop turns them into a generic is_error tool_result."""
         mock_check_rules.side_effect = Exception("Test error")
 
-        content = "Test content"
-
-        prompt_segment = await check_content_against_style_guide(
-            content=content
-        )
-
-        # Should return None on error
-        assert prompt_segment is None
+        with pytest.raises(Exception, match="Test error"):
+            await check_style_guide("Test content")
 
     @pytest.mark.asyncio
     @patch("app.style_guide.service.check_llm_validation_rules")
-    @patch("app.style_guide.service.generate_summary_and_fix")
-    async def test_conversation_context_passed_to_summary(
-        self, mock_generate_summary, mock_check_llm_rules
-    ):
-        """Test that conversation context is passed to summary generation."""
-        # Mock violations found to trigger summary generation
-        mock_check_llm_rules.return_value = [{"rule_id": "test", "rule_name": "Test Rule"}]
+    async def test_llm_validation_failure_is_raised(self, mock_llm_rules):
+        """A failed validation call fails the tool, rather than reporting a partial check as complete."""
+        mock_llm_rules.side_effect = RuntimeError("Bedrock unavailable")
 
-        # Mock summary generation
-        mock_generate_summary.return_value = {
-            "summary": "Summary",
-            "fixed_document": "Fixed",
-        }
-
-        # Create conversation
-        messages = [
-            create_mock_message("user", "Check this", 1),
-        ]
-
-        content = "The Prime Minister said."
-
-        await check_content_against_style_guide(
-            content=content,
-            messages=messages
-        )
-
-        # Verify conversation context was built and passed
-        if mock_generate_summary.called:
-            call_args = mock_generate_summary.call_args
-            conversation_context = call_args[1].get('conversation_context', '')
-
-            # Should have wrapped context
-            assert "<ConversationContext>" in conversation_context
-            assert "Check this" in conversation_context
+        with pytest.raises(RuntimeError, match="Bedrock unavailable"):
+            await check_style_guide("Some text.")
 
 
-class TestStyleGuideEndToEnd:
-    """End-to-end style tests with real rule checking (but mocked LLM calls)."""
+class TestCheckerContextAndLogging:
+    """The validation calls get the assistant's context and the chat's logging context."""
 
     @pytest.mark.asyncio
     @patch("app.style_guide.service.check_llm_validation_rules")
-    @patch("app.style_guide.service.generate_summary_and_fix")
-    async def test_e2e_violation_detection_and_summary(
-        self, mock_generate_summary, mock_check_llm_rules
-    ):
-        """Test that violations trigger summary generation."""
-        # Mock LLM violations to ensure summary is called
-        mock_check_llm_rules.return_value = [{"rule_id": "test", "rule_name": "Test Rule"}]
-        mock_generate_summary.return_value = {
-            "summary": "Fixed job title capitalization.",
-            "fixed_document": "The prime minister announced today.",
-        }
+    async def test_call_context_is_passed_to_validation(self, mock_llm_rules):
+        mock_llm_rules.return_value = []
 
-        # Content to check
-        content = "The Prime Minister and Home Secretary met today."
+        await check_style_guide("Some text.")
 
-        await check_content_against_style_guide(
-            content=content
-        )
+        assert mock_llm_rules.call_args.kwargs["context"] is CONTEXT
 
-        # Should generate summary (violations were detected)
-        mock_generate_summary.assert_called_once()
+    @pytest.mark.asyncio
+    @patch("app.style_guide.service.check_llm_validation_rules")
+    async def test_assistant_context_reaches_the_prompts(self, mock_llm_rules):
+        mock_llm_rules.return_value = []
+
+        await check_style_guide("TEXT BEING CHECKED", checker_context="A page for teachers")
+
+        checker_context = mock_llm_rules.call_args.kwargs["checker_context"]
+        assert "A page for teachers" in checker_context
+        assert "TEXT BEING CHECKED" not in checker_context
+
+    @pytest.mark.asyncio
+    @patch("app.style_guide.service.check_llm_validation_rules")
+    async def test_no_assistant_context_means_no_context_block(self, mock_llm_rules):
+        mock_llm_rules.return_value = []
+
+        await check_style_guide("Some text.")
+
+        assert mock_llm_rules.call_args.kwargs["checker_context"] == ""
 
 
 # ---------------------------------------------------------------------------
 # Document size handling
 # ---------------------------------------------------------------------------
 
+
 class TestStyleGuideDocumentSizeHandling:
     """Tests for the max-document-size guard and chunked processing paths."""
 
     @pytest.mark.asyncio
     @patch("app.style_guide.service.check_llm_validation_rules")
-    async def test_oversized_document_returns_error_segment(self, mock_llm_rules):
-        """A document over STYLE_GUIDE_MAX_DOCUMENT_CHARS returns an error, not a check."""
-        from app.config import STYLE_GUIDE_MAX_DOCUMENT_CHARS
-
-        oversized = "This is a sentence. " * (STYLE_GUIDE_MAX_DOCUMENT_CHARS // 18 + 1)
-
-        prompt_segment = await check_content_against_style_guide(content=oversized)
-
-        # No LLM calls should be made
-        mock_llm_rules.assert_not_called()
-        assert prompt_segment is not None
-        assert "style-guide-analysis" in prompt_segment
-        assert "<error>" in prompt_segment
-
-    @pytest.mark.asyncio
-    @patch("app.style_guide.service.check_llm_validation_rules")
-    async def test_oversized_document_error_mentions_character_limit(self, mock_llm_rules):
-        """The error response mentions the character limit so the user knows how to split."""
+    async def test_oversized_document_returns_error(self, mock_llm_rules):
+        """A document over STYLE_GUIDE_MAX_DOCUMENT_CHARS returns an error naming the limit, not a check."""
         from app.config import STYLE_GUIDE_MAX_DOCUMENT_CHARS
 
         oversized = "x" * (STYLE_GUIDE_MAX_DOCUMENT_CHARS + 500)
 
-        prompt_segment = await check_content_against_style_guide(content=oversized)
+        content, failed = await check_style_guide(oversized)
 
-        assert prompt_segment is not None
-        # The limit should appear somewhere in the response (formatted with commas or not)
-        limit_str = str(STYLE_GUIDE_MAX_DOCUMENT_CHARS)
-        limit_str_commas = f"{STYLE_GUIDE_MAX_DOCUMENT_CHARS:,}"
-        assert limit_str in prompt_segment or limit_str_commas in prompt_segment
+        mock_llm_rules.assert_not_called()
+        assert failed
+        assert "<error>" in content
+        assert f"{STYLE_GUIDE_MAX_DOCUMENT_CHARS:,}" in content
 
     @pytest.mark.asyncio
     @patch("app.style_guide.service.STYLE_GUIDE_MAX_DOCUMENT_CHARS", 500)
     @patch("app.style_guide.service.STYLE_GUIDE_MAX_CHUNK_CHARS", 200)
     @patch("app.style_guide.service._run_llm_validation_on_chunks")
     @patch("app.style_guide.service.check_llm_validation_rules")
-    @patch("app.style_guide.service._generate_chunked_summary_and_fix")
-    async def test_large_document_uses_chunked_llm_path(
-        self, mock_chunked_summary, mock_llm_rules, mock_chunk_llm
-    ):
+    async def test_large_document_uses_chunked_llm_path(self, mock_llm_rules, mock_chunk_llm):
         """Documents over MAX_CHUNK_CHARS (but under MAX_DOCUMENT_CHARS) use chunked LLM path."""
         mock_chunk_llm.return_value = []
-        mock_chunked_summary.return_value = {
-            "summary": "Chunked summary.",
-            "fixed_document": "Corrected text.",
-        }
 
         # ~300 chars: above the patched MAX_CHUNK_CHARS (200) but below MAX_DOCUMENT_CHARS (500)
-        content = "This is a sentence here. " * 12
-
-        prompt_segment = await check_content_against_style_guide(content=content)
+        content, failed = await analyse_content_for_style_guide(
+            "This is a sentence here. " * 12, "the text", checker_context="CONV", context=CONTEXT
+        )
 
         mock_chunk_llm.assert_called_once()
+        assert mock_chunk_llm.call_args.args[2:] == ("CONV", CONTEXT)
         mock_llm_rules.assert_not_called()
-        assert prompt_segment is not None
+        assert not failed
 
     @pytest.mark.asyncio
     @patch("app.style_guide.service.STYLE_GUIDE_MAX_DOCUMENT_CHARS", 5000)
     @patch("app.style_guide.service.STYLE_GUIDE_MAX_CHUNK_CHARS", 1000)
     @patch("app.style_guide.service.check_llm_validation_rules")
-    @patch("app.style_guide.service.generate_summary_and_fix")
-    async def test_small_document_uses_normal_path(
-        self, mock_generate_summary, mock_llm_rules
-    ):
+    async def test_small_document_uses_normal_path(self, mock_llm_rules):
         """Documents under MAX_CHUNK_CHARS use the normal non-chunked LLM path."""
         mock_llm_rules.return_value = []
-        mock_generate_summary.return_value = None
 
-        content = "Short text."  # well under the patched limit
-
-        await check_content_against_style_guide(content=content)
+        await analyse_content_for_style_guide("Short text.", "the text")
 
         mock_llm_rules.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_whitespace_only_content_returns_error(self):
+        content, failed = await check_style_guide("   \n\t  ")
+
+        assert failed
+        assert "<error>There was no text to check.</error>" in content
 
 
 # ---------------------------------------------------------------------------
 # Helper function unit tests
 # ---------------------------------------------------------------------------
-
-class TestFilterViolationsForChunk:
-    """Tests for the _filter_violations_for_chunk helper."""
-
-    def test_includes_violation_with_matching_sentence(self):
-        chunk = "The Prime Minister attended the meeting."
-        violations = [
-            {
-                "rule_id": "rule_001",
-                "sentences": ["The Prime Minister attended the meeting."],
-            },
-            {
-                "rule_id": "rule_002",
-                "sentences": ["The Home Secretary announced."],
-            },
-        ]
-        result = _filter_violations_for_chunk(violations, chunk)
-        assert len(result) == 1
-        assert result[0]["rule_id"] == "rule_001"
-
-    def test_includes_violation_with_matching_occurrence(self):
-        chunk = "Access to Work is the programme."
-        violations = [
-            {"rule_id": "llm_001", "occurrences": ["Access to Work is the programme."]},
-            {"rule_id": "llm_002", "occurrences": ["Elsewhere in the document."]},
-        ]
-        result = _filter_violations_for_chunk(violations, chunk)
-        assert len(result) == 1
-        assert result[0]["rule_id"] == "llm_001"
-
-    def test_includes_violations_with_no_location_info(self):
-        """Structural/doc-level violations with no sentences or occurrences are always kept."""
-        chunk = "Any text here."
-        violations = [{"rule_id": "structural_001"}]
-        result = _filter_violations_for_chunk(violations, chunk)
-        assert len(result) == 1
-
-    def test_returns_empty_when_no_violations_match(self):
-        chunk = "Completely different text."
-        violations = [
-            {"rule_id": "rule_001", "sentences": ["Other text in another chunk."]},
-        ]
-        result = _filter_violations_for_chunk(violations, chunk)
-        assert len(result) == 0
-
-    def test_narrows_sentences_list_to_chunk_only(self):
-        """The returned violation's sentences list contains only those in the chunk."""
-        chunk = "Prime Minister visited today."
-        violations = [
-            {
-                "rule_id": "rule_001",
-                "sentences": [
-                    "Prime Minister visited today.",
-                    "Another sentence not in this chunk.",
-                ],
-            }
-        ]
-        result = _filter_violations_for_chunk(violations, chunk)
-        assert len(result) == 1
-        assert result[0]["sentences"] == ["Prime Minister visited today."]
 
 
 class TestRunLlmValidationOnChunks:
@@ -414,22 +239,25 @@ class TestRunLlmValidationOnChunks:
 
     @pytest.mark.asyncio
     @patch("app.style_guide.service.check_llm_validation_rules")
-    async def test_calls_llm_once_per_chunk(self, mock_llm_rules):
+    async def test_calls_llm_once_per_chunk_with_context(self, mock_llm_rules):
         mock_llm_rules.return_value = []
         chunks = ["chunk one.", "chunk two.", "chunk three."]
-        await _run_llm_validation_on_chunks(chunks, llm_model="test-model")
+        await _run_llm_validation_on_chunks(chunks, llm_model="test-model", checker_context="CONV", context=CONTEXT)
         assert mock_llm_rules.call_count == 3
+        assert all(call.kwargs["checker_context"] == "CONV" for call in mock_llm_rules.call_args_list)
+        assert all(call.kwargs["context"] is CONTEXT for call in mock_llm_rules.call_args_list)
 
     @pytest.mark.asyncio
     @patch("app.style_guide.service.check_llm_validation_rules")
-    async def test_deduplicates_same_rule_across_chunks(self, mock_llm_rules):
-        """A rule triggered in multiple chunks appears only once in the output."""
-        violation = {"rule_id": "rule_001", "rule_title": "Test Rule"}
-        mock_llm_rules.return_value = [violation]
-        chunks = ["chunk one.", "chunk two."]
-        result = await _run_llm_validation_on_chunks(chunks, llm_model="test-model")
+    async def test_merges_same_rule_across_chunks(self, mock_llm_rules):
+        """A rule triggered in multiple chunks appears once, with the occurrences from every chunk."""
+        mock_llm_rules.side_effect = [
+            [{"rule_id": "rule_001", "rule_title": "Test Rule", "occurrences": ["first"]}],
+            [{"rule_id": "rule_001", "rule_title": "Test Rule", "occurrences": ["first", "second"]}],
+        ]
+        result = await _run_llm_validation_on_chunks(["chunk one.", "chunk two."], llm_model="test-model")
         assert len(result) == 1
-        assert result[0]["rule_id"] == "rule_001"
+        assert result[0]["occurrences"] == ["first", "second"]
 
     @pytest.mark.asyncio
     @patch("app.style_guide.service.check_llm_validation_rules")
@@ -439,9 +267,7 @@ class TestRunLlmValidationOnChunks:
             [{"rule_id": "rule_001", "rule_title": "Rule 1"}],
             [{"rule_id": "rule_002", "rule_title": "Rule 2"}],
         ]
-        chunks = ["chunk one.", "chunk two."]
-        result = await _run_llm_validation_on_chunks(chunks, llm_model="test-model")
-        assert len(result) == 2
+        result = await _run_llm_validation_on_chunks(["chunk one.", "chunk two."], llm_model="test-model")
         assert {v["rule_id"] for v in result} == {"rule_001", "rule_002"}
 
     @pytest.mark.asyncio
@@ -452,227 +278,88 @@ class TestRunLlmValidationOnChunks:
         mock_llm_rules.assert_not_called()
 
 
-class TestGenerateChunkedSummaryAndFix:
-    """Tests for the _generate_chunked_summary_and_fix helper."""
-    """Tests for the _generate_chunked_summary_and_fix helper."""
+class TestCheckStyleGuideForToolSources:
+    """What gets checked: the text given, or one attached document."""
 
     @pytest.mark.asyncio
-    @patch("app.style_guide.service.generate_summary_and_fix")
-    async def test_calls_summary_for_each_chunk(self, mock_generate_summary):
-        mock_generate_summary.return_value = {
-            "summary": "A violation.",
-            "fixed_document": "Fixed chunk.",
-        }
-        chunks = ["chunk one.", "chunk two."]
-        violations = [{"rule_id": "rule_001", "sentences": ["chunk one."]}]
+    @patch("app.style_guide.service.analyse_content_for_style_guide")
+    async def test_text_is_checked(self, mock_analyse):
+        mock_analyse.return_value = ("<style-guide-check/>", False)
 
-        result = await _generate_chunked_summary_and_fix(
-            chunks=chunks,
-            all_violations=violations,
-            llm_model="test-model",
-            output_dir=Path("/tmp"),
-        )
+        await check_style_guide("Draft text.")
 
-        assert mock_generate_summary.call_count == 2
-        assert result is not None
+        assert mock_analyse.call_args.args[:2] == ("Draft text.", "the text passed in")
 
     @pytest.mark.asyncio
-    @patch("app.style_guide.service.generate_summary_and_fix")
-    async def test_combines_fixed_documents(self, mock_generate_summary):
-        mock_generate_summary.side_effect = [
-            {"summary": "First summary.", "fixed_document": "Fixed part one."},
-            {"summary": "Second summary.", "fixed_document": "Fixed part two."},
-        ]
-        chunks = ["part one.", "part two."]
+    @patch("app.style_guide.service.analyse_content_for_style_guide")
+    @patch("app.style_guide.service._get_document_text")
+    async def test_document_is_checked(self, mock_get_text, mock_analyse):
+        mock_get_text.return_value = ("a.docx", "Body text")
+        mock_analyse.return_value = ("<style-guide-check/>", False)
+        read_session = AsyncMock()
 
-        result = await _generate_chunked_summary_and_fix(
-            chunks=chunks,
-            all_violations=[],
-            llm_model="test-model",
-            output_dir=Path("/tmp"),
-        )
+        @asynccontextmanager
+        async def short_session():
+            yield read_session
 
-        assert result is not None
-        assert "Fixed part one." in result["fixed_document"]
-        assert "Fixed part two." in result["fixed_document"]
-        assert "First summary." in result["summary"]
-        assert "Second summary." in result["summary"]
+        with patch("app.style_guide.service.async_db_session", short_session):
+            await check_style_guide(document_id="U1", document_uuids=["u1", "u2"])
+
+        mock_get_text.assert_awaited_once_with("u1", 1, read_session)
+        assert mock_analyse.call_args.args[:2] == ("Body text", "the attached document a.docx")
 
     @pytest.mark.asyncio
-    @patch("app.style_guide.service.generate_summary_and_fix")
-    async def test_returns_none_when_all_chunks_produce_no_summary(self, mock_generate_summary):
-        """If every chunk returns None, the combined result is None."""
-        mock_generate_summary.return_value = None
-        chunks = ["chunk one.", "chunk two."]
+    @patch("app.style_guide.service._get_document_text")
+    async def test_document_read_session_is_closed_before_the_validation_calls(self, mock_get_text):
+        events = []
+        mock_get_text.return_value = ("a.docx", "Body text")
 
-        result = await _generate_chunked_summary_and_fix(
-            chunks=chunks,
-            all_violations=[],
-            llm_model="test-model",
-            output_dir=Path("/tmp"),
-        )
+        @asynccontextmanager
+        async def short_session():
+            events.append("read_open")
+            yield AsyncMock()
+            events.append("read_closed")
 
-        assert result is None
+        async def analyse(*args, **kwargs):
+            events.append("validation")
+            return "<style-guide-check/>", False
 
-    @pytest.mark.asyncio
-    @patch("app.style_guide.service.generate_summary_and_fix")
-    async def test_conversation_context_only_in_first_chunk(self, mock_generate_summary):
-        """Conversation context is passed to the first chunk only."""
-        mock_generate_summary.return_value = {
-            "summary": "Summary.",
-            "fixed_document": "Fixed.",
-        }
-        chunks = ["chunk one.", "chunk two.", "chunk three."]
-        context = "<ConversationContext>previous</ConversationContext>"
+        with (
+            patch("app.style_guide.service.async_db_session", short_session),
+            patch("app.style_guide.service.analyse_content_for_style_guide", side_effect=analyse),
+        ):
+            await check_style_guide(document_id="u1", document_uuids=["u1"])
 
-        await _generate_chunked_summary_and_fix(
-            chunks=chunks,
-            all_violations=[],
-            llm_model="test-model",
-            output_dir=Path("/tmp"),
-            conversation_context=context,
-        )
-
-        calls = mock_generate_summary.call_args_list
-        assert calls[0][1]["conversation_context"] == context
-        assert calls[1][1]["conversation_context"] == ""
-        assert calls[2][1]["conversation_context"] == ""
+        assert events == ["read_open", "read_closed", "validation"]
 
     @pytest.mark.asyncio
-    @patch("app.style_guide.service.generate_summary_and_fix")
-    async def test_failed_chunk_preserved_as_original_text(self, mock_generate_summary):
-        """When a chunk's LLM call fails, the original chunk text is used in the output."""
-        mock_generate_summary.side_effect = [
-            None,  # first chunk fails
-            {"summary": "Second summary.", "fixed_document": "Fixed second."},
-        ]
-        chunks = ["original first chunk.", "second chunk."]
+    @patch("app.style_guide.service._get_document_text")
+    async def test_unattached_document_returns_error(self, mock_get_text):
+        content, failed = await check_style_guide(document_id="other", document_uuids=["u1"])
 
-        result = await _generate_chunked_summary_and_fix(
-            chunks=chunks,
-            all_violations=[],
-            llm_model="test-model",
-            output_dir=Path("/tmp"),
-        )
-
-        assert result is not None
-        # First chunk kept as original; second fixed
-        assert "original first chunk." in result["fixed_document"]
-        assert "Fixed second." in result["fixed_document"]
-
-
-# ---------------------------------------------------------------------------
-# Missing content-guard and fallback paths in check_content_against_style_guide
-# ---------------------------------------------------------------------------
-
-class TestStyleGuideContentGuards:
-    """Tests for the whitespace-only guard and summary-failure fallback paths."""
+        mock_get_text.assert_not_called()
+        assert failed
+        assert "Unknown document id: other" in content
+        assert "u1" in content
 
     @pytest.mark.asyncio
-    @patch("app.style_guide.service.determine_style_guide_content_type")
-    async def test_whitespace_only_content_returns_no_content_message(
-        self, mock_content_type_router
-    ):
-        """A content string that is only whitespace returns the 'no content' segment.
+    @patch("app.style_guide.service._get_document_text")
+    async def test_unreadable_document_returns_error(self, mock_get_text):
+        mock_get_text.return_value = None
 
-        After the router decides to check query text the service checks whether
-        ``content_to_check.strip()`` is falsy.  If so it must return a prompt
-        segment containing the XML ``<message>`` tag rather than running any
-        style-guide analysis.
-        """
-        from app.style_guide.service import StyleGuideContentType
+        content, failed = await check_style_guide(document_id="u1", document_uuids=["u1"])
 
-        mock_content_type_router.return_value = StyleGuideContentType.QUERY_TEXT
-
-        prompt_segment = await check_content_against_style_guide(content="   \n\t  ")
-
-        assert prompt_segment is not None
-        assert "style-guide-analysis" in prompt_segment
-        assert "<message>" in prompt_segment
-        # Should NOT contain error (reserved for oversized docs) or violation list
-        assert "<error>" not in prompt_segment
-        assert "<violations>" not in prompt_segment
+        assert failed
+        assert "could not be read" in content
 
     @pytest.mark.asyncio
-    @patch("app.style_guide.service.determine_style_guide_content_type")
-    @patch("app.style_guide.service.check_llm_validation_rules")
-    @patch("app.style_guide.service.generate_summary_and_fix")
-    async def test_summary_failure_falls_back_to_violation_list(
-        self,
-        mock_generate_summary,
-        mock_check_llm_rules,
-        mock_content_type_router,
-    ):
-        """When violations are found but summary generation returns None, a plain
-        numbered violation list is returned rather than failing silently.
+    @patch("app.style_guide.service.analyse_content_for_style_guide")
+    @patch("app.style_guide.service._get_document_text")
+    async def test_document_without_text_returns_error(self, mock_get_text, mock_analyse):
+        mock_get_text.return_value = ("a.docx", "")
 
-        This exercises the ``if not summary_result:`` branch in
-        ``check_content_against_style_guide``.
-        """
-        from app.style_guide.service import StyleGuideContentType
+        content, failed = await check_style_guide(document_id="u1", document_uuids=["u1"])
 
-        mock_content_type_router.return_value = StyleGuideContentType.QUERY_TEXT
-        mock_check_llm_rules.return_value = [
-            {
-                "rule_id": "rule_001",
-                "rule_title": "Test Violation One",
-                "validation_type": "llm",
-                "occurrences": [],
-            }
-        ]
-        # Summary generation fails
-        mock_generate_summary.return_value = None
-
-        # Content that also triggers at least one deterministic check violation
-        prompt_segment = await check_content_against_style_guide(
-            content="The Prime Minister announced today."
-        )
-
-        assert prompt_segment is not None
-        assert "style-guide-analysis" in prompt_segment
-        # The fallback path uses a numbered list inside <violations>
-        assert "<violations>" in prompt_segment
-        # At least the rule title from the mocked violation should appear
-        assert "Test Violation One" in prompt_segment
-        # The structured corrected-document section must NOT be present
-        assert "<corrected_document>" not in prompt_segment
-
-    @pytest.mark.asyncio
-    @patch("app.style_guide.service.determine_style_guide_content_type")
-    @patch("app.style_guide.service._get_document_content_for_style_guide")
-    @patch("app.style_guide.service.check_llm_validation_rules")
-    @patch("app.style_guide.service.generate_summary_and_fix")
-    async def test_documents_retrieval_failure_falls_back_to_query_text(
-        self,
-        mock_generate_summary,
-        mock_check_llm_rules,
-        mock_get_doc_content,
-        mock_content_type_router,
-    ):
-        """DOCUMENTS routing type: when document retrieval returns empty content the
-        service falls back to checking the original query text instead of failing.
-
-        Exercises the ``if not document_content:`` fallback inside the DOCUMENTS
-        branch of ``check_content_against_style_guide``.
-        """
-        from app.style_guide.service import StyleGuideContentType
-
-        mock_content_type_router.return_value = StyleGuideContentType.DOCUMENTS
-        # Document retrieval returns nothing
-        mock_get_doc_content.return_value = ("", [])
-        mock_check_llm_rules.return_value = []
-        mock_generate_summary.return_value = None
-
-        query_text = "Check my document please."
-
-        prompt_segment = await check_content_against_style_guide(
-            content=query_text,
-            document_uuids=["some-uuid"],
-            user_id=42,
-        )
-
-        # The service should fall back gracefully and still return a prompt segment
-        assert prompt_segment is not None
-        assert "style-guide-analysis" in prompt_segment
-        # content_source_info should reflect the fallback to query text
-        assert "Checking the text you provided" in prompt_segment
+        mock_analyse.assert_not_called()
+        assert failed
+        assert "no readable text" in content

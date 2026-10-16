@@ -2,14 +2,13 @@
 End-to-end tests for style guide feature in chat flow.
 Tests the complete integration with chat endpoints and streaming.
 """
+
 import json
 import logging
-from unittest.mock import patch
 
 import pytest
 
 from app.api.endpoints import ENDPOINTS
-from app.style_guide.service import StyleGuideContentType
 
 api = ENDPOINTS()
 logger = logging.getLogger(__name__)
@@ -83,8 +82,11 @@ class TestStyleGuideE2E:
         3. Verifies the response contains style guide analysis
         4. Checks that violations were detected
         """
-        # Create initial message with style guide violations
-        content_with_violations = "The Prime Minister met with the Home Secretary today."
+        # Connect sends a pre-built prompt as "{instruction}\n\n{user input}"
+        content_with_violations = (
+            "Check the provided content against the GOV.UK Style Guide.\n\n"
+            "Content: The Prime Minister met with the Home Secretary today."
+        )
 
         chat_create_payload = {
             "query": content_with_violations,
@@ -128,10 +130,8 @@ class TestStyleGuideE2E:
         logger.info(f"Style guide initial check completed: {len(content)} chars in response")
 
     @pytest.mark.asyncio
-    @patch("app.style_guide.service.determine_style_guide_content_type")
     async def test_style_guide_follow_up_modification_streaming(
         self,
-        mock_router,
         async_client,
         user_id,
         async_http_requester,
@@ -145,12 +145,8 @@ class TestStyleGuideE2E:
         This test:
         1. Creates initial chat with style guide check
         2. Sends follow-up modification request
-        3. Verifies router is called to decide flow
-        4. Checks that response is conversational
+        3. Checks that response is conversational
         """
-        # Mock router to return simple response mode
-        mock_router.return_value = StyleGuideContentType.SIMPLE_RESPONSE
-
         # Create initial chat
         initial_content = "The Prime Minister announced today."
 
@@ -201,9 +197,6 @@ class TestStyleGuideE2E:
         content = message_data.get("content", "")
 
         assert len(content) > 0
-
-        # Router should have been called for follow-up
-        assert mock_router.call_count >= 1
 
         logger.info(f"Follow-up modification completed: {len(content)} chars in response")
 

@@ -1,43 +1,58 @@
 import asyncio
+import io
 import re
-from datetime import datetime
-from decimal import Decimal
 from typing import Any, Dict, List, Tuple
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import aiohttp
 import httpx
-from anthropic.types.message import Message as AnthropicMessage
 from bs4 import BeautifulSoup
-from sqlalchemy import insert, select
+from pdfminer.high_level import extract_pages
+from pdfminer.layout import LTTextContainer
+from pdfminer.pdfpage import PDFPage
+from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bedrock import BedrockHandler, RunMode
-from app.bedrock.tools_use import (
-    DOCUMENT_RELEVANCE_ASSESSMENT,
-    DOWNLOAD_URLS,
-    NAME_USE_GOV_UK_SEARCH_ASSESSMENT,
-    PROPERTY_NAME_USE_GOV_UK_SEARCH_ASSESSMENT,
-    SEARCH_API_SEARCH_TERMS,
-    USE_GOV_UK_SEARCH_ASSESSMENT,
-)
-from app.chat.exceptions import ChatNotFoundError
-from app.chat.schemas import ChatCreateMessageInput, RoleEnum
-from app.chat.utils import prepare_recent_turns_for_decision
+from app.bedrock.call_log import LlmCallContext
+from app.bedrock.tool_schema import ToolResponseError
 from app.config import (
+    GOV_UK_BASE_URL,
+    GOV_UK_HTTP_TIMEOUT_SECONDS,
+    GOV_UK_PAGE_MAX_CHARS,
+    GOV_UK_PDF_MAX_BYTES,
+    GOV_UK_PDF_MAX_CHARS,
+    GOV_UK_SEARCH_DEFAULT_COUNT,
     GOV_UK_SEARCH_MAX_COUNT,
     GOV_UK_SEARCH_MAX_DOCUMENT_CHARS,
+    GOV_UK_SEARCH_MAX_TOOL_DOCUMENTS,
+    GOV_UK_SEARCH_MAX_TOOL_SEARCH_TERMS,
+    GOV_UK_SEARCH_RELEVANCY_BATCH_SIZE,
+    GOV_UK_SEARCH_RELEVANCY_EXCERPT_CHARS,
     LLM_DOCUMENT_RELEVANCY_MODEL,
-    LLM_GOV_UK_SEARCH_FOLLOWUP_ASSESSMENT,
-    LLM_GOVUK_QUERY_GENERATOR,
 )
 from app.database.db_operations import DbOperations
-from app.database.models import Chat, GovUkSearchResult, Message, UseGovUkSearchDecision
-from app.database.table import LLMTable
+from app.database.models import GovUkSearchResult, Message
+from app.database.table import LLMTable, async_db_session
 from app.gov_uk_search.constants import CONTENT_URL
-from app.gov_uk_search.schemas import DocumentBlacklistStatus, NonRagDocument, SearchCost
-from app.gov_uk_search.utils import build_search_url
+from app.gov_uk_search.prompts import (
+    SYSTEM_PROMPT_PAGE_RELEVANCE_EVALUATOR,
+    TOOL_RESULT_NO_RELEVANT_PAGES,
+    TOOL_RESULT_RELEVANCE_CHECK_FAILED,
+    already_used_note,
+    unchecked_note,
+    wrap_search_tool_result,
+)
+from app.gov_uk_search.schemas import DocumentBlacklistStatus, NonRagDocument
+from app.gov_uk_search.tools import PAGE_RELEVANCE, SearchGovUkArgs
+from app.gov_uk_search.utils import build_search_url, normalise_gov_uk_url
 from app.logs.logs_handler import logger
+
+
+def _aiohttp_timeout() -> aiohttp.ClientTimeout:
+    """The total timeout for one GOV.UK API request (aiohttp's own default is 5 minutes)."""
+    return aiohttp.ClientTimeout(total=GOV_UK_HTTP_TIMEOUT_SECONDS)
 
 
 class GovUKContent:
@@ -58,16 +73,21 @@ class GovUKContent:
         url = f"{CONTENT_URL}/{path.lstrip('/')}"
         logger.debug(f"Fetching content from GOV UK Content API: {url}")
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                if response.status == 404:
-                    logger.warning(f"Content not found at path: {path}")
-                    return {}
-                if response.status != 200:
-                    logger.error(f"Error fetching content: {response.status}")
-                    return {}
+        try:
+            async with aiohttp.ClientSession(timeout=_aiohttp_timeout()) as session:
+                async with session.get(url) as response:
+                    if response.status == 404:
+                        logger.warning(f"Content not found at path: {path}")
+                        return {}
+                    if response.status != 200:
+                        logger.error(f"Error fetching content: {response.status}")
+                        return {}
 
-                return await response.json()
+                    return await response.json()
+        except (aiohttp.ClientError, TimeoutError, ValueError) as e:
+            # A timeout, connection error or non-JSON body: return nothing so callers fall back to the page HTML.
+            logger.warning(f"GOV UK Content API request failed for {url}: {e!r}")
+            return {}
 
     @staticmethod
     async def get_content_and_links(path: str) -> Tuple[Dict[str, Any], List[str]]:
@@ -99,19 +119,21 @@ class GovUKContent:
 
 class GovUKSearch:
     @staticmethod
-    async def simple_search(
+    async def search(
         query: str,
-        db_session: AsyncSession,
         count: int = GOV_UK_SEARCH_MAX_COUNT,
         order_by_field_name: str = "",
         descending_order: bool = False,
         start: int = 0,
         fields: list[str] | None = None,
         filter_by_field: list[tuple[str, Any]] | None = None,
-        llm_internal_response_id_query: int | None = None,
-        message_id: int | None = None,
-    ) -> Tuple[Dict[str, Any], int]:
-        get_url = build_search_url(
+    ) -> Dict[str, Any]:
+        """Query the GOV.UK Search API. No database access.
+
+        Returns:
+            The response JSON, or {"results": [], "total": 0} on any error.
+        """
+        url = build_search_url(
             query=query,
             count=count,
             order_by_field_name=order_by_field_name,
@@ -120,159 +142,53 @@ class GovUKSearch:
             fields=fields,
             filter_by_field=filter_by_field,
         )
+        return await GovUKSearch.fetch(url)
 
-        logger.debug(f"GOV UK Search API URL: {get_url}")
+    @staticmethod
+    async def fetch(url: str) -> Dict[str, Any]:
+        """GET a Search API URL built with `build_search_url`. No database access.
 
-        # Add additional validation logging
-        if len(get_url) > 2000:
-            logger.warning(f"GOV UK Search API URL is very long ({len(get_url)} chars): {get_url[:200]}...")
-
-        # Log the query parameters being used
-        logger.debug(
-            f"GOV UK Search API params - query: '{query}', count: {count}, order: "
-            f"'{order_by_field_name}', descending: {descending_order}, fields: {fields}, filters: {filter_by_field}"
-        )
-
-        async with aiohttp.ClientSession() as session:
-            async with session.get(get_url) as response:
-                # Log the response status and headers for debugging
-                logger.debug(f"GOV UK Search API response status: {response.status}")
-                logger.debug(f"GOV UK Search API response headers: {response.headers}")
-
-                # Check if the response is successful
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"GOV UK Search API error: {response.status} - {error_text}")
-                    logger.error(f"Failed GOV UK Search URL request: {get_url}")
-                    # Return an empty response with a default query ID
-                    empty_response = {"results": [], "total": 0}
-
-                    # Log the LLM-generated query passed on to the GOV UK Search API
-                    gov_uk_search_query = await DbOperations.insert_gov_uk_search_query(
-                        db_session=db_session,
-                        llm_internal_response_id=llm_internal_response_id_query,
-                        message_id=message_id,
-                        query=get_url,
-                    )
-
-                    return empty_response, gov_uk_search_query
-
-                # Try to parse the response as JSON
-                try:
-                    response_data = await response.json()
-                    logger.debug(f"GOV UK Search API response: {response_data}")
-                except aiohttp.client_exceptions.ContentTypeError as e:
-                    # If the response is not JSON, log the error and return an empty response
-                    error_text = await response.text()
-                    logger.error(f"GOV UK Search API content type error: {e} - Response text: {error_text[:500]}")
-                    response_data = {"results": [], "total": 0}
-
-                # Log the LLM-generated query passed on to the GOV UK Search API
-                gov_uk_search_query = await DbOperations.insert_gov_uk_search_query(
-                    db_session=db_session,
-                    llm_internal_response_id=llm_internal_response_id_query,
-                    message_id=message_id,
-                    query=get_url,
-                )
-
-                return response_data, gov_uk_search_query
+        Returns:
+            The response JSON, or {"results": [], "total": 0} on any error.
+        """
+        empty_response = {"results": [], "total": 0}
+        if len(url) > 2000:
+            logger.warning(f"GOV UK Search API URL is very long ({len(url)} chars): {url[:200]}...")
+        try:
+            async with aiohttp.ClientSession(timeout=_aiohttp_timeout()) as session:
+                async with session.get(url) as response:
+                    if response.status != 200:
+                        logger.error(f"GOV UK Search API error {response.status} for {url}: {await response.text()}")
+                        return empty_response
+                    return await response.json()
+        except Exception:
+            logger.exception(f"GOV UK Search API request failed for {url}")
+            return empty_response
 
 
-async def get_search_documents(
-    query: str, m_user_id: int, db_session: AsyncSession, messages: list[Message] | None = None
-) -> Tuple[List[Any], List[Dict[str, str]], Dict[str, Any]]:
-    """
-    Get documents using GOV UK Search API.
-
-    Args:
-        query: User query
-        m_user_id: User ID
-        db_session: Database session
-        messages: Prior messages in the chat, used to provide context for query generation
-
-    Returns:
-        Tuple of documents, citations, and cost information
-    """
-    # Get relevant documents using the new streamlined function
-    documents, citations, search_cost = await get_relevant_documents_from_gov_uk_search(
-        role=RoleEnum.user, query=query, m_user_id=m_user_id, db_session=db_session, messages=messages
-    )
-
-    # Process documents and filter blacklisted ones
-    valid_documents = []
-    valid_citations = []
-    blacklisted_documents = []
-
-    for document in documents:
-        if document.status == DocumentBlacklistStatus.BLACKLISTED:
-            blacklisted_documents.append(document)
-            continue
-        valid_documents.append(document)
-        valid_citations.append({"docname": document.title, "docurl": document.url})
-
-    # Create cost information dictionary
-    cost_info = {
-        "total_cost": float(search_cost.total_cost),
-        "search_tool_cost": float(search_cost.search_tool_cost),
-        "relevancy_assessment_cost": float(search_cost.relevancy_assessment_cost),
-        "relevancy_assessment_count": search_cost.relevancy_assessment_count,
-    }
-
-    return valid_documents, valid_citations, cost_info
-
-
-# async def get_web_documents(llm: BedrockHandler, query: str) -> Tuple[List[Any], List[Dict[str, str]]]:
-#     """
-#     Get documents from URLs mentioned in the user query.
-
-#     Args:
-#         llm: LLM for web browsing
-#         query: User query
-
-#     Returns:
-#         Tuple of documents and citations
-#     """
-#     # Extract URLs from user prompt
-#     document_urls = await extract_urls_from_user_prompt(llm=llm, role=RoleEnum.user, query=query)
-#     logger.debug(f"URLs found in the user query: {document_urls}")
-
-#     # Get documents from URLs
-#     documents = await WebBrowserService.get_documents(urls=document_urls)
-
-#     # Process documents and filter blacklisted ones
-#     valid_documents = []
-#     citations = []
-#     blacklisted_documents = []
-
-#     for document in documents:
-#         if document.status == DocumentBlacklistStatus.BLACKLISTED:
-#             blacklisted_documents.append(document)
-#             continue
-#         valid_documents.append(document)
-#         citations.append({"docname": document.title, "docurl": document.url})
-
-#     return valid_documents, citations
-
-
-async def process_documents(documents: List[Any]) -> str:
+async def process_documents(
+    documents: List[Any], max_chars: int | None = None, can_fetch_full_page: bool = True
+) -> str:
     """
     Process documents and wrap them for inclusion in the prompt.
 
     Args:
         documents: List of documents to process
+        max_chars: Longest body to keep per document. Defaults to GOV_UK_SEARCH_MAX_DOCUMENT_CHARS.
+        can_fetch_full_page: Whether to tell the model that get_gov_uk_page returns a truncated page in full.
 
     Returns:
         Formatted document content
     """
+    max_chars = max_chars or GOV_UK_SEARCH_MAX_DOCUMENT_CHARS
     wrapped_document = ""
     for i, document in enumerate(documents, 1):
         body = document.body
-        if len(body) > GOV_UK_SEARCH_MAX_DOCUMENT_CHARS:
-            logger.warning(
-                f"GOV.UK document '{document.title}' is {len(body):,} chars, "
-                f"truncating to {GOV_UK_SEARCH_MAX_DOCUMENT_CHARS:,}"
-            )
-            body = body[:GOV_UK_SEARCH_MAX_DOCUMENT_CHARS] + "... [content truncated]"
+        if len(body) > max_chars:
+            logger.warning(f"GOV.UK document '{document.title}' is {len(body):,} chars, truncating to {max_chars:,}")
+            omitted = len(body) - max_chars
+            hint = " Call get_gov_uk_page to retrieve the full page." if can_fetch_full_page else ""
+            body = f"{body[:max_chars]}... [{omitted:,} characters truncated.{hint}]"
 
         wrapped_document += f"<gov-uk-search-result-{i}>\n"
         wrapped_document += f"<document-title>{document.title}</document-title>\n"
@@ -283,57 +199,6 @@ async def process_documents(documents: List[Any]) -> str:
             wrapped_document += "\n"
 
     return wrapped_document
-
-
-async def enhance_user_prompt(
-    chat: Chat,
-    input_data: ChatCreateMessageInput,
-    m_user_id: int,
-    db_session: AsyncSession,
-    messages: list[Message] | None = None,
-) -> Tuple[str, List[Dict[str, str]]]:
-    """
-    Enhance a user prompt with relevant documents from multiple sources.
-
-    Args:
-        chat: The chat context
-        input_data: User input and configuration
-        m_user_id: User ID for document access
-        messages: Prior messages in the chat, used to provide context for query generation
-
-    Returns:
-        DocumentResult containing wrapped document content and citations
-
-    Raises:
-        ChatNotFoundError: If chat doesn't exist
-        LLMNotFoundError: If required LLM models aren't available
-    """
-    if not chat:
-        raise ChatNotFoundError("Chat not found")
-
-    # Initialize result containers
-    all_documents = []
-    all_citations = []
-    total_cost = 0.0
-
-    # Run document retrieval tasks
-    if input_data.use_gov_uk_search_api:
-        documents, citations, cost_info = await get_search_documents(
-            query=input_data.query, m_user_id=m_user_id, db_session=db_session, messages=messages
-        )
-        all_documents.extend(documents)
-        all_citations.extend(citations)
-        total_cost += cost_info["total_cost"]
-
-    # if input_data.enable_web_browsing:
-    #     web_documents, web_citations = await get_web_documents(llm=llm, query=input_data.query)
-    #     all_documents.extend(web_documents)
-    #     all_citations.extend(web_citations)
-
-    # Process documents for inclusion in prompt
-    wrapped_documents = await process_documents(all_documents)
-
-    return wrapped_documents, all_citations
 
 
 async def extract_content_with_httpx(url: str) -> str:
@@ -348,7 +213,7 @@ async def extract_content_with_httpx(url: str) -> str:
         Extracted content as a string
     """
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=GOV_UK_HTTP_TIMEOUT_SECONDS) as client:
             response = await client.get(url)
             response.raise_for_status()
 
@@ -397,6 +262,76 @@ async def extract_content_with_httpx(url: str) -> str:
         return ""
 
 
+def _attachment_lines(attachments: list[dict] | None) -> list[str]:
+    """Lines listing a page's attachments with their addresses, so the model can read them.
+
+    Args:
+        attachments: The Content API's details.attachments.
+
+    Returns:
+        The lines to add to the page text (empty if there are no readable attachments).
+    """
+    lines = []
+    for attachment in attachments or []:
+        url = attachment.get("url")
+        if not url or attachment.get("attachment_type") == "external":
+            continue
+        if url.startswith("/"):
+            url = f"{GOV_UK_BASE_URL}{url}"
+        kind = "HTML page" if attachment.get("attachment_type") == "html" else attachment.get("content_type") or "file"
+        if kind == "application/pdf":
+            kind = "PDF"
+        pages = attachment.get("number_of_pages")
+        detail = f"{kind}, {pages} pages" if pages else kind
+        lines.append(f"- {attachment.get('title', 'Untitled')} ({detail}): {url}")
+    if not lines:
+        return []
+    return [
+        "Attachments (read HTML pages with get_gov_uk_page and PDFs with get_gov_uk_pdf):",
+        *lines,
+    ]
+
+
+GOV_UK_COLLECTION_MAX_DOCUMENTS = 50
+
+
+def _collection_lines(collection_groups: list[dict] | None, documents: list[dict] | None) -> list[str]:
+    """Lines listing the documents in a document collection with their addresses, so the model can read them.
+
+    Args:
+        collection_groups: The Content API's details.collection_groups (titled groups of document content ids).
+        documents: The Content API's links.documents (title, web_url and dates for each content id).
+
+    Returns:
+        The lines to add to the page text (empty if the page lists no documents). At most
+        GOV_UK_COLLECTION_MAX_DOCUMENTS are listed, in the collection's own order.
+    """
+    by_content_id = {d["content_id"]: d for d in documents or [] if d.get("content_id")}
+    lines = []
+    listed = 0
+    omitted = 0
+    for group in collection_groups or []:
+        group_lines = []
+        for content_id in group.get("documents", []):
+            document = by_content_id.get(content_id)
+            if not document or not document.get("web_url"):
+                continue
+            if listed >= GOV_UK_COLLECTION_MAX_DOCUMENTS:
+                omitted += 1
+                continue
+            published = (document.get("public_updated_at") or "")[:10]
+            detail = f" (updated {published})" if published else ""
+            group_lines.append(f"- {document.get('title', 'Untitled')}{detail}: {document['web_url']}")
+            listed += 1
+        if group_lines:
+            lines.extend([f"## {group.get('title', 'Documents')}", *group_lines])
+    if not lines:
+        return []
+    if omitted:
+        lines.append(f"({omitted} more document(s) in this collection are not listed.)")
+    return ["Documents in this collection (read them with get_gov_uk_page):", *lines]
+
+
 async def extract_content_from_gov_uk(url: str) -> str:
     """
     Extract full content from GOV UK Content API for a given URL.
@@ -437,8 +372,21 @@ async def extract_content_from_gov_uk(url: str) -> str:
             result.append(description)
             result.append("")
 
-        # Get body content
         details = content_data.get("details", {})
+
+        attachment_lines = _attachment_lines(details.get("attachments"))
+        if attachment_lines:
+            result.extend(attachment_lines)
+            result.append("")
+
+        collection_lines = _collection_lines(
+            details.get("collection_groups"), content_data.get("links", {}).get("documents")
+        )
+        if collection_lines:
+            result.extend(collection_lines)
+            result.append("")
+
+        # Get body content
 
         # Handle different content structures
         if "body" in details:
@@ -486,548 +434,9 @@ async def extract_content_from_gov_uk(url: str) -> str:
     return ""
 
 
-async def is_document_relevant(
-    llm: BedrockHandler, role: str, query: str, non_rag_document: str, non_rag_document_title: str
-) -> AnthropicMessage:
-    messages = [
-        {
-            "role": role,
-            "content": (
-                f"<user-query>\n{query}\n</user-query>\n\n"
-                f"<retrieved-gov-uk-page>\n"
-                f"<retrieved-gov-uk-page-title>{non_rag_document_title}</retrieved-gov-uk-page-title>\n"
-                f"<retrieved-gov-uk-page-content>{non_rag_document}</retrieved-gov-uk-page-content>\n"
-                f"</retrieved-gov-uk-page>"
-            ),
-        }
-    ]
-    logger.debug(f"messages: {messages}")
-
-    llm_res = await llm.invoke_async(
-        messages=messages,
-        tools=DOCUMENT_RELEVANCE_ASSESSMENT["tools"],
-    )
-
-    return llm_res
-
-
-async def get_relevant_documents_from_gov_uk_search(
-    role: str, query: str, m_user_id: int, db_session: AsyncSession, messages: list[Message] | None = None
-) -> Tuple[List[NonRagDocument], List[Dict[str, str]], SearchCost]:
-    """
-    Main entry point for the GOV UK Search feature.
-    Returns a tuple of (relevant_documents, citations, search_cost)
-    """
-    search_cost = SearchCost()
-
-    # Step 1: Get search terms and parameters from LLM
-    search_terms, llm_response_id, search_params, llm_cost = await get_search_queries(
-        role, query, db_session, messages=messages
-    )
-    search_cost.search_tool_cost = llm_cost
-    search_cost.total_cost += llm_cost
-
-    logger.debug(f"GOV UK Search - LLM suggested search terms: {search_terms}")
-    logger.debug(f"GOV UK Search - LLM suggested search parameters: {search_params}")
-
-    # Step 2: Execute searches and get relevant documents
-    relevant_documents, irrelevant_documents, relevancy_cost = await execute_searches(
-        role=role,
-        query=query,
-        search_terms=search_terms,
-        search_params=search_params,
-        m_user_id=m_user_id,
-        llm_internal_response_id_query=llm_response_id,
-        db_session=db_session,
-    )
-
-    # Step 3: Generate citations for relevant documents
-    citations = []
-
-    if relevant_documents:
-        citations = [{"title": doc.title, "url": doc.url} for doc in relevant_documents]
-
-    return relevant_documents, citations, search_cost
-
-
-async def get_search_queries(
-    role: str, query: str, db_session: AsyncSession, messages: list[Message] | None = None
-) -> Tuple[List[str], int, Dict[str, Any], Decimal]:
-    """
-    Get search terms and parameters from LLM for GOV UK Search API.
-    Returns (search_terms, llm_response_id, search_params, cost)
-    """
-    # Include recent conversation so the LLM can resolve follow-up references
-    # in the current query (e.g. pronouns, implicit topics, comparative requests)
-    conversation_context = ""
-    if messages:
-        recent = prepare_recent_turns_for_decision(messages, num_turns=10)
-        if recent:
-            turns = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in recent)
-            conversation_context = f"\n\n<recent-conversation>\n{turns}\n</recent-conversation>"
-
-    # Prepare message for the LLM
-    message = [
-        {
-            "role": role,
-            "content": (
-                "Get documents that best match the query below using the GOV UK Search API. "
-                "\n\nYou can provide search terms, date ranges, content purpose filters, and other parameters. "
-                "The GOV UK Search API uses keyword-based search. "
-                "Therefore use a variety of synonyms in your queries to improve your chances of getting a good result. "
-                "\n\nYou can provide an empty query to get results ordered by popularity. "
-                "For example, when asked about recent announcements "
-                "you can use an empty query to get results ordered by popularity. "
-                "Do not create search terms like 'government announcements' or 'recent announcements'. "
-                "\n\nOnly use the tool for searching the GOV.UK Search API. "
-                f"\n\nTodays date is {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}. "
-            )
-            + conversation_context
-            + f"\n\n<user-query>\n{query}\n\n</user-query>",
-        }
-    ]
-
-    llm_obj = LLMTable().get_by_model(model=LLM_GOVUK_QUERY_GENERATOR)
-    llm = BedrockHandler(llm=llm_obj, mode=RunMode.ASYNC)
-
-    logger.debug(f"GOV UK Search - Query generator using model: {LLM_GOVUK_QUERY_GENERATOR}")
-
-    # Ask the LLM to return a call_gov_uk_search_api function call object
-    llm_response = await llm.invoke_async(message, tools=SEARCH_API_SEARCH_TERMS["tools"])
-
-    # Log the raw tool response structure for debugging
-    llm_response_content = llm_response.dict().get("content", [])
-    tool_use_items = [item for item in llm_response_content if item.get("type") == "tool_use"]
-    text_items = [item for item in llm_response_content if item.get("type") == "text"]
-
-    logger.debug(
-        f"GOV UK Search - LLM response stop_reason: {llm_response.dict().get('stop_reason', 'N/A')}, "
-        f"content blocks: {len(llm_response_content)} "
-        f"(tool_use: {len(tool_use_items)}, text: {len(text_items)})"
-    )
-    if text_items:
-        for text_item in text_items:
-            logger.debug(f"GOV UK Search - LLM text response: {text_item.get('text', '')[:200]}")
-    if tool_use_items:
-        for tool_item in tool_use_items:
-            logger.debug(f"GOV UK Search - Tool call: name={tool_item.get('name')}, input={tool_item.get('input')}")
-    else:
-        logger.warning("GOV UK Search - No tool_use blocks found in LLM response!")
-
-    # Record the LLM transaction in the database
-    llm_internal_response = await DbOperations.insert_llm_internal_response_id_query(
-        db_session=db_session,
-        web_browsing_llm=llm.llm,
-        content=llm_response.content[0].text
-        if llm_response.content[0].type == "text"
-        else str(llm_response.content[0].input),
-        tokens_in=llm_response.usage.input_tokens,
-        tokens_out=llm_response.usage.output_tokens,
-        completion_cost=llm_response.usage.input_tokens * llm.llm.input_cost_per_token
-        + llm_response.usage.output_tokens * llm.llm.output_cost_per_token,
-    )
-    llm_response_id = llm_internal_response.id
-
-    # Calculate cost
-    cost = Decimal(
-        llm_response.usage.input_tokens * llm.llm.input_cost_per_token
-        + llm_response.usage.output_tokens * llm.llm.output_cost_per_token
-    )
-
-    # Parse search terms and parameters
-    search_terms = []
-    search_params = {}
-
-    try:
-        llm_response_dict = llm_response.dict()
-        content_items = llm_response_dict.get("content", [])
-
-        for item in content_items:
-            if item.get("type") == "tool_use":
-                input_data = item.get("input", {})
-
-                # Get search terms
-                terms = input_data.get("search_terms", [])
-                search_terms.extend(terms)
-
-                # Extract additional search parameters
-                param_mappings = [
-                    "date_range",
-                    "content_purpose_supergroup",
-                    "content_purpose_subgroup",
-                    "is_political",
-                    "order_by",
-                    "descending_order",
-                    "count",
-                ]
-
-                for param in param_mappings:
-                    if param in input_data:
-                        search_params[param] = input_data[param]
-
-                logger.debug(f"GOV UK Search - Parsed search terms from tool call: {terms}")
-                if search_params:
-                    logger.debug(f"GOV UK Search - Parsed search params from tool call: {search_params}")
-    except Exception as e:
-        logger.exception(f"Error parsing LLM response for search terms: {e}")
-
-    # Deduplicate search terms
-    search_terms = list(set(search_terms))
-
-    logger.debug(f"GOV UK Search - Final deduplicated search terms: {search_terms}")
-
-    return search_terms, llm_response_id, search_params, cost
-
-
-async def execute_searches(
-    role: str,
-    query: str,
-    search_terms: List[str],
-    search_params: Dict[str, Any],
-    m_user_id: int,
-    llm_internal_response_id_query: int,
-    db_session: AsyncSession,
-) -> Tuple[List[NonRagDocument], List[Dict[str, str]], Decimal]:
-    """
-    Execute GOV UK searches and assess document relevancy.
-    Returns (relevant_documents, irrelevant_documents, total_relevancy_cost)
-    """
-    gov_uk_search = GovUKSearch()
-    search_results = await perform_searches(
-        gov_uk_search=gov_uk_search,
-        search_terms=search_terms,
-        search_params=search_params,
-        llm_internal_response_id_query=llm_internal_response_id_query,
-        message_id=m_user_id,
-        db_session=db_session,
-    )
-
-    # Collect all documents from search results
-    all_documents = []
-    seen_links = set()  # Track seen links to deduplicate
-
-    for result_set in search_results:
-        results = result_set[0].get("results", [])
-        query_id = result_set[1].id
-
-        for result in results:
-            title = result.get("title", "")
-            description = result.get("description", "")
-            link = result.get("link", "")
-
-            if not link:
-                continue
-
-            # Hydrate links that don't have the full domain
-            if link.startswith("/"):
-                link = f"https://www.gov.uk{link}"
-            elif not (link.startswith("http://") or link.startswith("https://")):
-                link = f"https://www.gov.uk/{link}"
-
-            # Skip if we've already seen this link
-            if link in seen_links:
-                continue
-
-            seen_links.add(link)
-            all_documents.append(
-                {
-                    "title": title,
-                    "description": description,
-                    "link": link,
-                    "query_id": query_id,
-                    "position": len(all_documents) + 1,  # Use position in list as position in results
-                }
-            )
-
-    # Fetch full content for all documents in parallel before relevancy assessment
-    content_fetch_tasks = []
-
-    if all_documents:
-        async with asyncio.TaskGroup() as tg:
-            for doc in all_documents:
-                content_fetch_tasks.append(
-                    {"doc": doc, "task": tg.create_task(extract_content_from_gov_uk(doc["link"]))}
-                )
-
-        # Add full content to documents
-        for i, task_info in enumerate(content_fetch_tasks):
-            doc = task_info["doc"]
-            full_content = task_info["task"].result()
-
-            # If full content fetch failed, use the description as fallback
-            if not full_content:
-                logger.warning(f"Failed to fetch full content for {doc['link']}, using description as fallback")
-                full_content = doc["description"]
-
-            # Add full content to the document
-            all_documents[i]["full_content"] = full_content
-
-    # Now assess relevancy with full content
-    relevancy_tasks = []
-
-    async with asyncio.TaskGroup() as tg:
-        for doc in all_documents:
-            relevancy_tasks.append(
-                {
-                    "doc": doc,
-                    "task": tg.create_task(
-                        assess_document_relevancy(
-                            role=role,
-                            query=query,
-                            title=doc["title"],
-                            description=doc["description"],
-                            full_content=doc["full_content"],
-                            db_session=db_session,
-                        )
-                    ),
-                }
-            )
-
-    # Process completed tasks
-    relevant_documents = []
-    irrelevant_documents = []
-    total_relevancy_cost = Decimal(0)
-
-    for task_info in relevancy_tasks:
-        doc = task_info["doc"]
-        is_relevant, relevancy_cost, llm_internal_response_id = task_info["task"].result()
-
-        total_relevancy_cost += relevancy_cost
-
-        # Record result in database
-        await record_search_result(
-            m_user_id=m_user_id,
-            llm_internal_response_id=llm_internal_response_id,
-            gov_uk_search_query_id=doc["query_id"],
-            url=doc["link"],
-            content=doc["full_content"],  # Store full content in database
-            is_used=is_relevant,
-            position=doc["position"],
-            db_session=db_session,
-        )
-
-        # Add to relevant or irrelevant documents list
-        if is_relevant:
-            # Create NonRagDocument with full content
-            relevant_documents.append(
-                NonRagDocument(
-                    title=doc["title"], url=doc["link"], body=doc["full_content"], status=DocumentBlacklistStatus.OK
-                )
-            )
-
-        else:
-            irrelevant_documents.append({"title": doc["title"], "url": doc["link"]})
-            logger.debug(f"Document deemed not relevant: {doc['title']}")
-
-    return relevant_documents, irrelevant_documents, total_relevancy_cost
-
-
-async def perform_searches(
-    gov_uk_search: GovUKSearch,
-    search_terms: List[str],
-    search_params: Dict[str, Any],
-    llm_internal_response_id_query: int,
-    message_id: int,
-    db_session: AsyncSession,
-) -> List[Tuple[Dict[str, Any], Any]]:
-    """
-    Perform the actual GOV UK searches based on search terms and parameters.
-    Returns a list of (search_result, query_record) tuples.
-    """
-    search_tasks = []
-    search_queries = []  # Store the query terms in order
-    results = []
-
-    # Prepare filter parameters
-    filter_by_field = []
-    if search_params:
-        # Handle date range filter
-        if "date_range" in search_params:
-            date_range = search_params["date_range"]
-            if "from" in date_range and "to" in date_range:
-                filter_by_field.append(("public_timestamp", f"from:{date_range['from']},to:{date_range['to']}"))
-
-        # Handle content purpose filters
-        for filter_type in ["content_purpose_supergroup", "content_purpose_subgroup"]:
-            if filter_type in search_params:
-                for value in search_params[filter_type]:
-                    filter_by_field.append((filter_type, value))
-
-        # Handle is_political filter
-        if "is_political" in search_params:
-            filter_by_field.append(("is_political", search_params["is_political"]))
-
-    # Set order parameters
-    order_by_field_name = ""
-    descending_order = False
-    if search_params and "order_by" in search_params:
-        order_by_field_name = search_params["order_by"]
-        descending_order = search_params.get("descending_order", False)
-    elif not search_terms or (len(search_terms) == 1 and not search_terms[0]):
-        order_by_field_name = "popularity"
-        descending_order = True
-
-    # Get count parameter or use default
-    count = search_params.get("count", 10) if search_params else 10
-
-    # Standard fields to retrieve
-    fields = ["title", "description", "link", "primary_publishing_organisation", "public_timestamp"]
-
-    # If we have no valid search terms, use empty query which defaults to popularity ordering
-    valid_search_terms = [term for term in search_terms if term]
-    if not valid_search_terms:
-        search_queries.append("empty query")
-        search_task = gov_uk_search.simple_search(
-            query="",
-            db_session=db_session,
-            count=count,
-            llm_internal_response_id_query=llm_internal_response_id_query,
-            message_id=message_id,
-            fields=fields,
-            filter_by_field=filter_by_field,
-            descending_order=True,
-        )
-        search_tasks.append(search_task)
-    else:
-        # Create search tasks for each valid term
-        async with asyncio.TaskGroup() as tg:
-            for term in valid_search_terms:
-                search_queries.append(term)
-                task = tg.create_task(
-                    gov_uk_search.simple_search(
-                        query=term,
-                        db_session=db_session,
-                        count=count,
-                        llm_internal_response_id_query=llm_internal_response_id_query,
-                        message_id=message_id,
-                        fields=fields,
-                        filter_by_field=filter_by_field,
-                        order_by_field_name=order_by_field_name,
-                        descending_order=descending_order,
-                    )
-                )
-                search_tasks.append(task)
-
-    # Execute search tasks
-    for _, task in enumerate(search_tasks):
-        if isinstance(task, asyncio.Task):
-            result = task.result()
-        else:
-            result = await task
-        results.append(result)
-
-    return results
-
-
-async def assess_document_relevancy(
-    role: str, query: str, title: str, description: str, full_content: str, db_session: AsyncSession
-) -> Tuple[bool, Decimal, int]:
-    """
-    Assess if a document is relevant to the query using its full content.
-
-    Args:
-        role: Role for the LLM message
-        query: User query
-        title: Document title
-        description: Document description
-        full_content: Full document content
-
-    Returns:
-        Tuple of (is_relevant, cost, llm_response_id)
-    """
-    # Create a truncated version of the full content to avoid token limits
-    # First use the description as a summary, then add as much of the full content as reasonable
-    content_for_assessment = description
-
-    # If full content is different from description, add a sample of it
-    if full_content != description and len(full_content) > 0:
-        # Limit content to ~6000 characters to avoid excessive token usage
-        max_content_chars = 6000
-        truncated_content = full_content[:max_content_chars]
-        if len(full_content) > max_content_chars:
-            truncated_content += "... [content truncated]"
-
-        content_for_assessment = f"{description}\n\nContent excerpt:\n{truncated_content}"
-
-    # Get LLM for document relevancy assessment
-    llm_obj = LLMTable().get_by_model(LLM_DOCUMENT_RELEVANCY_MODEL)
-    llm = BedrockHandler(llm=llm_obj, mode=RunMode.ASYNC)
-    messages = [
-        {
-            "role": role,
-            "content": (
-                f"<user-query>\n\n{query}\n\n</user-query>\n\n"
-                f"<retrieved-gov-uk-page>\n\n"
-                f"<retrieved-gov-uk-page-title>{title}</retrieved-gov-uk-page-title>\n\n"
-                f"<retrieved-gov-uk-page-content>{content_for_assessment}</retrieved-gov-uk-page-content>\n\n"
-                f"</retrieved-gov-uk-page>"
-            ),
-        }
-    ]
-
-    try:
-        document_relevancy = await llm.invoke_async(
-            messages=messages,
-            tools=DOCUMENT_RELEVANCE_ASSESSMENT["tools"],
-            tool_choice={"type": "tool", "name": "assess_document_relevance"},
-        )
-
-        # Log tool response for relevancy assessment
-        relevancy_content = document_relevancy.dict().get("content", [])
-        relevancy_tool_items = [item for item in relevancy_content if item.get("type") == "tool_use"]
-        if relevancy_tool_items:
-            for tool_item in relevancy_tool_items:
-                logger.debug(
-                    f"GOV UK Search - Relevancy tool call for '{title}': "
-                    f"is_relevant={tool_item.get('input', {}).get('is_relevant')}, "
-                    f"reason={tool_item.get('input', {}).get('reason', 'N/A')}"
-                )
-        else:
-            logger.warning(f"GOV UK Search - No tool_use in relevancy response for '{title}'")
-
-        # Record the LLM transaction
-
-        response = await DbOperations.insert_llm_internal_response_id_query(
-            db_session=db_session,
-            web_browsing_llm=llm.llm,
-            content=document_relevancy.content[0].text
-            if document_relevancy.content[0].type == "text"
-            else str(document_relevancy.content[0].input),
-            tokens_in=document_relevancy.usage.input_tokens,
-            tokens_out=document_relevancy.usage.output_tokens,
-            completion_cost=document_relevancy.usage.input_tokens * llm.llm.input_cost_per_token
-            + document_relevancy.usage.output_tokens * llm.llm.output_cost_per_token,
-        )
-        llm_response_id = response.id
-
-        # Calculate cost
-        cost = Decimal(
-            document_relevancy.usage.input_tokens * llm.llm.input_cost_per_token
-            + document_relevancy.usage.output_tokens * llm.llm.output_cost_per_token
-        )
-
-        # Determine if document is relevant
-        document_relevancy_dict = document_relevancy.dict()
-        content = document_relevancy_dict.get("content", [])
-        is_relevant_values = [
-            item.get("input", {}).get("is_relevant", False) for item in content if item.get("type") == "tool_use"
-        ]
-
-        is_relevant = False
-        if is_relevant_values:
-            value = is_relevant_values[0]
-            is_relevant = value == "True" or value is True
-
-        return is_relevant, cost, llm_response_id
-
-    except Exception as e:
-        logger.exception(f"Error assessing document relevancy: {e}")
-        return False, Decimal(0), 0
-
-
 async def record_search_result(
     m_user_id: int,
-    llm_internal_response_id: int,
+    llm_internal_response_id: int | None,
     gov_uk_search_query_id: int,
     url: str,
     content: str,
@@ -1050,149 +459,404 @@ async def record_search_result(
     )
 
 
-async def extract_urls_from_user_prompt(llm: BedrockHandler, role: str, query: str) -> List[str]:
+# --- search_gov_uk and get_gov_uk_page loop tools ---
+
+GOV_UK_PAGE_TOOL_TAG = "gov-uk-page"
+GOV_UK_PDF_TOOL_TAG = "gov-uk-pdf"
+SEARCH_RESULT_FIELDS = ["title", "description", "link", "primary_publishing_organisation", "public_timestamp"]
+
+
+def _search_filters(args: SearchGovUkArgs) -> list[tuple[str, Any]]:
+    """Build the Search API filter (field, value) pairs for a tool call."""
+    filter_by_field = []
+    if args.date_range:
+        date_filter = f"from:{args.date_range.from_}"
+        if args.date_range.to:
+            date_filter += f",to:{args.date_range.to}"
+        filter_by_field.append(("public_timestamp", date_filter))
+    for value in args.content_purpose_supergroup or []:
+        filter_by_field.append(("content_purpose_supergroup", value))
+    for value in args.content_purpose_subgroup or []:
+        filter_by_field.append(("content_purpose_subgroup", value))
+    if args.is_political is not None:
+        filter_by_field.append(("is_political", args.is_political))
+    return filter_by_field
+
+
+async def _fetch_search_results(url: str) -> list[dict]:
+    """GET a Search API URL. Returns its results, or [] on any error."""
+    return (await GovUKSearch.fetch(url)).get("results", [])
+
+
+def _full_link(link: str) -> str | None:
+    """The canonical GOV.UK URL for a search result's link, or None if it isn't a GOV.UK page.
+
+    The search index includes some external links (e.g. to nhs.uk), which are never fetched or cited.
     """
-    Extract URLs from the user prompt using the LLM.
+    if not link.startswith(("/", "http://", "https://")):
+        link = f"/{link}"
+    try:
+        return normalise_gov_uk_url(link)
+    except ValueError:
+        return None
+
+
+def _relevancy_excerpt(description: str, full_content: str) -> str:
+    """The page text shown to the relevancy check: the description, then a bounded excerpt of the content."""
+    if not full_content or full_content == description:
+        return description
+    truncated = full_content[:GOV_UK_SEARCH_RELEVANCY_EXCERPT_CHARS]
+    if len(full_content) > GOV_UK_SEARCH_RELEVANCY_EXCERPT_CHARS:
+        truncated += "... [content truncated]"
+    return f"{description}\n\nContent excerpt:\n{truncated}"
+
+
+async def _assess_relevancy(
+    handler: BedrockHandler,
+    relevancy_query: str,
+    pages: list[dict],
+    context: LlmCallContext,
+) -> tuple[list[bool | None], int | None]:
+    """Ask the relevancy model whether each of a batch of pages is relevant, in one call.
+
+    Uses no DB session. A page gets None (unchecked) when the call fails, the response doesn't
+    validate, or the response has no evaluation for it.
+
+    Args:
+        handler: The relevancy model's handler.
+        relevancy_query: The user's query, with the search terms used.
+        pages: The pages to assess, each with "title", "description" and "full_content".
+        context: What the call is for, recorded with it.
+
+    Returns:
+        One decision per page, in order (True relevant, False not, None unchecked), and the logged
+        call's llm_internal_response_id (None if the call itself failed).
     """
-    message = [
+    page_blocks = [
+        f"<page-{i}>\n"
+        f"<page-title>{page['title']}</page-title>\n"
+        f"<page-content>{_relevancy_excerpt(page['description'], page['full_content'])}</page-content>\n"
+        f"</page-{i}>"
+        for i, page in enumerate(pages)
+    ]
+    messages = [
         {
-            "role": role,
-            "content": ("Get documents whose URLs are listed in the query. Only use the download_urls tool")
-            + "\n\n"
-            + query,
+            "role": "user",
+            "content": (
+                f"<user-query>\n\n{relevancy_query}\n\n</user-query>\n\n"
+                "<retrieved-gov-uk-pages>\n" + "\n".join(page_blocks) + "\n</retrieved-gov-uk-pages>"
+            ),
         }
     ]
-
-    # Ask the LLM to return a download_urls function call object
     try:
-        llm_response = await llm.invoke_async(message, tools=DOWNLOAD_URLS["tools"])
+        response = await handler.invoke_async(
+            messages,
+            context=context,
+            system=SYSTEM_PROMPT_PAGE_RELEVANCE_EVALUATOR,
+            tools=[PAGE_RELEVANCE.spec],
+            tool_choice=PAGE_RELEVANCE.forced_choice,
+        )
+    except Exception:
+        logger.exception(f"GOV UK Search - relevancy check failed; none of the {len(pages)} pages could be checked")
+        return [None] * len(pages), None
 
-        # Extract URLs from response
-        urls = []
-        llm_response_dict = llm_response.dict()
-        content_items = llm_response_dict.get("content", [])
+    try:
+        evaluations = {e.page_index: e for e in PAGE_RELEVANCE.parse_response(response).evaluations}
+    except (ToolResponseError, ValidationError):
+        logger.error(
+            "GOV UK Search - relevancy response didn't validate "
+            f"(stop_reason={getattr(response, 'stop_reason', None)!r}); "
+            f"none of the {len(pages)} pages could be checked",
+            exc_info=True,
+        )
+        evaluations = {}
 
-        for item in content_items:
-            if item.get("type") == "tool_use":
-                urls.extend(item.get("input", {}).get("urls", []))
+    decisions: list[bool | None] = []
+    for i, page in enumerate(pages):
+        evaluation = evaluations.get(i)
+        decisions.append(evaluation.is_relevant if evaluation else None)
+        logger.debug(
+            f"GOV UK Search - '{page['title']}': is_relevant={decisions[-1]}, "
+            f"reasoning={evaluation.reasoning if evaluation else 'No evaluation returned'}"
+        )
 
-        # Process and deduplicate URLs
-        processed_urls = set()
-        for url in urls:
-            # Hydrate URLs that don't have the full domain
-            if url.startswith("/"):
-                url = f"https://www.gov.uk{url}"
-            elif not (url.startswith("http://") or url.startswith("https://")):
-                # Check if it might be a gov.uk URL (without protocol)
-                if "gov.uk" in url:
-                    url = f"https://{url}"
-                else:
-                    url = f"https://www.gov.uk/{url}"
-
-            processed_urls.add(url)
-
-        return list(processed_urls)
-
-    except Exception as e:
-        logger.exception(f"Error extracting URLs from prompt: {e}")
-        return []
+    missing = sum(d is None for d in decisions)
+    if evaluations and missing:
+        logger.warning(f"GOV UK Search - relevancy check gave no decision for {missing} of {len(pages)} pages")
+    return decisions, response.llm_internal_response_id
 
 
-async def assess_if_next_message_should_use_gov_uk_search(
-    messages: list[Message], new_user_message_content: str, new_user_message_id: int, db_session: AsyncSession
-) -> bool:
-    llm_obj = LLMTable().get_by_model(LLM_GOV_UK_SEARCH_FOLLOWUP_ASSESSMENT)
-    llm = BedrockHandler(llm=llm_obj, mode=RunMode.ASYNC)
-
-    # Fetch all previously retrieved URLs (no page bodies — just enough for the LLM to know what was searched)
-    message_ids = [message.id for message in messages]
-    logger.debug(f"[GOV_UK_ASSESSMENT] Starting: message_id={new_user_message_id}, chat_messages={len(messages)}")
+async def _previously_used_urls(db_session: AsyncSession, message_id: int) -> set[str]:
+    """URLs of GOV.UK pages already used for this message's chat, this turn included."""
+    chat_id = select(Message.chat_id).where(Message.id == message_id).scalar_subquery()
     stmt = (
         select(GovUkSearchResult.url)
-        .where(GovUkSearchResult.message_id.in_(message_ids))
-        .where(GovUkSearchResult.is_used)
+        .join(Message, Message.id == GovUkSearchResult.message_id)
+        .where(Message.chat_id == chat_id, GovUkSearchResult.is_used.is_(True))
         .distinct()
     )
-    result = await db_session.execute(stmt)
-    previous_urls = [row.url for row in result.fetchall()]
-    previous_urls_text = (
-        "\nThe following GOV.UK pages were already retrieved earlier in this conversation:\n"
-        + "\n".join(f"- {url}" for url in previous_urls)
-        if previous_urls
-        else ""
-    )
+    return set((await db_session.execute(stmt)).scalars().all())
 
-    # Keep context bounded to the last 20 messages
-    recent_messages = prepare_recent_turns_for_decision(messages, num_turns=20)
-    recent_messages.append({"role": "user", "content": new_user_message_content})
 
-    total_chars = sum(len(m["content"]) for m in recent_messages)
-    estimated_tokens = int(total_chars / 3.5)
-    logger.debug(
-        f"[GOV_UK_ASSESSMENT] Context built — {len(recent_messages)} formatted messages, "
-        f"~{estimated_tokens} estimated tokens ({total_chars} chars)"
+async def search_gov_uk_for_tool(
+    args: SearchGovUkArgs,
+    user_query: str,
+    message_id: int,
+    llm_internal_response_id: int | None,
+    db_session: AsyncSession,
+) -> tuple[str, list[dict], bool]:
+    """Search GOV.UK with the chat model's own terms and filters, and return the relevant pages.
+
+    Holds no DB connection during the Search API, page fetch and relevance-check calls: with
+    args.remove_duplicates, pages already used earlier in the chat are looked up first in their own
+    short session, and db_session is only used at the end, to record each query
+    (gov_uk_search_query) and each assessed page (gov_uk_search_result).
+
+    Args:
+        args: The model's queries and filters.
+        user_query: This turn's user message text, for the relevancy check.
+        message_id: This turn's user message id.
+        llm_internal_response_id: The logged model call that requested the search.
+        db_session: Session to record analytics in. Not touched until the network calls are done.
+
+    Returns:
+        The tool result text, the citations for the pages returned, and whether the search failed
+        (the relevance check gave no decision for any candidate).
+    """
+    terms = list(dict.fromkeys(args.queries))[:GOV_UK_SEARCH_MAX_TOOL_SEARCH_TERMS]
+    count = min(max(args.count or GOV_UK_SEARCH_DEFAULT_COUNT, 1), GOV_UK_SEARCH_MAX_COUNT)
+    filter_by_field = _search_filters(args)
+    urls = [
+        build_search_url(
+            query=term,
+            count=count,
+            start=0,
+            fields=SEARCH_RESULT_FIELDS,
+            filter_by_field=filter_by_field,
+        )
+        for term in terms
+    ]
+    result_sets = await asyncio.gather(*(_fetch_search_results(url) for url in urls))
+
+    already_used = set()
+    if args.remove_duplicates:
+        async with async_db_session() as read_session:
+            already_used = await _previously_used_urls(read_session, message_id)
+    candidates = []
+    seen_links = set(already_used)
+    skipped = 0
+    for query_index, results in enumerate(result_sets):
+        for result in results:
+            link = result.get("link")
+            if not link:
+                continue
+            link = _full_link(link)
+            if link is None:
+                logger.info(f"GOV UK Search tool: skipping non-GOV.UK result {result.get('link')}")
+                continue
+            if link in already_used:
+                skipped += 1
+            if link in seen_links:
+                continue
+            seen_links.add(link)
+            candidates.append(
+                {
+                    "title": result.get("title", ""),
+                    "description": result.get("description", ""),
+                    "link": link,
+                    "query_index": query_index,
+                    "position": len(candidates) + 1,
+                }
+            )
+
+    contents = await asyncio.gather(
+        *(extract_content_from_gov_uk(c["link"]) for c in candidates), return_exceptions=True
     )
+    for candidate, content in zip(candidates, contents, strict=True):
+        if isinstance(content, BaseException):
+            if not isinstance(content, Exception):
+                raise content
+            logger.warning(f"GOV UK Search tool: couldn't fetch {candidate['link']}: {content!r}")
+            content = ""
+        candidate["full_content"] = content or candidate["description"]
+
+    relevancy_handler = BedrockHandler(llm=LLMTable().get_by_model(LLM_DOCUMENT_RELEVANCY_MODEL), mode=RunMode.ASYNC)
+    relevancy_query = f"{user_query}\n\n(Searched GOV.UK for: {'; '.join(terms)})"
+    context = LlmCallContext(purpose="gov_uk_relevancy", message_id=message_id)
+    batches = [
+        candidates[i : i + GOV_UK_SEARCH_RELEVANCY_BATCH_SIZE]
+        for i in range(0, len(candidates), GOV_UK_SEARCH_RELEVANCY_BATCH_SIZE)
+    ]
+    batch_results = await asyncio.gather(
+        *(_assess_relevancy(relevancy_handler, relevancy_query, batch, context) for batch in batches)
+    )
+    for batch, (decisions, relevancy_response_id) in zip(batches, batch_results, strict=True):
+        for candidate, decision in zip(batch, decisions, strict=True):
+            candidate["decision"] = decision
+            candidate["relevancy_response_id"] = relevancy_response_id
+
+    relevant = [c for c in candidates if c["decision"]][:GOV_UK_SEARCH_MAX_TOOL_DOCUMENTS]
+    used_links = {c["link"] for c in relevant}
+    query_records = [
+        await DbOperations.insert_gov_uk_search_query(
+            db_session=db_session,
+            llm_internal_response_id=llm_internal_response_id,
+            message_id=message_id,
+            query=url,
+        )
+        for url in urls
+    ]
+    for candidate in candidates:
+        await record_search_result(
+            m_user_id=message_id,
+            llm_internal_response_id=candidate["relevancy_response_id"],
+            gov_uk_search_query_id=query_records[candidate["query_index"]].id,
+            url=candidate["link"],
+            content=candidate["full_content"],
+            is_used=candidate["link"] in used_links,
+            position=candidate["position"],
+            db_session=db_session,
+        )
+
+    unchecked = sum(c["decision"] is None for c in candidates)
+    logger.info(
+        f"GOV UK Search tool: {len(candidates)} candidates, {len(relevant)} relevant, {skipped} already used, "
+        f"{unchecked} unchecked"
+    )
+    if candidates and unchecked == len(candidates):
+        return wrap_search_tool_result(TOOL_RESULT_RELEVANCE_CHECK_FAILED), [], True
+
+    notes = []
+    if unchecked:
+        notes.append(unchecked_note(unchecked))
+    if skipped:
+        notes.append(already_used_note(skipped))
+    if not relevant:
+        return wrap_search_tool_result(" ".join([TOOL_RESULT_NO_RELEVANT_PAGES, *notes])), [], False
+
+    documents = [
+        NonRagDocument(title=c["title"], url=c["link"], body=c["full_content"], status=DocumentBlacklistStatus.OK)
+        for c in relevant
+    ]
+    wrapped = await process_documents(documents)
+    citations = [{"docname": c["title"], "docurl": c["link"]} for c in relevant]
+    return wrap_search_tool_result("\n".join([wrapped, *notes])), citations, False
+
+
+async def get_gov_uk_page_for_tool(url: str) -> tuple[str, list[dict], bool]:
+    """Fetch one GOV.UK page in full.
+
+    Args:
+        url: A canonical GOV.UK page URL (see normalise_gov_uk_url).
+
+    Returns:
+        The tool result text, citations for the page (empty if it couldn't be fetched), and whether
+        the fetch failed.
+    """
+    content = await extract_content_from_gov_uk(url)
+    if not content:
+        message = f"Couldn't get {url}. Check that it is the address of a published GOV.UK page."
+        return f"<{GOV_UK_PAGE_TOOL_TAG}>\n{message}\n</{GOV_UK_PAGE_TOOL_TAG}>", [], True
+
+    first_line = content.split("\n", 1)[0]
+    title = first_line.removeprefix("# ").strip() if first_line.startswith("# ") else url
+    page = NonRagDocument(title=title, url=url, body=content, status=DocumentBlacklistStatus.OK)
+    wrapped = await process_documents([page], max_chars=GOV_UK_PAGE_MAX_CHARS, can_fetch_full_page=False)
+    return f"<{GOV_UK_PAGE_TOOL_TAG}>\n{wrapped}\n</{GOV_UK_PAGE_TOOL_TAG}>", [{"docname": title, "docurl": url}], False
+
+
+async def _download_pdf(url: str) -> bytes:
+    """Download a PDF without following redirects, refusing anything over GOV_UK_PDF_MAX_BYTES.
+
+    Raises:
+        httpx.HTTPError: The request failed or the response was an error status.
+        ValueError: The file is too large or isn't a PDF.
+    """
+    async with httpx.AsyncClient(timeout=GOV_UK_HTTP_TIMEOUT_SECONDS, follow_redirects=False) as client:
+        async with client.stream("GET", url) as response:
+            response.raise_for_status()
+            if int(response.headers.get("content-length") or 0) > GOV_UK_PDF_MAX_BYTES:
+                raise ValueError("file is too large")
+            buffer = io.BytesIO()
+            async for chunk in response.aiter_bytes():
+                if buffer.tell() + len(chunk) > GOV_UK_PDF_MAX_BYTES:
+                    raise ValueError("file is too large")
+                buffer.write(chunk)
+    data = buffer.getvalue()
+    if not data.startswith(b"%PDF"):
+        raise ValueError("file is not a PDF")
+    return data
+
+
+def _extract_pdf_pages(data: bytes, start_page: int, max_chars: int) -> tuple[list[tuple[int, str]], int]:
+    """Read a PDF's text page by page from start_page, stopping before max_chars would be exceeded.
+
+    Always returns at least the first page requested (cut to max_chars if it alone is longer).
+
+    Args:
+        data: The PDF file.
+        start_page: The 1-based page to start from.
+        max_chars: Most characters of text to return.
+
+    Returns:
+        (page number, text) pairs, and the PDF's total page count.
+    """
+    total_pages = sum(1 for _ in PDFPage.get_pages(io.BytesIO(data)))
+    pages: list[tuple[int, str]] = []
+    if start_page > total_pages:  # pdfminer treats an empty page_numbers as "every page"
+        return pages, total_pages
+    used = 0
+    layouts = extract_pages(io.BytesIO(data), page_numbers=range(start_page - 1, total_pages))
+    for number, layout in enumerate(layouts, start=start_page):
+        text = "".join(element.get_text() for element in layout if isinstance(element, LTTextContainer)).strip()
+        if pages and used + len(text) > max_chars:
+            break
+        pages.append((number, text[:max_chars]))
+        used += len(text)
+    return pages, total_pages
+
+
+async def get_gov_uk_pdf_for_tool(url: str, start_page: int) -> tuple[str, list[dict], bool]:
+    """Read the text of a PDF attached to a GOV.UK page, a section at a time.
+
+    Args:
+        url: A canonical GOV.UK assets URL (see normalise_gov_uk_asset_url).
+        start_page: The 1-based page to start from.
+
+    Returns:
+        The tool result text, citations for the PDF (empty on failure), and whether it failed.
+    """
+
+    def failure(message: str) -> tuple[str, list[dict], bool]:
+        return f"<{GOV_UK_PDF_TOOL_TAG}>\n{message}\n</{GOV_UK_PDF_TOOL_TAG}>", [], True
 
     try:
-        assessment = await llm.invoke_async(
-            system=(
-                "You have been included mid-conversation. "
-                f"Your task is to use the tool '{NAME_USE_GOV_UK_SEARCH_ASSESSMENT}' "
-                "to determine if searching GOV.UK for additional information is recommended. "
-                "Assume the answer to be 'false' unless the user explicitly "
-                "asks for more search results in the LAST message."
-                "\nPay most attention to the LAST message from the user and what the user wants. "
-                + previous_urls_text
-                + "\n<example-1>If the user's latest query relates to the content that has already been "
-                "retrieved, the answer should be 'false'.</example-1>"
-                "\n<example-2>If the user is asking about content that is unlikely to be available on GOV.UK, "
-                "the answer should be 'false'.</example-2>"
-                "\n<example-3>If the user is asking for additional content from GOV.UK and it was not "
-                "previously retrieved, the answer should be 'true'.</example-3>"
-            ),
-            messages=recent_messages,
-            tools=[USE_GOV_UK_SEARCH_ASSESSMENT],
-            tool_choice={"type": "tool", "name": NAME_USE_GOV_UK_SEARCH_ASSESSMENT},
-        )
-
-        logger.debug(
-            f"[GOV_UK_ASSESSMENT] LLM call complete — {assessment.usage.input_tokens} tokens in, "
-            f"{assessment.usage.output_tokens} tokens out"
-        )
-        tool_blocks = [block for block in assessment.content if block.type == "tool_use"]
-        result = tool_blocks[0].input[PROPERTY_NAME_USE_GOV_UK_SEARCH_ASSESSMENT]
-
-        # Record the LLM transaction
-        llm_internal_response = await DbOperations.insert_llm_internal_response_id_query(
-            db_session=db_session,
-            web_browsing_llm=llm.llm,
-            content=str(result),
-            tokens_in=assessment.usage.input_tokens,
-            tokens_out=assessment.usage.output_tokens,
-            completion_cost=assessment.usage.input_tokens * llm.llm.input_cost_per_token
-            + assessment.usage.output_tokens * llm.llm.output_cost_per_token,
-        )
-
-        # Record the decision
-        stmt = insert(UseGovUkSearchDecision).values(
-            llm_internal_response_id=llm_internal_response.id,
-            message_id=new_user_message_id,
-            decision=result,
-        )
-        await db_session.execute(stmt)
-
-        if result is True:
-            return True
-        if result is False:
-            return False
-        raise ValueError(
-            "Could not parse LLM response. "
-            f"Expected boolean True or False, got '{result}' (type: {type(result).__name__})"
-        )
-
+        data = await _download_pdf(url)
+        pages, total_pages = await asyncio.to_thread(_extract_pdf_pages, data, start_page, GOV_UK_PDF_MAX_CHARS)
+    except httpx.HTTPStatusError as e:
+        logger.warning(f"GOV UK PDF - {url} returned {e.response.status_code}")
+        status = e.response.status_code
+        return failure(f"Couldn't get {url} (HTTP {status}). Use the address listed on the GOV.UK page.")
+    except ValueError as e:
+        return failure(f"Couldn't read {url}: {e}.")
     except Exception:
-        logger.exception(
-            f"GOV.UK search assessment failed for message {new_user_message_id} "
-            f"({len(messages)} messages in chat). Defaulting to False."
-        )
-        return False
+        logger.exception(f"GOV UK PDF - failed to read {url}")
+        return failure(f"Couldn't read {url}. The file may be damaged or password protected.")
+
+    if not pages:
+        return failure(f"{url} has {total_pages} page(s); start_page {start_page} is past the end.")
+    if not any(text for _, text in pages):
+        return failure(f"{url} has no readable text; it may be a scanned image.")
+
+    last_page = pages[-1][0]
+    filename = unquote(urlparse(url).path.rsplit("/", 1)[-1])
+    title = re.sub(r"\s+", " ", filename.removesuffix(".pdf").replace("_", " ")).strip() or url
+    body = "\n\n".join(f"[Page {number}]\n{text}" for number, text in pages)
+    note = f"Showing pages {pages[0][0]}-{last_page} of {total_pages}."
+    if last_page < total_pages:
+        note += f" To continue, call get_gov_uk_pdf with start_page={last_page + 1}."
+    wrapped = (
+        f"<document-title>{title}</document-title>\n<document-url>{url}</document-url>\n"
+        f"<document-body>\n{body}\n</document-body>\n<pages>{note}</pages>"
+    )
+    return f"<{GOV_UK_PDF_TOOL_TAG}>\n{wrapped}\n</{GOV_UK_PDF_TOOL_TAG}>", [{"docname": title, "docurl": url}], False

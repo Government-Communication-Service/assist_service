@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.config import IS_DEV, SMART_TARGETS_SERVICE_DISABLED, URL_HOSTNAME
+from app.config import IS_DEV, REQUEST_TIMEOUT_SECONDS, SMART_TARGETS_SERVICE_DISABLED, URL_HOSTNAME
 from app.database.table import AsyncEngineProvider
 from app.exceptions.handlers import register_exception_handlers
 from app.logs import BUGSNAG_ENABLED, BugsnagLogger
@@ -51,7 +51,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="GCS Assist API", version="0.1.0", lifespan=lifespan)
 app.openapi_version = "3.0.2"
-REQUEST_TIMEOUT_SECS = 120
 
 # Configure CORS
 if IS_DEV:
@@ -86,9 +85,10 @@ async def request_middleware(request: Request, call_next):
 
     # Apply global timeout
     try:
-        response = await asyncio.wait_for(call_next(request), timeout=REQUEST_TIMEOUT_SECS)
+        response = await asyncio.wait_for(call_next(request), timeout=REQUEST_TIMEOUT_SECONDS)
         return response
     except exceptions.TimeoutError:
+        logger.error("Request timed out after %ss: %s %s", REQUEST_TIMEOUT_SECONDS, request.method, request.url.path)
         return JSONResponse(
             status_code=503,
             content={

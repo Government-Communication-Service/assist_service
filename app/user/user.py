@@ -6,7 +6,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile, status
 from fastapi.responses import JSONResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 from unstructured.partition.common import UnsupportedFileFormatError
 from unstructured_pytesseract.pytesseract import TesseractNotFoundError
 
@@ -19,7 +18,7 @@ from app.auth.verify_service import (
 from app.aws_services.s3_service import S3Service
 from app.config import AWS_DEFAULT_REGION, IS_DEV, S3_ERRORDOCS_BUCKET
 from app.database.db_operations import DbOperations
-from app.database.db_session import get_db_session
+from app.database.db_session import DbSession
 from app.database.models import AuthSession, User
 from app.document_upload.constants import PERSONAL_DOCUMENTS_INDEX_NAME
 from app.document_upload.personal_document_parser import (
@@ -39,6 +38,7 @@ from app.user.schemas import (
     UserCreationResponse,
     UserInput,
 )
+from app.user.utils import verify_user_update_access
 
 router = APIRouter()
 
@@ -62,12 +62,15 @@ async def upload_failed_document(file_content: bytes, filename: str, user: User,
     ENDPOINTS.USER,
     response_model=UserCreationResponse,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(verify_auth_token)],
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_user_update_access),
+    ],
 )
 async def update_user(
+    db_session: DbSession,
     user_uuid: Annotated[str, Path()],
     userinput: UserInput,
-    db_session: AsyncSession = Depends(get_db_session),
 ) -> UserCreationResponse:
     """
     Update an existing user's profile information.
@@ -107,8 +110,8 @@ async def update_user(
     dependencies=[Depends(verify_auth_token)],
 )
 async def create_user(
+    db_session: DbSession,
     user: UserCreationInput,
-    db_session: AsyncSession = Depends(get_db_session),
 ) -> UserCreationResponse:
     """
     Create a new user with the provided details.
@@ -141,8 +144,8 @@ async def create_user(
     response_model=ListDocumentResponse,
 )
 async def list_documents(
+    db_session: DbSession,
     user=Depends(verify_and_get_user_from_path_and_header),
-    db_session: AsyncSession = Depends(get_db_session),
 ):
     """
     Return user documents and central documents available for all users.
@@ -190,9 +193,9 @@ async def list_documents(
     response_model=DocumentResponse,
 )
 async def delete_document(
+    db_session: DbSession,
     document_uuid: str,
     user=Depends(verify_and_get_user_from_path_and_header),
-    db_session: AsyncSession = Depends(get_db_session),
 ) -> DocumentResponse:
     """
     Deletes a user's document mappings by marking it as deleted.

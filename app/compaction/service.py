@@ -13,6 +13,7 @@ only comes into effect when the summary is written to the database.
 """
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
@@ -22,6 +23,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bedrock import BedrockHandler, RunMode
+from app.bedrock.call_log import LlmCallContext
 from app.compaction.prompts import CONVERSATION_COMPACTION_INSTRUCTION
 from app.config import settings
 from app.database.models import LLM, ChatCompaction, ChatCompactionLock, Message
@@ -34,28 +36,46 @@ logger = logging.getLogger(__name__)
 _background_tasks: set[asyncio.Task] = set()
 
 
-def estimate_message_tokens(content: str) -> int:
-    """
-    Estimate token count using rule of thumb: 3.5 letters per token.
+def _content_chars(content: str | list[dict]) -> int:
+    """Count the characters in message content, whether a string or a list of content blocks."""
+    if isinstance(content, str):
+        return len(content)
+    total = 0
+    for block in content:
+        block_type = block.get("type")
+        if block_type == "text":
+            total += len(block.get("text", ""))
+        elif block_type == "tool_use":
+            total += len(block.get("name", "")) + len(json.dumps(block.get("input", {})))
+        elif block_type == "tool_result":
+            total += _content_chars(block.get("content") or "")
+        elif block_type == "thinking":
+            total += len(block.get("thinking", ""))
+        else:
+            total += len(json.dumps(block))
+    return total
+
+
+def estimate_message_tokens(content: str | list[dict] | None) -> int:
+    """Estimate token count using rule of thumb: 3.5 letters per token.
 
     Args:
-        content: The message content to estimate tokens for
+        content: Message content: a string, or a list of content blocks (text, tool_use,
+            tool_result, thinking; others are counted by their JSON length).
 
     Returns:
         Estimated token count
     """
     if not content:
         return 0
-    return int(len(content) / 3.5)
+    return int(_content_chars(content) / 3.5)
 
 
 def estimate_prefix_tokens(formatted_messages: list[dict]) -> int:
-    """Estimate the size of an assembled message list, before any cache_control is applied.
+    """Estimate the size of an assembled message list.
 
     Used to decide whether to compact *before* the LLM call happens, so there is no real
-    usage number yet. Must run on the plain-string form of the messages — once
-    `apply_compaction_aware_cache_control` converts an entry's content into a block list,
-    `estimate_message_tokens` can no longer read it as a string.
+    usage number yet.
     """
     return sum(estimate_message_tokens(msg["content"]) for msg in formatted_messages)
 
@@ -139,8 +159,8 @@ async def is_compaction_locked(chat_id: int, db_session: AsyncSession) -> bool:
 async def acquire_compaction_lock(chat_id: int) -> bool:
     """Atomically claim the compaction lock for a chat, across all workers.
 
-    Opens and commits its own short-lived session, deliberately separate from the session
-    the rest of compaction uses for the (potentially long) LLM call.
+    Opens and commits its own short-lived session. No session is held open during the
+    (potentially long) LLM call.
 
     A held lock older than `compaction_lock_stale_after_minutes` is treated as free.
     """
@@ -190,10 +210,11 @@ async def compact_chat(
         chat_id: Chat to compact.
         llm_obj: The LLM the chat call used — the same model must be used, or the cache misses.
         system: The exact system blocks the chat call sent.
-        formatted_messages: The prefix through the last assistant message — everything the
-            chat call sent, minus the current turn's own prompt. Callers derive this as
-            `formatted_messages_for_reply[:-1]`. Reusing it verbatim is what makes this a
-            cache read instead of a full re-read.
+        formatted_messages: The messages before the current turn, with the cache breakpoint on
+            the last assistant message as in the chat call. It may end with a tool_result user
+            message, which the API merges with the compaction instruction. The prefix through
+            the breakpoint is the chat call's verbatim, which is what makes this a cache read
+            instead of a full re-read.
         up_to_message_id: Cut point — the last assistant message's id, the same one the chat
             call's cache breakpoint sits on.
         prefix_tokens: Estimated prefix size that triggered this, recorded for ROI analysis.
@@ -210,41 +231,50 @@ async def compact_chat(
             logger.info(f"Chat {chat_id} is already being compacted, skipping")
             return None
 
+        # Three short steps so no transaction is held open across the (long) LLM call:
+        # read in one session, call the LLM with no session open, write in a new session.
         async with async_db_session() as db_session:
             previous = await get_latest_compaction(chat_id, db_session)
-            if previous is not None and previous.up_to_message_id >= up_to_message_id:
-                logger.warning(
-                    f"Chat {chat_id} is already compacted up to message {previous.up_to_message_id}, "
-                    f"which covers the proposed cut point {up_to_message_id}; skipping"
-                )
-                return None
-
-            messages = [*formatted_messages, {"role": "user", "content": CONVERSATION_COMPACTION_INSTRUCTION}]
-
-            bedrock_handler = BedrockHandler(llm=llm_obj, mode=RunMode.ASYNC)
-            response = await bedrock_handler.invoke_async(
-                messages,
-                db_session=db_session,
-                system=system,
-                max_tokens=settings.compaction_max_summary_tokens,
-                **(extra_api_kwargs or {}),
+        if previous is not None and previous.up_to_message_id >= up_to_message_id:
+            logger.warning(
+                f"Chat {chat_id} is already compacted up to message {previous.up_to_message_id}, "
+                f"which covers the proposed cut point {up_to_message_id}; skipping"
             )
+            return None
 
-            summary = "".join(block.text for block in response.content if getattr(block, "type", None) == "text")
-            if not summary.strip():
-                logger.error(f"Compaction for chat {chat_id} produced an empty summary, discarding")
-                return None
+        messages = [*formatted_messages, {"role": "user", "content": CONVERSATION_COMPACTION_INSTRUCTION}]
 
-            compaction = ChatCompaction(
-                chat_id=chat_id,
-                up_to_message_id=up_to_message_id,
-                summary=summary,
-                prefix_tokens_at_compaction=prefix_tokens,
-                summary_tokens=response.usage.output_tokens,
-                summary_cache_read_tokens=getattr(response.usage, "cache_read_input_tokens", 0),
-                summary_cache_write_tokens=getattr(response.usage, "cache_creation_input_tokens", 0),
-                llm_internal_response_id=response.llm_internal_response_id,
+        bedrock_handler = BedrockHandler(llm=llm_obj, mode=RunMode.ASYNC)
+        response = await bedrock_handler.invoke_async(
+            messages,
+            context=LlmCallContext(purpose="compaction", chat_id=chat_id),
+            system=system,
+            max_tokens=settings.compaction_max_summary_tokens,
+            **(extra_api_kwargs or {}),
+        )
+
+        summary = "".join(block.text for block in response.content if getattr(block, "type", None) == "text")
+        # Tools are still offered to this call (changing tool_choice would invalidate the message
+        # cache), so the model can reply with a preamble plus a tool_use, or run out of tokens.
+        # Either fragment would permanently replace the history, so only a clean end_turn is kept.
+        if response.stop_reason != "end_turn" or not summary.strip():
+            logger.error(
+                f"Compaction for chat {chat_id} did not produce a usable summary "
+                f"(stop_reason={response.stop_reason!r}, summary length {len(summary)} chars), discarding"
             )
+            return None
+
+        compaction = ChatCompaction(
+            chat_id=chat_id,
+            up_to_message_id=up_to_message_id,
+            summary=summary,
+            prefix_tokens_at_compaction=prefix_tokens,
+            summary_tokens=response.usage.output_tokens,
+            summary_cache_read_tokens=getattr(response.usage, "cache_read_input_tokens", 0),
+            summary_cache_write_tokens=getattr(response.usage, "cache_creation_input_tokens", 0),
+            llm_internal_response_id=response.llm_internal_response_id,
+        )
+        async with async_db_session() as db_session:
             db_session.add(compaction)
             # Committed automatically when this block exits cleanly — no explicit commit here.
 

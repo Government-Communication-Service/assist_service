@@ -20,6 +20,7 @@ from app.auth.config import AUTH_TOKEN
 from app.auth.constants import AUTH_TOKEN_ALIAS, SESSION_AUTH_ALIAS, USER_KEY_UUID_ALIAS
 from app.auth.create_auth_session_service import create_auth_session
 from app.auth.verify_service import verify_and_get_user_from_header
+from app.central_guidance.constants import CENTRAL_RAG_INDEX_NAME
 from app.central_guidance.service_index import sync_central_index
 from app.chat.schemas import ChatWithLatestMessage
 from app.database.db_session import get_db_session
@@ -71,6 +72,8 @@ async def db_session(db_session_provider):
 async def sync_central_rag_index(db_session_provider):
     async with db_session_provider() as s:
         await sync_central_index(s)
+    # The sync recreates the index; refresh so its documents are searchable straight away.
+    create_client().indices.refresh(index=CENTRAL_RAG_INDEX_NAME)
 
 
 @pytest.fixture
@@ -97,10 +100,83 @@ def mock_llm_response(mocker):
     return mocker.patch("app.bedrock.bedrock.BedrockHandler.invoke_async", return_value=mock_response)
 
 
+class ScriptedChatModel:
+    """Scripted stand-in for the chat model's streamed calls (`stream_message_events`).
+
+    Each call pops the next response; once the script runs out it answers "Dummy response".
+    Requests are recorded in `requests`.
+    """
+
+    def __init__(self):
+        self.responses: list = []
+        self.requests: list[dict] = []
+
+    def script(self, *responses) -> None:
+        """Queue responses: a string for a text reply, or (name, input) tuples for tool calls."""
+        self.responses.extend(responses)
+
+    @staticmethod
+    def _message(response):
+        from anthropic.types import Message, ToolUseBlock, Usage
+
+        if isinstance(response, str):
+            content, stop_reason = [TextBlock(type="text", text=response)], "end_turn"
+        else:
+            content = [
+                ToolUseBlock(id=f"toolu_{uuid4().hex[:12]}", type="tool_use", name=name, input=tool_input)
+                for name, tool_input in response
+            ]
+            stop_reason = "tool_use"
+        return Message(
+            id="msg_scripted",
+            type="message",
+            role="assistant",
+            model="scripted",
+            content=content,
+            stop_reason=stop_reason,
+            stop_sequence=None,
+            usage=Usage(input_tokens=10, output_tokens=10),
+        )
+
+    async def __call__(self, async_client, *, messages, **kwargs):
+        from app.bedrock.bedrock_stream import StreamDone, StreamStarted, StreamText
+
+        self.requests.append({"messages": messages, **kwargs})
+        message = self._message(self.responses.pop(0) if self.responses else "Dummy response")
+        yield StreamStarted()
+        for block in message.content:
+            if block.type == "text":
+                yield StreamText(block.text)
+        yield StreamDone(message)
+
+
+@pytest.fixture
+def mock_chat_model(mocker) -> ScriptedChatModel:
+    """Replace the chat agent loop's model calls with a scripted fake (see ScriptedChatModel)."""
+    model = ScriptedChatModel()
+    mocker.patch("app.bedrock.bedrock.stream_message_events", model)
+    return model
+
+
 @pytest.fixture(autouse=True)
 def disable_bugsnag(monkeypatch):
     monkeypatch.setattr("app.logs.BUGSNAG_ENABLED", False)
     monkeypatch.setattr("app.logs.DISABLE_BUGSNAG_LOGGING", True)
+
+
+@pytest.fixture(autouse=True)
+def reset_segment_library_cache(monkeypatch):
+    """
+    Start each test with an empty audience segment library and no fetch backoff.
+
+    Any chat request builds the system prompt, which fetches the library. Where that fetch fails,
+    the backoff would otherwise make later tests in the same worker fail without calling their mocks.
+    """
+    from app.audience_segments.services import AudienceSegmentsService
+
+    monkeypatch.setattr(AudienceSegmentsService, "_library", None)
+    monkeypatch.setattr(AudienceSegmentsService, "_library_fetched_at", 0.0)
+    monkeypatch.setattr(AudienceSegmentsService, "_library_retry_after", 0.0)
 
 
 @pytest.fixture(autouse=True)

@@ -3,7 +3,6 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.endpoints import ENDPOINTS
 from app.auth.verify_service import (
@@ -31,7 +30,7 @@ from app.chat.utils import (
     verify_shared_user_uuid_from_body,
     verify_shared_user_uuid_from_path,
 )
-from app.database.db_session import get_db_session
+from app.database.db_session import DbSession
 from app.database.models import User
 
 router = APIRouter()
@@ -56,10 +55,10 @@ def _chat_share_users_response(chat, shared_users: list[dict]) -> ChatShareUsers
     response_model=ChatShareResponse,
 )
 async def update_chat_share(
+    db_session: DbSession,
     chat=Depends(chat_validator),
     share: bool = Body(False, embed=True),
     share_private: Optional[bool] = Body(None, embed=True),
-    db_session: AsyncSession = Depends(get_db_session),
 ) -> ChatShareResponse:
     """
     Update the share status of a chat.
@@ -88,8 +87,8 @@ async def update_chat_share(
     response_model=ChatShareUsersResponse,
 )
 async def get_chat_share_users_list(
+    db_session: DbSession,
     chat=Depends(chat_validator),
-    db_session: AsyncSession = Depends(get_db_session),
 ) -> ChatShareUsersResponse:
     """
     List the users allowed to view this chat's private share. Only the chat owner can call this.
@@ -110,10 +109,10 @@ async def get_chat_share_users_list(
     response_model=ChatShareUsersResponse,
 )
 async def add_chat_share_user_entry(
+    db_session: DbSession,
     user: User = Depends(verify_and_get_user_from_path_and_header),
     chat=Depends(chat_validator),
     shared_user_uuid: UUID = Depends(verify_shared_user_uuid_from_body),
-    db_session: AsyncSession = Depends(get_db_session),
 ) -> ChatShareUsersResponse:
     """
     Add a user (by UUID) to this chat's private share. Only the chat owner can call this.
@@ -148,9 +147,9 @@ async def add_chat_share_user_entry(
     response_model=ChatShareUsersResponse,
 )
 async def remove_chat_share_user_entry(
+    db_session: DbSession,
     chat=Depends(chat_validator),
     shared_user_uuid: UUID = Depends(verify_shared_user_uuid_from_path),
-    db_session: AsyncSession = Depends(get_db_session),
 ) -> ChatShareUsersResponse:
     """
     Remove a user (by UUID) from this chat's private share. Only the chat owner can call this.
@@ -182,10 +181,10 @@ async def remove_chat_share_user_entry(
     response_model=ChatShareUsersResponse,
 )
 async def update_chat_share_user_notified(
+    db_session: DbSession,
     chat=Depends(chat_validator),
     shared_user_uuid: UUID = Depends(verify_shared_user_uuid_from_path),
     notified: bool = Body(..., embed=True),
-    db_session: AsyncSession = Depends(get_db_session),
 ) -> ChatShareUsersResponse:
     """
     Record that a user has been notified that this chat was privately shared with them.

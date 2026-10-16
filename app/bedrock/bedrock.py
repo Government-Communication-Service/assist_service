@@ -1,20 +1,22 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import aclosing
+from dataclasses import replace
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from anthropic.types.message import Message as AnthropicMessage
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.bedrock.bedrock_stream import BedrockStreamInput, bedrock_stream
+from app.bedrock.bedrock_stream import StreamDone, StreamEvent, stream_message_events
 from app.bedrock.bedrock_types import AnthropicBedrockProvider, AsyncAnthropicBedrockProvider
+from app.bedrock.call_log import LlmCallContext, log_llm_call
 from app.bedrock.dev_logging import log_invocation_to_file, log_response_to_file
-from app.bedrock.retry import handle_region_failover_with_retries, with_region_failover_for_streaming
+from app.bedrock.retry import handle_region_failover_with_retries, stream_with_region_failover
 from app.bedrock.schemas import LLMResponse, LLMTransaction
-from app.bedrock.service import calculate_completion_cost, llm_transaction
+from app.bedrock.service import extract_cache_tokens, llm_transaction
 from app.config import AWS_BEDROCK_REGION1, LLM_DEFAULT_MODEL
-from app.database.db_operations import DbOperations
-from app.database.models import LLM, Message
+from app.database.models import LLM
 from app.database.table import LLMTable
 
 logger = logging.getLogger(__name__)
@@ -25,30 +27,6 @@ def llm_get_default_model() -> LLM:
     Get the LLM model object from the database where model name is specified by LLM_DEFAULT_MODEL config parameter.
     """
     return LLMTable().get_by_model(LLM_DEFAULT_MODEL)
-
-
-def _as_token_count(value: Any) -> int:
-    """Coerce a usage field to an int, falling back to 0 for anything unusable.
-
-    These values feed straight into Decimal arithmetic for cost, so a non-numeric value must
-    never propagate — None when caching is off, and test doubles, both land here.
-    """
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return 0
-
-
-def extract_cache_tokens(usage: Any) -> tuple[int, int]:
-    """Pull (cache_read_tokens, cache_write_tokens) out of an Anthropic usage object.
-
-    Both fields are absent or None when caching is not in play, so they are read
-    defensively rather than assumed present.
-    """
-    return (
-        _as_token_count(getattr(usage, "cache_read_input_tokens", None)),
-        _as_token_count(getattr(usage, "cache_creation_input_tokens", None)),
-    )
 
 
 class RunMode(str, Enum):
@@ -208,7 +186,7 @@ class BedrockHandler:
         )
         return llm_transaction(self.llm, payload)
 
-    async def _invoke_async(self, messages, db_session: AsyncSession | None = None, **data) -> BedrockMessage:
+    async def _invoke_async(self, messages, **data) -> AnthropicMessage:
         logger.debug("LLM _invoke_async started")
         config = self.config | data
         logger.debug(f"Messages sent to LLM: {messages}")
@@ -217,37 +195,31 @@ class BedrockHandler:
         response = await self.async_client.messages.create(messages=messages, **config)
         log_response_to_file(response, log_path)
         logger.debug("LLM _invoke_async completed")
-        llm_internal_response_id = None
-        if db_session is not None:
-            cache_read_tokens, cache_write_tokens = extract_cache_tokens(response.usage)
-            llm_internal_response = await DbOperations.insert_llm_internal_response_id_query(
-                db_session=db_session,
-                web_browsing_llm=self.llm,
-                content=str(response.content),
-                tokens_in=response.usage.input_tokens,
-                tokens_out=response.usage.output_tokens,
-                cache_read_tokens=cache_read_tokens,
-                cache_write_tokens=cache_write_tokens,
-                completion_cost=calculate_completion_cost(
-                    self.llm,
-                    response.usage.input_tokens,
-                    response.usage.output_tokens,
-                    cache_read_tokens=cache_read_tokens,
-                    cache_write_tokens=cache_write_tokens,
-                ),
-            )
-            llm_internal_response_id = llm_internal_response.id
-        return BedrockMessage(response, llm_internal_response_id=llm_internal_response_id)
+        return response
 
     @handle_region_failover_with_retries
-    async def invoke_async(self, messages, db_session: AsyncSession | None = None, **data) -> BedrockMessage:
-        """Invoke the Bedrock API asynchronously with region failover.
+    async def _invoke_async_with_failover(self, messages, **data) -> AnthropicMessage:
+        """One Messages API call, retried in the other region on failure. Never touches the DB."""
+        return await self._invoke_async(messages, **data)
 
-        Pass db_session to log the call to the database. The returned BedrockMessage
-        will then have llm_internal_response_id set, which can be used as a foreign key
-        in related tables. Without db_session, llm_internal_response_id is None.
+    async def invoke_async(self, messages, context: LlmCallContext | None = None, **data) -> BedrockMessage:
+        """Invoke the Bedrock API asynchronously with region failover, and log the call.
+
+        If a context is given, the call is logged to llm_internal_response after it succeeds,
+        outside the failover retries and on its own session (see log_llm_call), so a logging
+        failure can neither re-run the model call nor fail it. Without one, it isn't logged.
+
+        Args:
+            messages: Request messages.
+            context: What the call was for, recorded on the log row. Passing one is what turns logging on.
+            **data: Request params overriding the handler config (system, tools, tool_choice...).
+
+        Returns:
+            The response, with llm_internal_response_id set to the log row (None if it wasn't logged).
         """
-        return await self._invoke_async(messages, db_session=db_session, **data)
+        response = await self._invoke_async_with_failover(messages, **data)
+        llm_internal_response_id = await log_llm_call(self.llm, response, context) if context is not None else None
+        return BedrockMessage(response, llm_internal_response_id=llm_internal_response_id)
 
     async def _invoke_async_with_call_cost_details(self, messages, **data) -> LLMTransaction:
         config = self.config | data
@@ -258,39 +230,27 @@ class BedrockHandler:
     async def invoke_async_with_call_cost_details(self, messages, **data) -> LLMTransaction:
         return await self._invoke_async_with_call_cost_details(messages, **data)
 
-    def _stream(
-        self,
-        messages,
-        user_message: Message = None,
-        system: str | list | None = None,
-        parse_data=None,
-        on_complete=None,
-        **data,
-    ):
+    async def stream_events(
+        self, messages: list[dict], context: LlmCallContext | None = None, **data
+    ) -> AsyncIterator[StreamEvent]:
+        """Stream one call as events, with region failover before the first event, and log the call.
+
+        If a context is given, the call is logged when the response completes, on its own session
+        (see log_llm_call), and the row's id is set on the final StreamDone. Without one, it isn't logged.
+
+        Args:
+            messages: Request messages.
+            context: What the call was for, recorded on the log row. Passing one is what turns logging on.
+            **data: Request params overriding the handler config (system, tools, tool_choice...).
+
+        Returns:
+            An async iterator of StreamStarted, StreamText and a final StreamDone.
+        """
         config = self.config | data
-
-        bedrock_stream_input = BedrockStreamInput(
-            async_client=self.async_client,
-            messages=messages,
-            max_tokens=config["max_tokens"],
-            model=config["model"],
-            user_message=user_message,
-            system=system,
-            parse_data=parse_data,
-            on_complete=on_complete,
-            extra_api_kwargs=data,
-        )
-        return bedrock_stream(bedrock_stream_input)
-
-    def stream(
-        self,
-        messages,
-        on_error: Callable[[Exception], str],
-        user_message: Message = None,
-        system: str | list | None = None,
-        parse_data=None,
-        **data,
-    ):
-        return with_region_failover_for_streaming(
-            self, self._stream, on_error, messages, user_message, system, parse_data, **data
-        )
+        events = stream_with_region_failover(self, stream_message_events, messages=messages, **config)
+        async with aclosing(events):
+            async for event in events:
+                if isinstance(event, StreamDone) and context is not None:
+                    llm_internal_response_id = await log_llm_call(self.llm, event.message, context)
+                    event = replace(event, llm_internal_response_id=llm_internal_response_id)
+                yield event

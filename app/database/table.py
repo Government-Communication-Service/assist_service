@@ -9,6 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
 
+from app.config import settings
 from app.database.database_exception import (
     DatabaseError,
     DatabaseExceptionErrorCode,
@@ -20,7 +21,6 @@ from app.database.models import (
     Feedback,
     FeedbackLabel,
     FeedbackScore,
-    LlmInternalResponse,
     Message,
     MessageSearchIndexMapping,
     MessageUserGroupMapping,
@@ -64,8 +64,14 @@ class AsyncEngineProvider:
             AsyncEngine: The singleton instance of the async SQLAlchemy engine.
         """
         if AsyncEngineProvider.__engine is None:
-            # pool_size=0 allow app to create connections as required.
-            AsyncEngineProvider.__engine = create_async_engine(async_database_url(), pool_size=0)
+            AsyncEngineProvider.__engine = create_async_engine(
+                async_database_url(),
+                pool_size=settings.db_pool_size,
+                max_overflow=settings.db_max_overflow,
+                pool_timeout=settings.db_pool_timeout_seconds,
+                pool_recycle=settings.db_pool_recycle_seconds,
+                pool_pre_ping=settings.db_pool_pre_ping,
+            )
         return AsyncEngineProvider.__engine
 
 
@@ -704,11 +710,6 @@ class FeedbackScoreTable(Table):
 class FeedbackLabelTable(Table):
     def __init__(self):
         super().__init__(model=FeedbackLabel, table_name="FeedbackLabel")
-
-
-class LLMInternalResponseTable(Table):
-    def __init__(self):
-        super().__init__(model=LlmInternalResponse, table_name="LlmInternalResponse")
 
 
 class MessageSearchIndexMappingTable(Table):

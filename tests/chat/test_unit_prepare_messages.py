@@ -5,6 +5,7 @@ breakpoint applied on top of this output is tested separately in
 tests/chat/test_unit_cache_control.py.
 """
 
+import copy
 import logging
 from unittest.mock import patch
 
@@ -172,3 +173,118 @@ def test_unsaved_messages_are_never_dropped_by_the_cut_point():
     result = prepare_message_objects_for_llm([message_without_id], compaction=compaction)
 
     assert any("not yet persisted" in str(msg["content"]) for msg in result)
+
+
+# --- agent loop turns (raw_messages) ---
+
+TOOL_TURN = [
+    {
+        "role": "assistant",
+        "content": [
+            {"type": "text", "text": "Let me check."},
+            {"type": "tool_use", "id": "toolu_1", "name": "search_central_guidance", "input": {"query": "q"}},
+        ],
+    },
+    {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "<results/>"}]},
+    {"role": "assistant", "content": [{"type": "text", "text": "The answer."}]},
+]
+
+
+def make_tool_turn_message(message_id: int, raw_messages: list[dict], content: str = "The answer.") -> Message:
+    return Message(id=message_id, role="assistant", content=content, raw_messages=raw_messages)
+
+
+def test_replays_raw_messages_verbatim():
+    messages = [
+        make_message(1, "user", "question"),
+        make_tool_turn_message(2, TOOL_TURN, content="The answer (displayed)."),
+        make_message(3, "user", "follow-up"),
+    ]
+
+    result = prepare_message_objects_for_llm(messages)
+
+    assert result == [{"role": "user", "content": "question"}, *TOOL_TURN, {"role": "user", "content": "follow-up"}]
+
+
+def test_raw_messages_ending_in_tool_results_merge_with_next_user_message():
+    unfinished_turn = TOOL_TURN[:2]
+    messages = [
+        make_message(1, "user", "question"),
+        make_tool_turn_message(2, unfinished_turn, content=""),
+        make_message(3, "user", "follow-up"),
+    ]
+
+    result = prepare_message_objects_for_llm(messages)
+
+    assert result[-1] == {
+        "role": "user",
+        "content": [*TOOL_TURN[1]["content"], {"type": "text", "text": "follow-up"}],
+    }
+    assert len(result) == 3
+
+
+def test_replay_does_not_mutate_stored_raw_messages():
+    stored = copy.deepcopy(TOOL_TURN[:2])
+    messages = [
+        make_message(1, "user", "question"),
+        make_tool_turn_message(2, stored, content=""),
+        make_message(3, "user", "follow-up"),
+    ]
+
+    prepare_message_objects_for_llm(messages)
+
+    assert stored == TOOL_TURN[:2]
+
+
+def test_assistant_row_with_empty_raw_messages_uses_content():
+    messages = [make_message(1, "user", "question"), make_tool_turn_message(2, [], content="plain answer")]
+
+    result = prepare_message_objects_for_llm(messages)
+
+    assert result[-1] == {"role": "assistant", "content": "plain answer"}
+
+
+def make_user_context_message(message_id: int, context_text: str, query: str) -> Message:
+    return Message(
+        id=message_id,
+        role="user",
+        content=query,
+        raw_messages=[
+            {"role": "user", "content": [{"type": "text", "text": context_text}, {"type": "text", "text": query}]}
+        ],
+    )
+
+
+def test_user_row_raw_messages_replay_the_context_block_verbatim():
+    """A stored turn's context block (date, tool availability, ...) replays as sent, not
+    regenerated: replaying the current state instead would break the cached prefix."""
+    messages = [
+        make_user_context_message(1, "<context>\nstate as it was\n</context>", "question"),
+        make_message(2, "assistant", "answer"),
+    ]
+
+    result = prepare_message_objects_for_llm(messages)
+
+    assert result[0] == {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "<context>\nstate as it was\n</context>"},
+            {"type": "text", "text": "question"},
+        ],
+    }
+
+
+def test_compaction_replaces_tool_turns_it_covers():
+    messages = [
+        make_message(1, "user", "question"),
+        make_tool_turn_message(2, TOOL_TURN),
+        make_message(3, "user", "follow-up"),
+    ]
+
+    with patch.object(settings, "compaction_use_conversation_summary", True):
+        result = prepare_message_objects_for_llm(messages, compaction=make_compaction(up_to_message_id=2))
+
+    assert len(result) == 1
+    assert result[0]["role"] == "user"
+    assert "follow-up" in result[0]["content"]
+    assert "toolu_1" not in str(result)

@@ -4,7 +4,7 @@ from app.api.endpoints import ENDPOINTS
 from app.auth.constants import SESSION_AUTH_ALIAS
 from app.auth.create_auth_session_service import create_auth_session
 from app.auth.verify_service import verify_and_get_user_from_header, verify_auth_token
-from app.database.db_session import get_db_session
+from app.database.db_session import DbSession
 
 router = APIRouter()
 
@@ -14,8 +14,8 @@ router = APIRouter()
     dependencies=[Depends(verify_auth_token)],
 )
 async def create_auth_session_endpoint(
+    db_session: DbSession,
     user=Depends(verify_and_get_user_from_header),
-    db_session=Depends(get_db_session),
 ):
     """
     Generates the session item in the database that will be provided as a header token to validate

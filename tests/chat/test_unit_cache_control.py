@@ -154,3 +154,63 @@ def test_marks_a_real_reply_after_compaction_not_the_summary():
 
     assert result[-1]["role"] == "assistant"
     assert isinstance(result[-1]["content"], list)
+
+
+# --- block-list content (agent loop turns) ---
+
+
+def _long_prefix() -> list[dict]:
+    return [{"role": "user", "content": LONG_CONTENT}]
+
+
+def test_marks_last_block_of_list_content_without_mutating_it():
+    blocks = [
+        {"type": "text", "text": "Let me check."},
+        {"type": "tool_use", "id": "toolu_1", "name": "search", "input": {"query": "q"}},
+    ]
+    original = [dict(b) for b in blocks]
+
+    result = apply_compaction_aware_cache_control(
+        [*_long_prefix(), {"role": "assistant", "content": blocks}], should_compact=False
+    )
+
+    assert result[-1]["content"] == [original[0], {**original[1], "cache_control": {"type": "ephemeral"}}]
+    assert blocks == original
+
+
+def test_marks_tool_result_block():
+    tool_results = [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "<results/>"}]
+
+    result = apply_compaction_aware_cache_control(
+        [*_long_prefix(), {"role": "assistant", "content": "a"}, {"role": "user", "content": tool_results}],
+        should_compact=False,
+    )
+
+    assert result[-1]["content"] == [{**tool_results[0], "cache_control": {"type": "ephemeral"}}]
+
+
+def test_skips_trailing_thinking_block():
+    blocks = [{"type": "text", "text": "answer"}, {"type": "thinking", "thinking": "hmm", "signature": "s"}]
+
+    result = apply_compaction_aware_cache_control(
+        [*_long_prefix(), {"role": "assistant", "content": blocks}], should_compact=False
+    )
+
+    assert result[-1]["content"] == [{**blocks[0], "cache_control": {"type": "ephemeral"}}, blocks[1]]
+
+
+def test_unchanged_when_no_block_accepts_a_marker():
+    messages = [*_long_prefix(), {"role": "assistant", "content": [{"type": "redacted_thinking", "data": "x"}]}]
+
+    assert apply_compaction_aware_cache_control(messages, should_compact=False) == messages
+
+
+def test_list_content_counts_towards_minimum_prefix():
+    messages = [
+        {"role": "user", "content": "short"},
+        {"role": "assistant", "content": [{"type": "text", "text": LONG_CONTENT}]},
+    ]
+
+    result = apply_compaction_aware_cache_control(messages, should_compact=False)
+
+    assert result[-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}

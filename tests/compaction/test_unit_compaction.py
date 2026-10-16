@@ -38,6 +38,33 @@ def test_estimate_message_tokens_longer_content():
     assert result == 19
 
 
+def test_estimate_message_tokens_block_content():
+    content = [
+        {"type": "text", "text": "a" * 70},
+        {"type": "tool_use", "id": "toolu_1", "name": "search", "input": {"query": "q"}},
+        {"type": "thinking", "thinking": "b" * 35, "signature": "sig"},
+    ]
+    # 70 + len("search") + len('{"query": "q"}') + 35 = 70 + 6 + 14 + 35 = 125 chars -> 35 tokens
+    assert estimate_message_tokens(content) == 35
+
+
+def test_estimate_message_tokens_tool_result_string_and_block_content():
+    content = [
+        {"type": "tool_result", "tool_use_id": "toolu_1", "content": "a" * 35},
+        {"type": "tool_result", "tool_use_id": "toolu_2", "content": [{"type": "text", "text": "b" * 35}]},
+        {"type": "tool_result", "tool_use_id": "toolu_3", "is_error": True},
+    ]
+    assert estimate_message_tokens(content) == 20
+
+
+def test_estimate_prefix_tokens_mixed_string_and_block_messages():
+    messages = [
+        {"role": "user", "content": "a" * 35},
+        {"role": "assistant", "content": [{"type": "text", "text": "b" * 35}]},
+    ]
+    assert estimate_prefix_tokens(messages) == 20
+
+
 def test_estimate_message_tokens_various_lengths():
     test_cases = [
         ("", 0),

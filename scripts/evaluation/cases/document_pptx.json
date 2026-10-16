@@ -1,0 +1,114 @@
+{
+  "scenario": "document_pptx",
+  "cases": [
+    {
+      "id": "document_pptx-001",
+      "skip": "the test environment cannot process this file",
+      "needed_flags": [],
+      "turns": [
+        {
+          "query": "I've uploaded the behavioural science analysis of the Healthy Choices creative routes. What are the four creative routes it assesses?",
+          "add_documents": [
+            "Healthy Choices Campaign Creative Route Analysis.pptx"
+          ],
+          "expected_answer": "Take it from Kenny; Rediscover the Healthier You; Let's Do This; and For Healthier Humans."
+        },
+        {
+          "query": "What does the deck recommend overall? Which route currently has the most behavioural 'ingredients'?",
+          "expected_answer": "Take it from Kenny currently has the most behavioural 'ingredients', because it offers a 'world' and third-person perspective in which different characters model habits and take actions to improve their health. Take it from Kenny, Let's Do This and Rediscover the Healthier You all have the core foundations needed and can be optimised in further creative development (For Healthier Humans is not in that group)."
+        },
+        {
+          "query": "The slide on the current behavioural journey is a diagram. What three phases is it split into, and what is the final step of the journey?",
+          "expected_answer": "From the diagram image on that slide (not slide text): the journey is split into three phases, Marketing, Digital and Behaviour change. The final step is 'Target audience trial one or more positive changes to their health'."
+        }
+      ]
+    },
+    {
+      "id": "document_pptx-002",
+      "needed_flags": [],
+      "turns": [
+        {
+          "query": "This is a YouGov profile of parents of pre-school children. How big is the audience, and what is the most common type of area they live in?",
+          "add_documents": [
+            "pre-school-parents.pptx"
+          ],
+          "expected_answer": "3.4m adults aged 18+ (GB adults with a child aged 0-3 in the household). The most common type of area is a town (35%, index 101), ahead of a city (28%) and suburb (24%)."
+        },
+        {
+          "query": "What share of them agree with 'Failing my children is one of my biggest concerns', and what is the most motivating factor for them?",
+          "expected_answer": "86% agree (index 175). The most motivating factor is 'My family' at 48% (index 120)."
+        },
+        {
+          "query": "I've added another deck. When was that research done, who was it prepared for, and what traits set Culture Cravers apart from other segments?",
+          "add_documents": [
+            "Additional_Slides_Culture_Cravers.pptx"
+          ],
+          "expected_answer": "July 2025, prepared for the Cabinet Office (Greater Together USA Campaign Research: A Focus on Culture Cravers). Culture Cravers have more in-depth knowledge of the UK; first and foremost seek authenticity; are most likely to appreciate diversity; and are more likely to be repeat visitors."
+        }
+      ]
+    },
+    {
+      "id": "document_pptx-003",
+      "needed_flags": [],
+      "turns": [
+        {
+          "query": "I've uploaded a YouGov profile of parents of pre-school children. On the media slide, Daily Mail appears in two different newspaper panels. What are the percentage and index in each, and which panel is which?",
+          "add_documents": [
+            "pre-school-parents.pptx"
+          ],
+          "expected_answer": "In 'Newspaper websites visited last 30 days' (top right) Daily Mail is 8% (index 131). In 'Newspaper read last 12 months' (below it) Daily Mail is 10% (index 89)."
+        },
+        {
+          "query": "Men's Health is in both the print and digital magazine panels. How do the two figures compare?",
+          "expected_answer": "Print magazine (ever read): 9%, index 391. Digital magazine (ever read): 8%, index 426. So slightly more have read it in print, but it over-indexes more strongly for digital."
+        },
+        {
+          "query": "Disney also appears twice on that slide. What is the figure for each, and what is each one measuring?",
+          "expected_answer": "Disney + appears under 'TV on demand and catch up used last 30 days' at 42% (index 192). Disney appears under 'TV channels watched live' at 6% (index 130)."
+        }
+      ]
+    },
+    {
+      "id": "document_pptx-004",
+      "needed_flags": [],
+      "turns": [
+        {
+          "query": "I've uploaded a YouGov profile of parents of pre-school children. On the first data slide, the top-left shows a gender split with a figure for each. What share of the audience are women, and what share men?",
+          "add_documents": [
+            "pre-school-parents.pptx"
+          ],
+          "expected_answer": "57% women (index 112) and 43% men (index 88). The slide shows two person icons with no text labels: the left (male) icon sits above 43% i88 and the right (female) icon above 57% i112."
+        },
+        {
+          "query": "On the media slide, in the 'Social networks used last 30 days' panel, which network has the highest share, and what is it? The panel shows logos rather than names.",
+          "expected_answer": "YouTube, at 62% (index 133), just ahead of Instagram at 61% (index 139). The panel lists the networks as logos in the order TikTok, Snapchat, Pinterest, Instagram, LinkedIn, YouTube (38%, 25%, 16%, 61%, 24%, 62%), so the answer depends on matching the last row's logo."
+        },
+        {
+          "query": "How does TikTok's share in that panel compare with its share in the panel next to it, about using social networks to keep up to date with news?",
+          "expected_answer": "38% (index 167) use TikTok in the last 30 days, against 13% (index 199) who use it to keep up to date with news."
+        }
+      ]
+    },
+    {
+      "id": "document_pptx-005",
+      "needed_flags": [],
+      "turns": [
+        {
+          "query": "I've uploaded a short version of the behavioural science analysis of the Healthy Choices creative routes. On the 'Four creative routes at a glance' slide, which route is shown furthest left and which furthest right?",
+          "add_documents": [
+            "Healthy Choices Campaign Creative Route Analysis-short.pptx"
+          ],
+          "expected_answer": "Furthest left is 'Let's Do This' and furthest right is 'For Healthier Humans'. The full left-to-right order is Let's Do This, Rediscover Healthier You, Take it from Kenny, For Healthier Humans."
+        },
+        {
+          "query": "On the 'Take it from Kenny – Analysis' slide there is a table. What does the third column's header say, and what is the finding underneath it?",
+          "expected_answer": "The third column is 'Builds self-belief that they are capable of making healthy changes'. Underneath: the approach lends itself well to showing the characters taking small manageable steps to build new habits which improve their health, and the script line 'discover what small changes you can do' is a good, direct message that supports self-efficacy."
+        },
+        {
+          "query": "What does the last column of that table say about possible unintended consequences, and which of the assessment criteria on the earlier criteria slide does the fourth column correspond to?",
+          "expected_answer": "The last column ('Possible unintended consequences (testing can unpick these)') says the home setting is an opportunity but can be a risk if further opportunities are not built on, e.g. signals around 'health' like the headband and greenery. The fourth column ('Empowers, motivates and enables audiences to take initial steps') corresponds to criterion 4 on the criteria slide, 'Empowers, motivates and enables audiences to take initial steps'."
+        }
+      ]
+    }
+  ]
+}

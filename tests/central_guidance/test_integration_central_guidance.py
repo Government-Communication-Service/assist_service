@@ -1,11 +1,14 @@
-from unittest.mock import MagicMock, patch
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from anthropic.types import ToolUseBlock
 from sqlalchemy.future import select
 
-from app.central_guidance.service_rag import search_central_guidance
-from app.chat.schemas import ChatCreateMessageInput
-from app.chat.service import chat_create_message
+from app.central_guidance.prompts import TOOL_RESULT_RELEVANCE_CHECK_FAILED
+from app.central_guidance.service_rag import ChunkRelevance, search_central_guidance_for_tool
+from app.central_guidance.tools import CHUNK_RELEVANCE
+from app.config import LLM_CHAT_RESPONSE_MODEL
 from app.database.models import (
     AuthSession,
     Chat,
@@ -16,26 +19,23 @@ from app.database.models import (
     RewrittenQuery,
     User,
 )
+from app.database.table import LLMTable
 
 
 async def create_test_message(db_session, query_content: str) -> int:
     """Helper function to create a complete Message with all required foreign key relationships."""
-    # Create User
     user = User()
     db_session.add(user)
     await db_session.flush()
 
-    # Create AuthSession
     auth_session = AuthSession(user_id=user.id)
     db_session.add(auth_session)
     await db_session.flush()
 
-    # Create Chat
     chat = Chat(user_id=user.id, title="Test Chat", from_open_chat=True)
     db_session.add(chat)
     await db_session.flush()
 
-    # Create Message
     message = Message(
         chat_id=chat.id,
         content=query_content,
@@ -50,309 +50,213 @@ async def create_test_message(db_session, query_content: str) -> int:
     return message.id
 
 
-@pytest.mark.asyncio
-async def test_chat_create_message_no_rag(monkeypatch, mocker, mock_message_table, mock_bedrock_handler, db_session):
-    monkeypatch.setattr("app.config.settings.use_rag", True)
-
-    input_data = ChatCreateMessageInput(
-        query="hey",
-        user_id=1,
-        initial_call=True,
-        auth_session_id=1,
-        user_group_ids=[],
-        stream=True,
-        system="",
-        use_rag=False,
-        use_case_id=None,
-    )
-
-    chat = mocker.Mock()
-    chat.id = 1
-
-    mock_run_rag = mocker.patch("app.central_guidance.service_rag.search_central_guidance")
-    await chat_create_message(chat, input_data, db_session)
-    mock_run_rag.assert_not_called()
+async def create_loop_call(db_session) -> int:
+    """A logged chat-model call, standing in for the loop call that requested the search."""
+    llm = LLMTable().get_by_model(LLM_CHAT_RESPONSE_MODEL)
+    row = LlmInternalResponse(llm_id=llm.id, content="tool_use", tokens_in=1, tokens_out=1, completion_cost=0)
+    db_session.add(row)
+    await db_session.flush()
+    return row.id
 
 
-@pytest.mark.asyncio
-async def test_search_central_guidance_with_mcom_query(db_session):
+@pytest.fixture(autouse=True)
+def lookups_use_test_session(db_session):
+    """The search reads in its own short session; point it at the test's session to see its unflushed rows."""
+
+    @asynccontextmanager
+    async def same_session():
+        yield db_session
+
+    with patch("app.central_guidance.service_rag.async_db_session", same_session):
+        yield
+
+
+@pytest.fixture
+async def fake_chunk_evaluator(db_session):
+    """Replace the evaluator's Haiku call with one that marks every chunk relevant.
+
+    The response carries a real llm_internal_response id, as chunk mappings reference it.
     """
-    Integration test that directly calls search_central_guidance with a MCOM query.
-    Expects to receive citations containing at least one result.
-    """
-
-    query_content = "What is MCOM?"
-
-    # Create a Message object
-    message = Message(
-        id=1,
-        content=query_content,
-    )
-
-    # Call search_central_guidance directly with message ID
-    prompt_segment, citations = await search_central_guidance(query_content, message.id, db_session)
-
-    # Assert that citations contain at least one result
-    assert citations is not None, "Citations should not be None"
-    assert len(citations) >= 1, f"Expected at least 1 citation, but got {len(citations)}"
-
-    # Verify citations have the expected structure
-    for citation in citations:
-        assert "docname" in citation, "Citation should have 'docname' field"
-        assert "docurl" in citation, "Citation should have 'docurl' field"
-        assert isinstance(citation["docname"], str), "Citation docname should be a string"
-        assert isinstance(citation["docurl"], str), "Citation docurl should be a string"
-
-    # Verify prompt_segment is returned
-    assert prompt_segment is not None, "Prompt segment should not be None"
-    assert isinstance(prompt_segment, str), "Prompt segment should be a string"
-
-
-# =============================================================================
-# DATABASE ANALYTICS VERIFICATION TESTS
-# =============================================================================
-
-
-@pytest.mark.asyncio
-async def test_database_tracking_for_analytics(db_session):
-    """
-    Verify all LLM calls and decisions are tracked correctly in database for analytics.
-    This ensures the analytics pipeline has all required data.
-    """
-    query_content = "What is MCOM?"
-
-    # Create a Message record with all required foreign key relationships
-    message_id = await create_test_message(db_session, query_content)
-
-    # Count existing records before test
-    initial_llm_responses = await db_session.execute(select(LlmInternalResponse))
-    initial_llm_count = len(initial_llm_responses.scalars().all())
-
-    initial_index_mappings = await db_session.execute(
-        select(MessageSearchIndexMapping).filter(MessageSearchIndexMapping.message_id == message_id)
-    )
-    initial_mapping_count = len(initial_index_mappings.scalars().all())
-
-    initial_rewritten_queries = await db_session.execute(
-        select(RewrittenQuery).filter(RewrittenQuery.message_id == message_id)
-    )
-    initial_query_count = len(initial_rewritten_queries.scalars().all())
-
-    # Execute search_central_guidance
-    prompt_segment, citations = await search_central_guidance(query_content, message_id, db_session)
-
-    # Verify LlmInternalResponse records were created
-    final_llm_responses = await db_session.execute(select(LlmInternalResponse))
-    final_llm_count = len(final_llm_responses.scalars().all())
-
-    # Should have at least 3 LLM calls: index relevance, query rewriting, chunk evaluation(s)
-    assert final_llm_count >= initial_llm_count + 3, (
-        f"Expected at least 3 new LLM responses, got {final_llm_count - initial_llm_count}"
-    )
-
-    # Verify MessageSearchIndexMapping was created for index relevance decision
-    final_index_mappings = await db_session.execute(
-        select(MessageSearchIndexMapping).filter(MessageSearchIndexMapping.message_id == message_id)
-    )
-    final_mapping_count = len(final_index_mappings.scalars().all())
-    assert final_mapping_count == initial_mapping_count + 1, (
-        f"Expected 1 new index mapping, got {final_mapping_count - initial_mapping_count}"
-    )
-
-    # Verify RewrittenQuery records were created
-    final_rewritten_queries = await db_session.execute(
-        select(RewrittenQuery).filter(RewrittenQuery.message_id == message_id)
-    )
-    final_query_count = len(final_rewritten_queries.scalars().all())
-    assert final_query_count > initial_query_count, (
-        f"Expected new rewritten queries, got {final_query_count - initial_query_count}"
-    )
-
-    # Verify MessageDocumentChunkMapping records were created and updated with LLM decisions
-    chunk_mappings = await db_session.execute(
-        select(MessageDocumentChunkMapping).filter(MessageDocumentChunkMapping.message_id == message_id)
-    )
-    chunk_mappings_list = chunk_mappings.scalars().all()
-
-    if len(citations) > 0:  # Only check if we got results
-        assert len(chunk_mappings_list) > 0, "Expected chunk mappings to be created"
-
-        # Verify at least some chunk mappings have LLM decisions recorded
-        mappings_with_llm_responses = [
-            mapping for mapping in chunk_mappings_list if mapping.llm_internal_response_id is not None
-        ]
-        assert len(mappings_with_llm_responses) > 0, (
-            "Expected at least some chunk mappings to have LLM response IDs for analytics"
+    llm_internal_response_id = await create_loop_call(db_session)
+    response = MagicMock()
+    response.content = [
+        ToolUseBlock(
+            id="toolu_eval",
+            type="tool_use",
+            name=CHUNK_RELEVANCE.name,
+            input={"evaluations": [{"chunk_index": i, "reasoning": "fake", "is_relevant": True} for i in range(50)]},
         )
-
-
-# =============================================================================
-# EDGE CASE TESTS
-# =============================================================================
-
-
-@pytest.mark.asyncio
-async def test_no_relevant_index_scenario(db_session):
-    """
-    Test when LLM decides the index is not relevant to the query.
-    Should return empty results gracefully.
-    """
-    # Use a query that should be deemed irrelevant to government communications
-    query_content = "What is the chemical formula for water?"
-
-    # Create a Message record with all required foreign key relationships
-    message_id = await create_test_message(db_session, query_content)
-
-    # Mock the index relevance check to return False
-    with patch("app.central_guidance.service_rag.check_index_relevance") as mock_check:
-        mock_mapping = MagicMock()
-        mock_mapping.use_index = False
-        mock_check.return_value = mock_mapping
-
-        prompt_segment, citations = await search_central_guidance(query_content, message_id, db_session)
-
-        # Should return empty results
-        assert citations == [], f"Expected empty citations, got {citations}"
-        assert prompt_segment == "", f"Expected empty prompt segment, got {prompt_segment}"
-
-        # Verify the relevance check was called
-        mock_check.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_no_chunks_found_scenario(db_session):
-    """
-    Test when OpenSearch returns no chunks for the query.
-    Should handle gracefully and return appropriate message.
-    """
-    query_content = "nonexistent topic that will never match"
-
-    # Create a Message record with all required foreign key relationships
-    message_id = await create_test_message(db_session, query_content)
-
-    # Mock OpenSearch to return no results
-    with patch("app.opensearch.service.AsyncOpenSearchOperations.search_for_chunks") as mock_search:
-        mock_search.return_value = []  # No chunks found
-
-        prompt_segment, citations = await search_central_guidance(query_content, message_id, db_session)
-
-        # Should return structured message about no results
-        assert citations == [], f"Expected empty citations, got {citations}"
-        assert "no relevant material was found" in prompt_segment or prompt_segment == "", (
-            f"Expected no results message or empty string, got {prompt_segment}"
-        )
-
-
-@pytest.mark.asyncio
-async def test_all_chunks_filtered_out_scenario(db_session):
-    """
-    Test when OpenSearch finds chunks but LLM filters them all out as irrelevant.
-    Should return appropriate message about searched but no relevant material.
-    """
-    query_content = "What is MCOM?"
-
-    # Create a Message record with all required foreign key relationships
-    message_id = await create_test_message(db_session, query_content)
-
-    # Mock chunk evaluation to always return irrelevant
-    with patch("app.central_guidance.service_rag.evaluate_chunks_relevance") as mock_evaluate:
-
-        async def mock_evaluate_func(retrieval_results, user_query, db_session):
-            # Mark all chunks as not relevant
-            for retrieval_result in retrieval_results:
-                retrieval_result.message_document_chunk_mapping.use_document_chunk = False
-            return retrieval_results
-
-        mock_evaluate.side_effect = mock_evaluate_func
-
-        prompt_segment, citations = await search_central_guidance(query_content, message_id, db_session)
-
-        # Should return message about documents searched but no relevant material found
-        assert citations == [], f"Expected empty citations, got {citations}"
-        assert "no relevant material was found" in prompt_segment, (
-            f"Expected 'no relevant material found' message, got {prompt_segment}"
-        )
-
-
-# =============================================================================
-# ERROR HANDLING TESTS
-# =============================================================================
-
-
-@pytest.mark.asyncio
-async def test_llm_failure_graceful_degradation(db_session):
-    """
-    Test that LLM failures are handled gracefully without crashing the system.
-    """
-    query_content = "What is MCOM?"
-
-    # Create a Message record with all required foreign key relationships
-    message_id = await create_test_message(db_session, query_content)
-
-    # Mock BedrockHandler to raise an exception
+    ]
+    response.llm_internal_response_id = llm_internal_response_id
     with patch("app.central_guidance.service_rag.BedrockHandler") as mock_bedrock:
+        mock_bedrock.return_value.invoke_async = AsyncMock(return_value=response)
+        yield mock_bedrock.return_value.invoke_async
+
+
+async def _search(
+    db_session,
+    message_id,
+    queries,
+    llm_internal_response_id=None,
+    user_query="What is MCOM?",
+    remove_duplicates=False,
+):
+    return await search_central_guidance_for_tool(
+        queries=queries,
+        message_id=message_id,
+        user_query=user_query,
+        llm_internal_response_id=llm_internal_response_id,
+        db_session=db_session,
+        remove_duplicates=remove_duplicates,
+    )
+
+
+@pytest.mark.asyncio
+async def test_search_with_mcom_query_returns_citations(db_session, sync_central_rag_index, fake_chunk_evaluator):
+    message_id = await create_test_message(db_session, "What is MCOM?")
+
+    content, citations, failed = await _search(
+        db_session, message_id, ["MCOM", "Modern Communications Operating Model"]
+    )
+
+    assert failed is False
+    assert len(citations) >= 1
+    assert all(isinstance(c["docname"], str) and isinstance(c["docurl"], str) for c in citations)
+    assert content.startswith("<government-comms-central-guidance-search-results>")
+
+
+@pytest.mark.asyncio
+async def test_database_tracking_for_analytics(db_session, sync_central_rag_index, fake_chunk_evaluator):
+    """The search, the model's queries and every chunk decision are recorded."""
+    message_id = await create_test_message(db_session, "What is MCOM?")
+    loop_call_id = await create_loop_call(db_session)
+
+    _, citations, _ = await _search(db_session, message_id, ["MCOM", "operating model"], loop_call_id)
+
+    mappings = (
+        (await db_session.execute(select(MessageSearchIndexMapping).filter_by(message_id=message_id))).scalars().all()
+    )
+    assert [(m.use_index, m.llm_internal_response_id) for m in mappings] == [(True, loop_call_id)]
+
+    queries = (await db_session.execute(select(RewrittenQuery).filter_by(message_id=message_id))).scalars().all()
+    assert sorted(q.content for q in queries) == ["MCOM", "operating model"]
+    assert {q.llm_internal_response_id for q in queries} == {loop_call_id}
+
+    chunk_mappings = (
+        (await db_session.execute(select(MessageDocumentChunkMapping).filter_by(message_id=message_id))).scalars().all()
+    )
+    assert citations
+    assert chunk_mappings
+    assert all(m.llm_internal_response_id is not None for m in chunk_mappings)
+
+
+@pytest.mark.asyncio
+async def test_chunks_cited_earlier_are_not_repeated_when_removing_duplicates(
+    db_session, sync_central_rag_index, fake_chunk_evaluator
+):
+    message_id = await create_test_message(db_session, "What is MCOM?")
+
+    _, first_citations, _ = await _search(db_session, message_id, ["MCOM"])
+    second_content, second_citations, _ = await _search(db_session, message_id, ["MCOM"], remove_duplicates=True)
+
+    assert first_citations
+    assert "already provided earlier in the conversation" in second_content
+    assert second_citations == []
+
+
+@pytest.mark.asyncio
+async def test_chunks_cited_earlier_are_returned_again_by_default(
+    db_session, sync_central_rag_index, fake_chunk_evaluator
+):
+    message_id = await create_test_message(db_session, "What is MCOM?")
+
+    _, first_citations, _ = await _search(db_session, message_id, ["MCOM"])
+    second_content, second_citations, _ = await _search(db_session, message_id, ["MCOM"])
+
+    assert first_citations
+    assert second_citations == first_citations
+    assert "already provided" not in second_content
+
+
+@pytest.mark.asyncio
+async def test_no_chunks_found(db_session):
+    message_id = await create_test_message(db_session, "nonexistent topic")
+
+    with patch("app.central_guidance.service_rag.AsyncOpenSearchOperations.search_for_chunks", return_value=[]):
+        content, citations, failed = await _search(db_session, message_id, ["nonexistent topic"])
+
+    assert failed is False
+    assert citations == []
+    assert "No new relevant passages found" in content
+
+
+@pytest.mark.asyncio
+async def test_all_chunks_filtered_out(db_session, sync_central_rag_index):
+    message_id = await create_test_message(db_session, "What is MCOM?")
+
+    async def nothing_relevant(retrieval_results, user_query, llm, recent_context="", context=None):
+        return ChunkRelevance(decisions=[False] * len(retrieval_results), llm_internal_response_id=None)
+
+    with patch("app.central_guidance.service_rag.evaluate_chunks_relevance", side_effect=nothing_relevant):
+        content, citations, failed = await _search(db_session, message_id, ["MCOM"])
+
+    assert failed is False
+    assert citations == []
+    assert "No new relevant passages found" in content
+
+
+@pytest.mark.asyncio
+async def test_blank_queries_are_not_searched(db_session):
+    message_id = await create_test_message(db_session, "hi")
+
+    with patch("app.central_guidance.service_rag.AsyncOpenSearchOperations.search_for_chunks") as search:
+        content, citations, _ = await _search(db_session, message_id, ["  ", ""])
+
+    search.assert_not_called()
+    assert citations == []
+    assert "No search queries were given" in content
+
+
+@pytest.mark.asyncio
+async def test_evaluator_failure_is_raised_for_the_loop_to_handle(db_session):
+    """Failures propagate; the agent loop turns them into a generic is_error tool_result."""
+    message_id = await create_test_message(db_session, "What is MCOM?")
+    candidate = MagicMock()
+    candidate.document_chunk.content = "MCOM content"
+
+    with (
+        patch(
+            "app.central_guidance.service_rag.AsyncOpenSearchOperations.search_for_chunks",
+            return_value=[{"_id": "os-1", "_score": 1.0}],
+        ),
+        patch("app.central_guidance.service_rag.resolve_chunks", return_value=[candidate]),
+        patch("app.central_guidance.service_rag.BedrockHandler") as mock_bedrock,
+    ):
         mock_bedrock.return_value.invoke_async.side_effect = Exception("Bedrock API failure")
 
-        # Should not raise exception, should handle gracefully
-        try:
-            prompt_segment, citations = await search_central_guidance(query_content, message_id, db_session)
-
-            # Should return empty results when LLM fails
-            assert citations == [], f"Expected empty citations on LLM failure, got {citations}"
-            assert prompt_segment == "", f"Expected empty prompt on LLM failure, got {prompt_segment}"
-
-        except Exception as e:
-            pytest.fail(f"search_central_guidance should handle LLM failures gracefully, but raised: {e}")
+        with pytest.raises(Exception, match="Bedrock API failure"):
+            await _search(db_session, message_id, ["MCOM"])
 
 
 @pytest.mark.asyncio
-async def test_opensearch_failure_handling(db_session):
-    """
-    Test that OpenSearch failures are handled gracefully.
-    """
-    query_content = "What is MCOM?"
+async def test_relevance_check_that_does_not_validate_is_an_error(db_session, sync_central_rag_index):
+    """A broken relevance response is reported as a failure, not as "nothing found" (M17)."""
+    message_id = await create_test_message(db_session, "What is MCOM?")
+    loop_call_id = await create_loop_call(db_session)
+    response = MagicMock()
+    response.content = []
+    response.stop_reason = "max_tokens"
+    response.llm_internal_response_id = loop_call_id
 
-    # Create a Message record with all required foreign key relationships
-    message_id = await create_test_message(db_session, query_content)
+    with patch("app.central_guidance.service_rag.BedrockHandler") as mock_bedrock:
+        mock_bedrock.return_value.invoke_async = AsyncMock(return_value=response)
+        content, citations, failed = await _search(db_session, message_id, ["MCOM"])
 
-    # Mock OpenSearch to raise an exception
-    with patch("app.opensearch.service.AsyncOpenSearchOperations.search_for_chunks") as mock_search:
-        mock_search.side_effect = Exception("OpenSearch connection failed")
-
-        # Should not raise exception, should handle gracefully
-        try:
-            prompt_segment, citations = await search_central_guidance(query_content, message_id, db_session)
-
-            # Should return empty results when search fails
-            assert citations == [], f"Expected empty citations on search failure, got {citations}"
-            # Note: may still return a "searched but found nothing" message depending on implementation
-
-        except Exception as e:
-            pytest.fail(f"search_central_guidance should handle OpenSearch failures gracefully, but raised: {e}")
-
-
-@pytest.mark.asyncio
-async def test_database_failure_handling(db_session):
-    """
-    Test that database failures during analytics tracking don't crash the main flow.
-    """
-    query_content = "What is MCOM?"
-
-    # Create a Message record with all required foreign key relationships
-    message_id = await create_test_message(db_session, query_content)
-
-    # Mock database operations to fail
-    with patch("app.bedrock.bedrock.DbOperations.insert_llm_internal_response_id_query") as mock_save:
-        mock_save.side_effect = Exception("Database write failed")
-
-        # Should not crash the main flow
-        try:
-            prompt_segment, citations = await search_central_guidance(query_content, message_id, db_session)
-            # Even if analytics tracking fails, should still attempt to return results
-            # (though they may be empty due to other failures cascading)
-
-        except Exception as e:
-            # Only fail if it's not the expected database error
-            if "Database write failed" not in str(e):
-                pytest.fail(f"Unexpected exception: {e}")
-            # If it is the database error, that's expected - we want to know about analytics failures
+    assert failed is True
+    assert citations == []
+    assert TOOL_RESULT_RELEVANCE_CHECK_FAILED in content
+    chunk_mappings = (
+        (await db_session.execute(select(MessageDocumentChunkMapping).filter_by(message_id=message_id))).scalars().all()
+    )
+    assert chunk_mappings
+    assert not any(m.use_document_chunk for m in chunk_mappings)

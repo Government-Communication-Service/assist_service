@@ -1633,6 +1633,9 @@ class DbOperations:
         completion_cost: int,
         cache_read_tokens: int = 0,
         cache_write_tokens: int = 0,
+        purpose: str | None = None,
+        chat_id: int | None = None,
+        message_id: int | None = None,
     ) -> LlmInternalResponse:
         # Log the raw LLM response to the database to allow:
         # - tracking the cost of the query and the raw response
@@ -1647,6 +1650,9 @@ class DbOperations:
                 cache_read_tokens=cache_read_tokens,
                 cache_write_tokens=cache_write_tokens,
                 completion_cost=completion_cost,
+                purpose=purpose,
+                chat_id=chat_id,
+                message_id=message_id,
             )
             .returning(LlmInternalResponse)
         )
@@ -1658,7 +1664,7 @@ class DbOperations:
     @staticmethod
     async def insert_gov_uk_search_query(
         db_session: AsyncSession,
-        llm_internal_response_id: int,
+        llm_internal_response_id: int | None,
         message_id: int,
         query: str,
     ):
@@ -1675,7 +1681,7 @@ class DbOperations:
     @staticmethod
     async def insert_gov_uk_search_result(
         db_session: AsyncSession,
-        llm_internal_response_id: int,
+        llm_internal_response_id: int | None,
         message_id: int,
         gov_uk_search_query_id: int,
         url: str,

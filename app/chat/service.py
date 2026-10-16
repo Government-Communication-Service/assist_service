@@ -1,6 +1,7 @@
 # ruff: noqa: B008
-import asyncio
 import json
+from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 from uuid import UUID
@@ -11,7 +12,6 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import cast, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.audience_segments.services import AudienceSegmentsService
 from app.auth.constants import USER_GROUPS_ALIAS
 from app.auth.verify_service import (
     verify_and_get_auth_session_from_header,
@@ -20,18 +20,22 @@ from app.auth.verify_service import (
 )
 from app.bedrock import BedrockHandler, RunMode
 from app.bedrock.bedrock_types import BedrockError, BedrockErrorType
-from app.bedrock.schemas import LLMResponse
-from app.bedrock.service import llm_transaction
 from app.bedrock.thinking import thinking_kwargs
 from app.central_guidance.schemas import RagRequest
-from app.central_guidance.service_rag import search_central_guidance
+from app.chat.agent_loop import (
+    AgentLoopEvent,
+    AgentLoopResult,
+    LoopFinished,
+    SourcesUpdated,
+    TextDelta,
+    ToolCallRecord,
+    ToolStatus,
+    run_agent_loop,
+)
 from app.chat.cache_control import apply_compaction_aware_cache_control
-from app.chat.config import SLEEP_TIME_MESSAGE_DELETION
 from app.chat.constants import DELETION_NOTICE
-from app.chat.prompts import build_chat_system_prompt, build_session_system_prompt_block
+from app.chat.prompts import build_chat_system_prompt, build_turn_context_block
 from app.chat.schemas import (
-    AudienceSegmentsSource,
-    CentralGuidanceSource,
     ChatBasicResponse,
     ChatCreateInput,
     ChatCreateMessageInput,
@@ -43,17 +47,14 @@ from app.chat.schemas import (
     ChatWithLatestMessage,
     DocumentAccessError,
     DocumentSchema,
-    GovUkSearchSource,
     MessageBasicResponse,
     MessageDefaults,
     RoleEnum,
-    SmartTargetsSource,
     Sources,
-    StyleGuideSource,
     UserChatsResponse,
-    UserDocumentSource,
 )
-from app.chat.utils import cap_enhanced_prompt_size, prepare_message_objects_for_llm
+from app.chat.tools import ToolContext, build_available_tools
+from app.chat.utils import prepare_message_objects_for_llm
 from app.compaction.service import (
     estimate_prefix_tokens,
     find_last_assistant_message_id,
@@ -66,9 +67,7 @@ from app.compaction.service import (
 from app.config import (
     CHAT_THINKING_LEVEL,
     LLM_CHAT_RESPONSE_MODEL,
-    SMART_TARGETS_SERVICE_DISABLED,
     TEST_USER_GROUPS,
-    USE_RAG,
 )
 from app.database.db_operations import DbOperations
 from app.database.models import (
@@ -78,7 +77,7 @@ from app.database.models import (
     Document,
     DocumentUserMapping,
     Message,
-    UseCase,
+    ToolCall,
     User,
 )
 from app.database.table import (
@@ -90,11 +89,7 @@ from app.database.table import (
     UserGroupTable,
     async_db_session,
 )
-from app.document_upload.service import search_uploaded_documents
-from app.gov_uk_search.service import assess_if_next_message_should_use_gov_uk_search, enhance_user_prompt
 from app.logs.logs_handler import logger
-from app.smart_targets.service import SmartTargetsService
-from app.style_guide.service import check_content_against_style_guide
 
 
 async def get_all_user_chats(db_session: AsyncSession, user: User):
@@ -148,82 +143,6 @@ def chat_stream_error_message(chat: Chat, ex: Exception, has_documents: bool, is
     logger.debug(f"API chat_stream_message: {json.dumps(response, indent=5)}")
 
     return json.dumps(response)
-
-
-def chat_save_llm_output(
-    ai_message_defaults: MessageDefaults,
-    llm_response: LLMResponse,
-    user_message: Message,
-    llm: LLM,
-) -> Optional[Message]:
-    try:
-        transaction = llm_transaction(llm, llm_response)
-        logger.debug(
-            f"LLM transaction created: input_cost={transaction.input_cost}, output_cost={transaction.output_cost}",
-        )
-
-        message_repo = MessageTable()
-        try:
-            message_repo.update(
-                user_message,
-                {
-                    # total input tokens is the sum of all three.
-                    "tokens": llm_response.input_tokens,
-                    "cache_read_tokens": llm_response.cache_read_tokens,
-                    "cache_write_tokens": llm_response.cache_write_tokens,
-                },
-            )
-            logger.info(
-                f"User message updated successfully. Tokens: {llm_response.input_tokens}, "
-                f"Cache read: {llm_response.cache_read_tokens}, cache write: {llm_response.cache_write_tokens}, "
-                f"Completion cost: {transaction.input_cost}",
-            )
-        except Exception as e:
-            logger.error(f"Failed to update user message ID {user_message.id}: {str(e)}")
-            # Continue execution, as this is not a critical error
-
-        try:
-            content_list = [text_block.text for text_block in llm_response.content if text_block.type == "text"]
-            if content_list:
-                content = ", ".join(content_list)
-            else:
-                content = ""
-            ai_message = message_repo.create(
-                {
-                    **ai_message_defaults.dict(),
-                    "parent_message_id": user_message.id,
-                    "completion_cost": transaction.completion_cost,
-                    "role": RoleEnum.assistant,
-                    "content": content,
-                    "tokens": llm_response.output_tokens,
-                    "citation": user_message.citation,
-                    "sources": user_message.sources,
-                },
-            )
-
-            # Update chat updated_at timestamp when AI message is created
-            try:
-                chat_repo = ChatTable()
-                chat_obj = chat_repo.get(ai_message.chat_id)
-                chat_repo.update(chat_obj, {"updated_at": datetime.now()})
-            except Exception as e:
-                # Log error but continue execution, as not a critical error
-                logger.error(f"Failed to update chat timestamp for chat ID {ai_message.chat_id}: {str(e)}")
-
-            logger.info(
-                "AI message created succesfully: "
-                f"message_id={ai_message.id}, "
-                f"tokens={ai_message.tokens}, "
-                f"completion_cost={ai_message.completion_cost}",
-            )
-        except Exception as e:
-            logger.exception(f"Failed to create AI message: {e}")
-            return None
-        return ai_message
-
-    except Exception as e:
-        logger.error(f"An unexpected error occurred in chat_save_llm_output: {str(e)}")
-        return None
 
 
 def get_user_groups(
@@ -311,8 +230,8 @@ async def chat_add_message_stream(chat: Chat, data):
     # check if there are chat documents, then fetch and append them to the request
     async with async_db_session() as db_session:
         chat_message = await _chat_message_with_documents(chat, db_session, chat_message)
-        response = await chat_create_message(chat, ChatCreateMessageInput(**chat_message, stream=True), db_session)
-        return StreamingResponse(response, media_type="text/event-stream")
+        turn = await chat_create_message(chat, ChatCreateMessageInput(**chat_message, stream=True), db_session)
+    return StreamingResponse(turn.stream(), media_type="text/event-stream")
 
 
 async def chat_add_message(chat: Chat, data):
@@ -320,11 +239,13 @@ async def chat_add_message(chat: Chat, data):
     # check if there are chat documents, then fetch and append them to the request
     async with async_db_session() as db_session:
         request_input = await _chat_message_with_documents(chat, db_session, request_input)
-        message = await chat_create_message(chat, ChatCreateMessageInput(**request_input), db_session)
-        return ChatWithLatestMessage(
-            **chat.client_response(),
-            message=message.client_response(),
-        )
+        turn = await chat_create_message(chat, ChatCreateMessageInput(**request_input), db_session)
+    # Run the turn once the request's writes are committed, so their locks and connection aren't held across it.
+    message = await turn.run()
+    return ChatWithLatestMessage(
+        **chat.client_response(),
+        message=message.client_response(),
+    )
 
 
 async def patch_chat_favourite(db_session: AsyncSession, chat: Chat, favourite: bool) -> ChatSuccessResponse:
@@ -568,20 +489,28 @@ async def chat_create(input_data: ChatCreateInput) -> ChatWithLatestMessage:
         await db_session.flush()
         await db_session.refresh(chat_obj)
 
-        message = await chat_create_message(
+        turn = await chat_create_message(
             chat=chat_obj,
             input_data=ChatCreateMessageInput(**input_data.to_dict(), initial_call=True),
             db_session=db_session,
         )
         await db_session.commit()
 
+    # Run the turn once the request's writes are committed, so their locks and connection aren't held across it.
     if input_data.stream:
-        return message
+        return turn.stream()
+
+    message = await turn.run()
 
     return ChatWithLatestMessage(**chat_obj.dict(), message=message.dict())
 
 
-async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db_session: AsyncSession):
+async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db_session: AsyncSession) -> "_AgentTurn":
+    """Save the user message and the request-scope writes, and prepare the agent turn.
+
+    The caller runs the returned turn (`stream()` or `run()`) after `db_session` is committed and
+    closed, so no request transaction or row lock is held while the loop runs.
+    """
     if not chat:
         raise Exception("Chat not found")
 
@@ -611,6 +540,9 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
     if pending_duplicate:
         m_user = messages[-1]
         messages = messages[:-1]
+        if m_user.content_enhanced_with_rag is not None:
+            # Written by the pre-agent-loop flow; replay the plain query instead.
+            m_user = message_repo.update(m_user, {"content_enhanced_with_rag": None})
     else:
         m_user = message_repo.create(
             {
@@ -620,45 +552,48 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
                 **MessageDefaults(**message_defaults).dict(),
             }
         )
-    all_messages_pre_retrieval: list[Message] = messages + [m_user]
 
     ai_message = MessageDefaults(**message_defaults)
 
     system = await build_chat_system_prompt(db_session)
-    session_block = await build_session_system_prompt_block(
-        db_session=db_session,
-        use_rag=input_data.use_rag,
-        use_gov_uk_search_api=input_data.use_gov_uk_search_api,
-        use_smart_targets=input_data.use_smart_targets,
-        document_uuids=input_data.document_uuids,
+
+    context_ctx = ToolContext(
+        chat=chat,
+        user_id=chat.user_id,
+        user_message=m_user,
+        history=messages,
+        input_data=input_data,
+        document_uuids=list(input_data.document_uuids or []),
     )
-    system = [*system, session_block]
+    context_block = await build_turn_context_block(
+        context_ctx, db_session, audience_segment_uuids=input_data.audience_segment_uuids
+    )
+    m_user = message_repo.update(
+        m_user,
+        {
+            "raw_messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": context_block},
+                        {"type": "text", "text": input_data.query},
+                    ],
+                }
+            ]
+        },
+    )
 
     if input_data.user_group_ids:
         chat_user_group_mapping(m_user, input_data.user_group_ids)
 
     llm = BedrockHandler(llm=llm_obj, mode=RunMode.ASYNC, system=system)
 
-    prompt_segment_gov_uk_search = None
-    citations_gov_uk_search = []
-    gov_uk_search_wrapped_documents = None
-
-    # Default to None so it writes as Null into the database if the RAG errors out of the try block.
-    query_enhanced_with_rag = None
-    citations = None
-    sources = Sources()
-    prompt_segment_central_guidance = None
-    prompt_segment_document_upload = None
-    prompt_segment_smart_targets = None
-    prompt_segment_audience_segments = None
-    prompt_segment_style_guide = None
     rag_request = RagRequest(
         use_central_rag=input_data.use_rag,
         user_id=chat.user_id,
         query=input_data.query,
         document_uuids=input_data.document_uuids,
     )
-
     # Save documents to chat_document_mapping
     new_document_uuids = getattr(input_data, "new_document_uuids", [])
 
@@ -683,257 +618,8 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
     if rag_request.document_uuids:
         await _extend_document_expiry_and_last_used_time(rag_request, db_session)
 
-    ## Condition for running enhance_user_prompt
-    # IF this is the first message
-    # AND the user has ticked 'use_gov_uk_search_api'
-    # THEN always search GOV.UK
-    if input_data.initial_call:
-        should_enhance = input_data.use_gov_uk_search_api or input_data.enable_web_browsing
-    # ELSE for subsequent messages, let the LLM decide if GOV.UK Search is appropriated
-    else:
-        if input_data.use_gov_uk_search_api or input_data.enable_web_browsing:
-            should_enhance = await assess_if_next_message_should_use_gov_uk_search(
-                messages=messages,
-                new_user_message_content=input_data.query,
-                new_user_message_id=m_user.id,
-                db_session=db_session,
-            )
-        else:
-            should_enhance = False
-
-    tasks = []
-    enhance_task = None
-    search_central_guidance_task = None
-    search_uploaded_documents_task = None
-
-    # Condition for searching GOV.UK
-    if should_enhance:
-        enhance_task = asyncio.create_task(
-            enhance_user_prompt(
-                chat=chat,
-                input_data=input_data,
-                m_user_id=m_user.id,
-                db_session=db_session,
-                messages=messages,
-            )
-        )
-        tasks.append(enhance_task)
-
-    # Condition for searching central guidance
-    if USE_RAG and input_data.use_rag:
-        search_central_guidance_task = asyncio.create_task(
-            search_central_guidance(input_data.query, m_user.id, db_session, messages=messages)
-        )
-        tasks.append(search_central_guidance_task)
-
-    # Condition for searching uploaded documents
-    if rag_request.document_uuids:
-        search_uploaded_documents_task = asyncio.create_task(search_uploaded_documents(rag_request, m_user, db_session))
-        tasks.append(search_uploaded_documents_task)
-
-    # Condition for using Smart Targets (only if enabled globally and in the request)
-    smart_targets_task = None
-    if not SMART_TARGETS_SERVICE_DISABLED and input_data.use_smart_targets:
-        smart_targets_task = asyncio.create_task(
-            SmartTargetsService().use_smart_targets_tool(messages=all_messages_pre_retrieval)
-        )
-        tasks.append(smart_targets_task)
-
-    # Condition for using Audience Segments
-    audience_segments_task = None
-    if input_data.audience_segment_uuids and len(input_data.audience_segment_uuids) > 0:
-        audience_segments_task = asyncio.create_task(
-            AudienceSegmentsService.use_audience_segments(audience_segment_uuids=input_data.audience_segment_uuids)
-        )
-        tasks.append(audience_segments_task)
-
-    # Condition for using style guide checker - derived from the theme title rather than a
-    # DB column, so no schema migration is required to activate this feature.
-    style_guide_task = None
-    should_use_style_guide = False
-    if input_data.use_case_id:
-        _uc_result = await db_session.execute(select(UseCase).where(UseCase.id == input_data.use_case_id))
-        _uc = _uc_result.scalars().first()
-        if _uc:
-            _theme = await DbOperations.theme_get_by_id(db_session, _uc.theme_id)
-            if _theme and _theme.title == "GOV.UK style guide checker":
-                should_use_style_guide = True
-    if should_use_style_guide:
-        style_guide_task = asyncio.create_task(
-            check_content_against_style_guide(
-                content=input_data.query,
-                messages=all_messages_pre_retrieval,
-                document_uuids=input_data.document_uuids,
-                user_id=chat.user_id,
-            )
-        )
-        tasks.append(style_guide_task)
-
-    # Run tasks concurrently if any were created
-    if tasks:
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Process results, checking for exceptions
-        enhance_result_index = tasks.index(enhance_task) if enhance_task else -1
-        search_central_guidance_result_index = (
-            tasks.index(search_central_guidance_task) if search_central_guidance_task else -1
-        )
-        search_uploaded_documents_result_index = (
-            tasks.index(search_uploaded_documents_task) if search_uploaded_documents_task else -1
-        )
-        smart_targets_result_index = tasks.index(smart_targets_task) if smart_targets_task else -1
-        audience_segments_result_index = tasks.index(audience_segments_task) if audience_segments_task else -1
-        style_guide_result_index = tasks.index(style_guide_task) if style_guide_task else -1
-
-        if enhance_task and enhance_result_index != -1:
-            enhance_res = results[enhance_result_index]
-            if isinstance(enhance_res, Exception):
-                logger.exception(
-                    f"Error in enhance_user_prompt - {type(enhance_res).__name__}: {str(enhance_res)}",
-                    exc_info=enhance_res,
-                )
-            else:
-                gov_uk_search_wrapped_documents, citations_gov_uk_search = enhance_res
-                prompt_segment_gov_uk_search = (
-                    f"<results-from-gov-uk-search>\n{gov_uk_search_wrapped_documents}\n</results-from-gov-uk-search>"
-                )
-                if citations is None:
-                    citations = citations_gov_uk_search
-                else:
-                    citations.extend(citations_gov_uk_search)
-                sources.gov_uk_search_sources = [
-                    GovUkSearchSource(pretty_name=c["docname"], url=c["docurl"]) for c in citations_gov_uk_search
-                ]
-
-        if search_central_guidance_task and search_central_guidance_result_index != -1:
-            search_central_guidance_result = results[search_central_guidance_result_index]
-            if isinstance(search_central_guidance_result, Exception):
-                logger.exception(
-                    f"Error when searching central guidance - "
-                    f"{type(search_central_guidance_result).__name__}: {str(search_central_guidance_result)}",
-                    exc_info=search_central_guidance_result,
-                )
-            else:
-                prompt_segment_central_guidance, citations_central_guidance = search_central_guidance_result
-                if citations is None:
-                    citations = citations_central_guidance
-                else:
-                    citations.extend(citations_central_guidance)
-                sources.central_guidance_sources = [
-                    CentralGuidanceSource(pretty_name=c["docname"], url=c["docurl"]) for c in citations_central_guidance
-                ]
-
-        if search_uploaded_documents_task and search_uploaded_documents_result_index != -1:
-            search_uploaded_documents_result = results[search_uploaded_documents_result_index]
-            if isinstance(search_uploaded_documents_result, Exception):
-                logger.exception(
-                    f"Error when searching user-uploaded documents - "
-                    f"{type(search_uploaded_documents_result).__name__}: {str(search_uploaded_documents_result)}",
-                    exc_info=search_uploaded_documents_result,
-                )
-            else:
-                prompt_segment_document_upload, citations_uploaded_documents = search_uploaded_documents_result
-                if citations is None:
-                    citations = citations_uploaded_documents
-                else:
-                    citations.extend(citations_uploaded_documents)
-                sources.user_document_sources = [
-                    UserDocumentSource(pretty_name=c["docname"], url=c["docurl"]) for c in citations_uploaded_documents
-                ]
-
-        if smart_targets_task and smart_targets_result_index != -1:
-            smart_targets_result = results[smart_targets_result_index]
-            if isinstance(smart_targets_result, Exception):
-                logger.exception(
-                    f"Error when using Smart Targets tool - "
-                    f"{type(smart_targets_result).__name__}: {str(smart_targets_result)}",
-                    exc_info=smart_targets_result,
-                )
-            elif smart_targets_result is None:
-                prompt_segment_smart_targets = None
-            else:
-                context, citations_smart_targets = smart_targets_result
-                prompt_segment_smart_targets = (
-                    f"<results-from-smart-targets-tool>\n{context}\n</results-from-smart-targets-tool>"
-                )
-                # Smart Targets results are handled separately on the frontend and not handled by the 'citations' array
-                sources.smart_targets_sources = [
-                    SmartTargetsSource(pretty_name=c["docname"], url=c["docurl"]) for c in citations_smart_targets
-                ]
-
-        if audience_segments_task and audience_segments_result_index != -1:
-            audience_segments_result = results[audience_segments_result_index]
-            if isinstance(audience_segments_result, BaseException):
-                logger.exception(
-                    f"Error when using Audience Segments tool - "
-                    f"{type(audience_segments_result).__name__}: {str(audience_segments_result)}",
-                    exc_info=audience_segments_result,
-                )
-            elif audience_segments_result is None:
-                prompt_segment_audience_segments = None
-            else:
-                prompt_segment_audience_segments = "<audience-segment-information-selected-by-user>"
-                prompt_segment_audience_segments += "".join(
-                    [f"{audience_segment.wrap_for_context()}" for audience_segment in audience_segments_result]
-                )
-                prompt_segment_audience_segments += "</audience-segment-information-selected-by-user>"
-                sources.audience_segments_sources = [
-                    AudienceSegmentsSource(pretty_name=audience_segment.pretty_name, url=audience_segment.connect_url)
-                    for audience_segment in audience_segments_result
-                ]
-
-        if style_guide_task and style_guide_result_index != -1:
-            style_guide_result = results[style_guide_result_index]
-            if isinstance(style_guide_result, BaseException):
-                logger.exception(
-                    f"Error when running style guide checker - "
-                    f"{type(style_guide_result).__name__}: {str(style_guide_result)}",
-                    exc_info=style_guide_result,
-                )
-            elif style_guide_result is not None:
-                prompt_segment_style_guide = style_guide_result
-                # Add GOV.UK style guide as a source reference
-                sources.style_guide_sources = [
-                    StyleGuideSource(
-                        pretty_name="GOV.UK style guide", url="https://www.gov.uk/guidance/style-guide/a-to-z"
-                    )
-                ]
-
-    # Compile the final query to be passed to the LLM.
-    # Failsafe: cap how much RAG/search/tool content can be appended, regardless of source,
-    # tightening further as the existing conversation nears the model's context window.
-    existing_conversation_tokens = next((m.tokens for m in reversed(messages) if m.tokens), 0)
-    query_enhanced_with_rag = cap_enhanced_prompt_size(
-        query=input_data.query,
-        enhanced_segments=[
-            prompt_segment_gov_uk_search,
-            prompt_segment_central_guidance,
-            prompt_segment_document_upload,
-            prompt_segment_smart_targets,
-            prompt_segment_audience_segments,
-            prompt_segment_style_guide,
-        ],
-        existing_conversation_tokens=existing_conversation_tokens,
-        reserved_output_tokens=llm_obj.max_tokens or 0,
-    )
-
-    m_user = message_repo.update(
-        m_user,
-        {
-            "content_enhanced_with_rag": query_enhanced_with_rag,
-            "citation": json.dumps(citations),
-            "sources": sources.model_dump_json(exclude_none=True),
-        },
-    )
-
-    all_messages_post_retrieval = messages + [m_user]
-
-    # Returns compaction summary or None
     compaction = await get_latest_compaction(chat_id, db_session)
-    formatted_messages = prepare_message_objects_for_llm(
-        all_messages_post_retrieval,
-        compaction=compaction,
-    )
+    formatted_messages = prepare_message_objects_for_llm(messages + [m_user], compaction=compaction)
 
     # Excludes m_user: compaction can't touch the current turn, so it shouldn't count toward the threshold.
     prefix_before_current_turn = prepare_message_objects_for_llm(messages, compaction=compaction)
@@ -947,64 +633,217 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         logger.debug(f"Chat {chat_id} is already being compacted; not scheduling another compaction this turn")
         over_compaction_threshold = False
 
-    formatted_messages = apply_compaction_aware_cache_control(formatted_messages, over_compaction_threshold)
-
     effective_thinking_level = input_data.thinking_level or CHAT_THINKING_LEVEL
     llm_thinking_kwargs = thinking_kwargs(effective_thinking_level)
 
-    def on_complete(response):
-        formatted_response = llm.format_response(response)
-        result = chat_save_llm_output(
-            ai_message_defaults=ai_message,
-            user_message=m_user,
-            llm=llm_obj,
-            llm_response=formatted_response,
+    return _AgentTurn(
+        chat=chat,
+        input_data=input_data,
+        llm=llm,
+        llm_obj=llm_obj,
+        system=system,
+        user_message=m_user,
+        history=messages,
+        formatted_messages=formatted_messages,
+        prefix_before_current_turn=prefix_before_current_turn,
+        ai_message_defaults=ai_message,
+        should_compact=over_compaction_threshold,
+        last_assistant_message_id=last_assistant_message_id,
+        request_kwargs=llm_thinking_kwargs,
+    )
+
+
+def chat_stream_status(chat: Chat, status: ToolStatus) -> Dict:
+    """Stream object reporting a tool call's progress (stream contract v1)."""
+    return {
+        **chat.client_response(),
+        "status": {"id": status.id, "tool": status.tool, "state": status.state, "label": status.label},
+    }
+
+
+@dataclass
+class _AgentTurn:
+    """Runs the agent loop for one chat turn, streams or returns the answer, and saves it."""
+
+    chat: Chat
+    input_data: ChatCreateMessageInput
+    llm: BedrockHandler
+    llm_obj: LLM
+    system: list
+    user_message: Message
+    history: list[Message]
+    formatted_messages: list[dict]
+    # formatted_messages without the current turn, for compaction. It can end with a tool_result
+    # user message that formatted_messages merged with this turn's user message.
+    prefix_before_current_turn: list[dict]
+    ai_message_defaults: MessageDefaults
+    should_compact: bool
+    last_assistant_message_id: int | None
+    request_kwargs: dict
+    _tool_specs: list[dict] = field(default_factory=list, init=False)
+    saved_message: Message | None = field(default=None, init=False)
+
+    async def _events(self) -> AsyncIterator[AgentLoopEvent]:
+        """Run the loop and save the turn before passing on LoopFinished.
+
+        No DB session is held across the loop: each tool call opens and commits its own (see
+        `_run_tool_call`), so tool writes are kept even if a later model call fails, and the turn's
+        tool_call rows are written in another short session once the answer is saved.
+        """
+        ctx = ToolContext(
+            chat=self.chat,
+            user_id=self.chat.user_id,
+            user_message=self.user_message,
+            history=self.history,
+            input_data=self.input_data,
+            document_uuids=list(self.input_data.document_uuids or []),
         )
-        if result and over_compaction_threshold:
+        tools = build_available_tools()
+        self._tool_specs = [tool.tool_def.spec for tool in tools]
+        async for event in run_agent_loop(
+            self.llm,
+            history=self.formatted_messages,
+            tools=tools,
+            ctx=ctx,
+            should_compact=self.should_compact,
+            request_kwargs=self.request_kwargs,
+        ):
+            if isinstance(event, LoopFinished):
+                self.saved_message = self._save(event.result)
+                if self.saved_message is not None:
+                    await _record_tool_calls(self.saved_message.id, event.result.tool_calls)
+            yield event
+
+    async def run(self) -> Message | None:
+        """Run the turn to completion and return the saved assistant message."""
+        async for _ in self._events():
+            pass
+        return self.saved_message
+
+    async def stream(self) -> AsyncIterator[str]:
+        """Run the turn, yielding stream contract JSON objects, and save the answer at the end."""
+        content = ""
+        citations: list[dict] = []
+        sources = Sources()
+        try:
+            async for event in self._events():
+                if isinstance(event, TextDelta):
+                    content += event.text
+                    yield self._stream_message(content, citations, sources)
+                elif isinstance(event, SourcesUpdated):
+                    citations, sources = event.citations, event.sources
+                elif isinstance(event, ToolStatus):
+                    yield json.dumps(chat_stream_status(self.chat, event), indent=4)
+                elif isinstance(event, LoopFinished):
+                    yield self._stream_message(event.result.display_text, event.result.citations, event.result.sources)
+        except Exception as e:
+            logger.exception(f"Agent loop failed for chat {self.chat.id}: {e}")
+            yield chat_stream_error_message(
+                self.chat,
+                e,
+                has_documents=bool(self.input_data.document_uuids),
+                is_initial_call=self.input_data.initial_call,
+            )
+
+    def _stream_message(self, content: str, citations: list[dict], sources: Sources) -> str:
+        message = chat_stream_message(
+            chat=self.chat,
+            message_uuid=self.ai_message_defaults.uuid,
+            content=content,
+            citations=json.dumps(citations or None),
+            sources=sources,
+        )
+        return json.dumps(message, indent=4)
+
+    def _save(self, result: AgentLoopResult) -> Message | None:
+        """Save the turn's usage and answer, and schedule compaction if due.
+
+        Returns:
+            The assistant message, or None if it couldn't be saved.
+        """
+        citation = json.dumps(result.citations or None)
+        sources = result.sources.model_dump_json(exclude_none=True)
+        message_repo = MessageTable()
+        try:
+            message_repo.update(
+                self.user_message,
+                {
+                    "tokens": result.input_tokens,
+                    "cache_read_tokens": result.cache_read_tokens,
+                    "cache_write_tokens": result.cache_write_tokens,
+                    "citation": citation,
+                    "sources": sources,
+                },
+            )
+        except Exception as e:
+            logger.error(f"Failed to update user message ID {self.user_message.id}: {e}")
+
+        try:
+            ai_message = message_repo.create(
+                {
+                    **self.ai_message_defaults.dict(),
+                    "parent_message_id": self.user_message.id,
+                    "completion_cost": result.completion_cost,
+                    "role": RoleEnum.assistant,
+                    "content": result.display_text,
+                    "raw_messages": result.raw_messages,
+                    "tokens": result.output_tokens,
+                    "citation": citation,
+                    "sources": sources,
+                }
+            )
+        except Exception as e:
+            logger.exception(f"Failed to create AI message: {e}")
+            return None
+
+        try:
+            chat_repo = ChatTable()
+            chat_repo.update(chat_repo.get(ai_message.chat_id), {"updated_at": datetime.now()})
+        except Exception as e:
+            logger.error(f"Failed to update chat timestamp for chat ID {ai_message.chat_id}: {e}")
+
+        logger.info(
+            f"AI message created: message_id={ai_message.id}, model_calls={len(result.model_calls)}, "
+            f"tool_calls={len(result.tool_calls)}, stop_reason={result.stop_reason}, "
+            f"completion_cost={ai_message.completion_cost}"
+        )
+
+        if self.should_compact and result.model_calls:
+            tools_kwargs = {"tools": self._tool_specs} if self._tool_specs else {}
             schedule_compaction(
-                chat_id=chat_id,
-                llm_obj=llm_obj,
-                system=system,
-                formatted_messages=formatted_messages[:-1],
-                up_to_message_id=last_assistant_message_id,
-                prefix_tokens=formatted_response.total_input_tokens,
-                extra_api_kwargs=llm_thinking_kwargs,
+                chat_id=self.chat.id,
+                llm_obj=self.llm_obj,
+                system=self.system,
+                formatted_messages=apply_compaction_aware_cache_control(self.prefix_before_current_turn, True),
+                up_to_message_id=self.last_assistant_message_id,
+                prefix_tokens=result.model_calls[0].total_input_tokens,
+                extra_api_kwargs={**self.request_kwargs, **tools_kwargs},
             )
-        return result
+        return ai_message
 
-    if input_data.stream:
 
-        def parse_data(text, citations):
-            return chat_stream_message(
-                chat=chat,
-                message_uuid=ai_message.uuid,
-                content=text,
-                citations=citations,
-                sources=sources,
+async def _record_tool_calls(message_id: int, records: list[ToolCallRecord]) -> None:
+    """Write one tool_call row per record, in a short session of its own. Failures are logged, not raised."""
+    if not records:
+        return
+    try:
+        async with async_db_session() as db_session:
+            db_session.add_all(
+                ToolCall(
+                    message_id=message_id,
+                    llm_internal_response_id=record.llm_internal_response_id,
+                    iteration=record.iteration,
+                    tool_use_id=record.tool_use_id,
+                    tool_name=record.tool_name,
+                    args=record.args,
+                    is_error=record.is_error,
+                    duration_ms=record.duration_ms,
+                    result_chars=record.result_chars,
+                )
+                for record in records
             )
-
-        def on_error(ex: Exception):
-            has_documents = bool(input_data.document_uuids)
-            return chat_stream_error_message(
-                chat, ex, has_documents=has_documents, is_initial_call=input_data.initial_call
-            )
-
-        stream_res = llm.stream(
-            formatted_messages,
-            on_error=on_error,
-            user_message=m_user,
-            system=system,
-            parse_data=parse_data,
-            on_complete=on_complete,
-            **llm_thinking_kwargs,
-        )
-
-        return stream_res
-
-    response = await llm.invoke_async(formatted_messages, **llm_thinking_kwargs)
-    result = on_complete(response)
-
-    return result
+    except Exception as e:
+        logger.error(f"Failed to record tool calls for message ID {message_id}: {e!r}")
 
 
 async def _save_chat_documents(db_session: AsyncSession, user_message: Message, rag_request: RagRequest):
@@ -1083,7 +922,12 @@ async def clean_expired_message_content(db_session: AsyncSession):
             Message.created_at < cutoff_date,
             Message.deleted_at.is_(None),
         )
-        .values(content=DELETION_NOTICE, content_enhanced_with_rag=DELETION_NOTICE, deleted_at=datetime.now())
+        .values(
+            content=DELETION_NOTICE,
+            content_enhanced_with_rag=DELETION_NOTICE,
+            raw_messages=None,
+            deleted_at=datetime.now(),
+        )
         .returning(Message.id, Message.chat_id)
     )
 
@@ -1093,6 +937,11 @@ async def clean_expired_message_content(db_session: AsyncSession):
 
     # Get unique chat IDs that had messages cleaned
     chat_ids_with_cleaned_messages = {row.chat_id for row in cleaned_rows}
+
+    # Tool arguments can hold user-derived text (e.g. search queries)
+    cleaned_message_ids = [row.id for row in cleaned_rows]
+    if cleaned_message_ids:
+        await db_session.execute(update(ToolCall).where(ToolCall.message_id.in_(cleaned_message_ids)).values(args=None))
 
     # Only mark chats as deleted if ALL messages in those chats are now deleted
     chats_to_mark_deleted = []
@@ -1128,21 +977,3 @@ async def clean_expired_message_content(db_session: AsyncSession):
         "cleaned_count": cleaned_count,
         "cleaned_chats": deleted_chats_count,
     }
-
-
-async def schedule_expired_messages_deletion():
-    """
-    Schedules the periodic execution of the expired message deletion process.
-    The process runs every hour and checks if there are expired documents to delete from database and opensearch
-    """
-    while True:
-        try:
-            logger.info("Running scheduled expired messages deletion process")
-            async with async_db_session() as db_session:
-                await clean_expired_message_content(db_session)
-                await db_session.commit()
-                logger.info("Successfully committed expired messages deletion changes")
-        except Exception as e:
-            logger.exception("An error occurred during expired messages deletion: %s", e)
-        logger.info("Sleeping for %s seconds before the next message deletion run.", SLEEP_TIME_MESSAGE_DELETION)
-        await asyncio.sleep(SLEEP_TIME_MESSAGE_DELETION)

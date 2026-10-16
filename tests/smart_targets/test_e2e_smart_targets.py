@@ -84,7 +84,8 @@ def parse_streaming_response(response_data) -> tuple[list[dict], dict]:
 
 
 @pytest.mark.asyncio
-@patch("app.chat.service.SmartTargetsService")
+@patch("app.chat.tools.SMART_TARGETS_SERVICE_DISABLED", False)
+@patch("app.chat.tools.SmartTargetsService")
 async def test_smart_targets_with_central_guidance_streaming(
     mock_smart_targets_service,
     async_client,
@@ -106,9 +107,9 @@ async def test_smart_targets_with_central_guidance_streaming(
     """
     # Setup mock Smart Targets service response
     mock_instance = mock_smart_targets_service.return_value
-    mock_instance.use_smart_targets_tool = AsyncMock(
+    mock_instance.query_metrics_for_tool = AsyncMock(
         return_value=(
-            # Context string (what the LLM sees)
+            # Tool result text (what the LLM sees)
             "Campaign Performance Statistics (campaign-recognition, unit=percentage), filters_applied={region: [London]; channel: [TV]}:\n"
             "- Number of campaigns: 45\n"
             "- Number of data points: 180\n"
@@ -116,7 +117,7 @@ async def test_smart_targets_with_central_guidance_streaming(
             "- Median: 48.5\n"
             "- Upper quartile: 62.8 percentage\n"
             "- 95% confidence interval: 42.3 to 54.7 percentage",
-            # Citations list
+            # Sources list
             [
                 {
                     "docname": "Smart Targets dashboard: metric=campaign-recognition; filters=region: [London]; channel: [TV]",

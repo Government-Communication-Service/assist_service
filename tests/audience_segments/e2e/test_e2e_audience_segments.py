@@ -13,12 +13,16 @@ class TestE2EAudienceSegments:
         user_id,
         async_client,
         async_http_requester,
-        mock_get_audience_segment_1_response,
+        mock_get_audience_segments_response,
         mock_llm_response,
+        mock_chat_model,
     ):
         """
         Checks that a message that references audience segments works.
         """
+        mock_chat_model.script(
+            [("get_audience_segments", {"segment_names": [AUDIENCE_SEGMENT_1["pretty_name"]]})], "Three words each."
+        )
         api = ENDPOINTS()
         url = api.chats(user_uuid=user_id)
         response = await async_http_requester(

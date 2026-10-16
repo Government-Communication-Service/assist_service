@@ -7,7 +7,7 @@ from sqlalchemy import select
 from app.api.endpoints import ENDPOINTS
 from app.chat.constants import DELETION_NOTICE
 from app.chat.schemas import MessageCleanupResponse
-from app.database.models import Chat, Message
+from app.database.models import Chat, Message, ToolCall
 from app.database.table import async_db_session
 
 logger = getLogger(__name__)
@@ -43,8 +43,23 @@ async def test_delete_expired_message_content_removes_old_content_and_marks_chat
         assert created_message is not None, "Test message was not created"
         assert created_message.content == test_content, "Test message content doesn't match"
         assert created_message.content_enhanced_with_rag == test_content, "Test message content doesn't match"
+        assert created_message.raw_messages is not None, "Test message raw_messages not set"
         assert created_message.created_at == old_date, "Test message created_at date is not old enough"
         assert created_message.deleted_at is None, "Test message should not be deleted initially"
+
+        db_session.add(
+            ToolCall(
+                message_id=message_id,
+                iteration=1,
+                tool_use_id="toolu_1",
+                tool_name="search_gov_uk",
+                args={"queries": ["personal query"]},
+                is_error=False,
+                duration_ms=1,
+                result_chars=1,
+            )
+        )
+        await db_session.commit()
 
     # Call the cleanup endpoint
     cleanup_url = api.build_url(api.CHAT_CLEANUP_EXPIRED_CONTENT)
@@ -67,6 +82,9 @@ async def test_delete_expired_message_content_removes_old_content_and_marks_chat
 
         assert updated_message.content == DELETION_NOTICE  # Content should be replaced with notice
         assert updated_message.content_enhanced_with_rag == DELETION_NOTICE  # Content should be replaced with notice
+        assert updated_message.raw_messages is None  # Tool turns should be removed
+        tool_call = (await db_session.execute(select(ToolCall).where(ToolCall.message_id == message_id))).scalar_one()
+        assert tool_call.args is None  # Tool arguments should be removed
         assert updated_message.deleted_at is not None  # deleted_at should be set
 
         # Verify the associated chat is also marked as deleted (since ALL messages are now deleted)

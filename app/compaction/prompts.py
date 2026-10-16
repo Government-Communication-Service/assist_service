@@ -40,7 +40,8 @@ Guidance:
 - Record facts and drafted content as they are, without re-assessing or improving them.
 - Do not invent anything that was not in the conversation, and do not note what you have omitted.
 
-Output only the summary. No preamble, no sign-off, and do not address the user."""
+Output only the summary, as text: do not call any tools. No preamble, no sign-off, and do not
+address the user."""
 
 
 def build_compaction_summary_message(summary: str) -> str:

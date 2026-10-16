@@ -1,11 +1,36 @@
 import logging
 from decimal import Decimal
+from typing import Any
 
 from app.bedrock.schemas import LLMResponse, LLMTransaction
 from app.config import settings
 from app.database.models import LLM
 
 logger = logging.getLogger(__name__)
+
+
+def _as_token_count(value: Any) -> int:
+    """Coerce a usage field to an int, falling back to 0 for anything unusable.
+
+    These values feed straight into Decimal arithmetic for cost, so a non-numeric value must
+    never propagate — None when caching is off, and test doubles, both land here.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def extract_cache_tokens(usage: Any) -> tuple[int, int]:
+    """Pull (cache_read_tokens, cache_write_tokens) out of an Anthropic usage object.
+
+    Both fields are absent or None when caching is not in play, so they are read
+    defensively rather than assumed present.
+    """
+    return (
+        _as_token_count(getattr(usage, "cache_read_input_tokens", None)),
+        _as_token_count(getattr(usage, "cache_creation_input_tokens", None)),
+    )
 
 
 def llm_transaction(llm: LLM, response: LLMResponse) -> LLMTransaction:

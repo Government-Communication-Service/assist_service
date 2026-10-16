@@ -13,17 +13,19 @@ from anthropic.types import Message as AnthropicMessage
 from anthropic.types import TextBlock, ToolUseBlock, Usage
 from pydantic import ValidationError
 
+from app.bedrock.call_log import LlmCallContext
+from app.style_guide.exceptions import StyleGuideCheckError
+from app.style_guide.prompts import (
+    create_llm_prompt_for_deterministic_false,
+    create_llm_validation_prompt,
+)
 from app.style_guide.style_guide_checker import (
     call_llm_for_validation,
     check_case_insensitive_rules,
     check_case_sensitive_rules,
     check_llm_deterministic_false_rules,
     check_llm_validation_rules,
-    create_llm_prompt_for_deterministic_false,
-    create_llm_validation_prompt,
-    create_summary_and_fix_prompt,
     find_americanisms,
-    generate_summary_and_fix,
     get_sentence_containing_text,
     get_sentence_with_context,
     load_document,
@@ -230,89 +232,6 @@ class TestCaseSensitiveRuleChecking:
             # Should not have found TEN in all caps
             violation_text = str(ten_violations)
             assert 'TEN APPLES' not in violation_text
-
-
-class TestPromptCreation:
-    """Tests for prompt creation functions."""
-
-    def test_create_summary_and_fix_prompt_basic(self):
-        """Test creating prompt without conversation context."""
-        document = "Test document with violations."
-        violations = [
-            {
-                "rule_id": "test_001",
-                "rule_title": "Test Rule",
-                "validation_type": "deterministic",
-                "match_count": 1,
-                "sentences": ["Test sentence."],
-            }
-        ]
-
-        prompt = create_summary_and_fix_prompt(document, violations)
-
-        assert "expert Government Digital Service" in prompt
-        assert "VIOLATIONS FOUND:" in prompt
-        assert "test_001" in prompt
-        assert "Test Rule" in prompt
-        assert document in prompt
-
-    def test_create_summary_and_fix_prompt_with_context(self):
-        """Test creating prompt with conversation context."""
-        document = "Test document."
-        violations = [{"rule_id": "test", "rule_title": "Test"}]
-        conversation_context = "<ConversationContext><user>Previous</user></ConversationContext>"
-
-        prompt = create_summary_and_fix_prompt(document, violations, conversation_context)
-
-        assert "IMPORTANT CONTEXT" in prompt
-        assert "follow-up message" in prompt
-        assert conversation_context in prompt
-
-    def test_create_summary_and_fix_prompt_llm_violations(self):
-        """Test prompt creation with LLM-validated violations."""
-        document = "Test doc"
-        violations = [
-            {
-                "rule_id": "llm_001",
-                "rule_title": "LLM Rule",
-                "validation_type": "llm",
-                "violation_reason": "This breaks the rule",
-                "occurrences": ["occurrence 1", "occurrence 2"],
-            }
-        ]
-
-        prompt = create_summary_and_fix_prompt(document, violations)
-
-        assert "LLM Validated" in prompt
-        assert "This breaks the rule" in prompt
-        assert "occurrence 1" in prompt
-
-    def test_create_summary_and_fix_prompt_multiple_violations(self):
-        """Test prompt with multiple violation types."""
-        document = "Test"
-        violations = [
-            {
-                "rule_id": "det_001",
-                "rule_title": "Deterministic Rule",
-                "validation_type": "deterministic",
-                "match_count": 2,
-                "sentences": ["Sentence 1", "Sentence 2"],
-            },
-            {
-                "rule_id": "llm_001",
-                "rule_title": "LLM Rule",
-                "validation_type": "llm",
-                "occurrences": ["Occurrence"],
-            },
-        ]
-
-        prompt = create_summary_and_fix_prompt(document, violations)
-
-        # Should include both violations
-        assert "VIOLATION 1:" in prompt
-        assert "VIOLATION 2:" in prompt
-        assert "Deterministic Rule" in prompt
-        assert "LLM Rule" in prompt
 
 
 class TestSplitTextIntoChunks:
@@ -944,8 +863,8 @@ class TestCallLLMForValidation:
 
     @pytest.mark.asyncio
     @patch("app.style_guide.style_guide_checker.BedrockHandler")
-    async def test_no_tool_use_block_returns_empty(self, mock_bedrock_class):
-        """When the LLM returns no tool use block (text only), an empty list is returned.
+    async def test_no_tool_use_block_raises(self, mock_bedrock_class):
+        """When the LLM returns no tool use block (text only), the call fails rather than reporting no violations.
 
         Tool use is forced via tool_choice, so this tests the defensive path
         for unexpected responses.
@@ -956,10 +875,24 @@ class TestCallLLMForValidation:
         )
         mock_bedrock_class.return_value = mock_handler
 
-        result = await call_llm_for_validation("prompt", Mock(), [])
+        with pytest.raises(StyleGuideCheckError):
+            await call_llm_for_validation("prompt", Mock(), [])
 
-        assert result == []
         assert mock_handler.invoke_async.call_count == 1
+
+    @pytest.mark.asyncio
+    @patch("app.style_guide.style_guide_checker.BedrockHandler")
+    async def test_context_is_used_for_call_logging(self, mock_bedrock_class):
+        """The given LlmCallContext goes to Bedrock, so the call is logged against the chat."""
+        mock_handler = Mock()
+        response = _make_tool_use_response("report_style_guide_violations", {"violations": []})
+        mock_handler.invoke_async = AsyncMock(return_value=response)
+        mock_bedrock_class.return_value = mock_handler
+        context = LlmCallContext(purpose="style_guide_validation", chat_id=1, message_id=2)
+
+        await call_llm_for_validation("prompt", Mock(), [], context)
+
+        assert mock_handler.invoke_async.call_args.kwargs["context"] is context
 
 
 # ---------------------------------------------------------------------------
@@ -1014,8 +947,8 @@ class TestCheckLLMValidationRules:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_db_error_is_handled_gracefully(self):
-        """A database error when fetching the LLM model is handled without raising."""
+    async def test_db_error_is_raised(self):
+        """A database error when fetching the LLM model fails the check rather than skipping rules."""
         with patch(
             "app.style_guide.style_guide_checker.LLMTable"
         ) as mock_llm_table, patch(
@@ -1025,11 +958,49 @@ class TestCheckLLMValidationRules:
         ):
             mock_llm_table.return_value.get_by_model.side_effect = Exception("DB error")
 
-            result = await check_llm_validation_rules(
-                "The council met.", [LLM_PASS_RULE]
+            with pytest.raises(Exception, match="DB error"):
+                await check_llm_validation_rules("The council met.", [LLM_PASS_RULE])
+
+    @pytest.mark.asyncio
+    async def test_failed_batch_is_raised(self):
+        """A failed validation batch fails the check rather than silently dropping its rules."""
+        with patch("app.style_guide.style_guide_checker.LLMTable") as mock_llm_table, patch(
+            "app.style_guide.style_guide_checker.call_llm_for_validation",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("Bedrock error"),
+        ), patch(
+            "app.style_guide.style_guide_checker.check_llm_deterministic_false_rules",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            mock_llm_table.return_value.get_by_model.return_value = Mock()
+
+            with pytest.raises(RuntimeError, match="Bedrock error"):
+                await check_llm_validation_rules("The council met.", [LLM_PASS_RULE])
+
+    @pytest.mark.asyncio
+    async def test_checker_context_and_call_context_reach_the_llm_call(self):
+        """The assistant's context goes into the prompt and the call context into the logged call."""
+        context = LlmCallContext(purpose="style_guide_validation", chat_id=1, message_id=2)
+        with patch("app.style_guide.style_guide_checker.LLMTable") as mock_llm_table, patch(
+            "app.style_guide.style_guide_checker.call_llm_for_validation",
+            new_callable=AsyncMock,
+            return_value=[],
+        ) as mock_call_llm, patch(
+            "app.style_guide.style_guide_checker.check_llm_deterministic_false_rules",
+            new_callable=AsyncMock,
+            return_value=[],
+        ) as mock_false_rules:
+            mock_llm_table.return_value.get_by_model.return_value = Mock()
+
+            await check_llm_validation_rules(
+                "The council met.", [LLM_PASS_RULE], checker_context="ASSISTANT CONTEXT BLOCK", context=context
             )
 
-        assert isinstance(result, list)
+        prompt, _, _, passed_context = mock_call_llm.call_args.args
+        assert "ASSISTANT CONTEXT BLOCK" in prompt
+        assert passed_context is context
+        assert mock_false_rules.call_args.kwargs == {"checker_context": "ASSISTANT CONTEXT BLOCK", "context": context}
 
     @pytest.mark.asyncio
     async def test_llm_violations_returned(self):
@@ -1081,16 +1052,15 @@ class TestCheckLLMDeterministicFalseRules:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_db_error_returns_empty(self):
-        """A database error when fetching the LLM returns an empty list."""
+    async def test_db_error_is_raised(self):
+        """A database error when fetching the LLM fails the check."""
         with patch("app.style_guide.style_guide_checker.LLMTable") as mock_llm_table:
             mock_llm_table.return_value.get_by_model.side_effect = Exception("DB down")
 
-            result = await check_llm_deterministic_false_rules(
-                "Document.", [DETERMINISTIC_FALSE_RULE], "some-model", batch_size=5
-            )
-
-        assert result == []
+            with pytest.raises(Exception, match="DB down"):
+                await check_llm_deterministic_false_rules(
+                    "Document.", [DETERMINISTIC_FALSE_RULE], "some-model", batch_size=5
+                )
 
     @pytest.mark.asyncio
     async def test_violations_from_llm_returned(self):
@@ -1122,191 +1092,6 @@ class TestCheckLLMDeterministicFalseRules:
 
         assert len(result) == 1
         assert result[0]["rule_id"] == "test_005"
-
-
-# ---------------------------------------------------------------------------
-# generate_summary_and_fix
-# ---------------------------------------------------------------------------
-
-
-class TestGenerateSummaryAndFix:
-    """Tests for generate_summary_and_fix."""
-
-    @pytest.mark.asyncio
-    async def test_empty_violations_returns_none(self):
-        """No violations means no LLM call and a None return."""
-        result = await generate_summary_and_fix(
-            document="Any document.",
-            violations=[],
-            llm_model="some-model",
-            output_dir=Path("/tmp"),
-        )
-        assert result is None
-
-    @pytest.mark.asyncio
-    @patch("app.style_guide.style_guide_checker.LLMTable")
-    @patch("app.style_guide.style_guide_checker.BedrockHandler")
-    async def test_valid_response_returns_summary_and_fixed(
-        self, mock_bedrock_class, mock_llm_table_class
-    ):
-        """A valid tool use response is parsed into summary and fixed_document."""
-        tool_input = {
-            "summary": "One violation was found.",
-            "fixed_document": "This is the corrected document.",
-        }
-        mock_handler = Mock()
-        mock_handler.invoke_async = AsyncMock(
-            return_value=_make_tool_use_response("provide_summary_and_fixed_document", tool_input)
-        )
-        mock_bedrock_class.return_value = mock_handler
-        mock_llm_table_class.return_value.get_by_model.return_value = Mock()
-
-        violations = [
-            {
-                "rule_id": "rule_001",
-                "rule_title": "Test Rule",
-                "validation_type": "deterministic",
-                "match_count": 1,
-                "sentences": ["Bad sentence."],
-            }
-        ]
-
-        result = await generate_summary_and_fix(
-            document="Bad sentence.",
-            violations=violations,
-            llm_model="some-model",
-            output_dir=Path("/tmp"),
-        )
-
-        assert result is not None
-        assert result["summary"] == "One violation was found."
-        assert result["fixed_document"] == "This is the corrected document."
-
-    @pytest.mark.asyncio
-    @patch("app.style_guide.style_guide_checker.LLMTable")
-    @patch("app.style_guide.style_guide_checker.BedrockHandler")
-    async def test_markdown_wrapped_response_parsed(
-        self, mock_bedrock_class, mock_llm_table_class
-    ):
-        """A tool use response is parsed correctly into summary and fixed document."""
-        mock_handler = Mock()
-        mock_handler.invoke_async = AsyncMock(
-            return_value=_make_tool_use_response(
-                "provide_summary_and_fixed_document",
-                {"summary": "Two violations.", "fixed_document": "Fixed text."},
-            )
-        )
-        mock_bedrock_class.return_value = mock_handler
-        mock_llm_table_class.return_value.get_by_model.return_value = Mock()
-
-        violations = [{"rule_id": "r1", "rule_title": "R1", "validation_type": "llm", "occurrences": []}]
-
-        result = await generate_summary_and_fix(
-            document="Doc.",
-            violations=violations,
-            llm_model="some-model",
-            output_dir=Path("/tmp"),
-        )
-
-        assert result is not None
-        assert result["summary"] == "Two violations."
-
-    @pytest.mark.asyncio
-    @patch("app.style_guide.style_guide_checker.LLMTable")
-    async def test_db_error_returns_none(self, mock_llm_table_class):
-        """A database error when fetching the LLM model returns None."""
-        mock_llm_table_class.return_value.get_by_model.side_effect = Exception("DB error")
-
-        violations = [{"rule_id": "r1", "rule_title": "R1"}]
-
-        result = await generate_summary_and_fix(
-            document="Doc.",
-            violations=violations,
-            llm_model="some-model",
-            output_dir=Path("/tmp"),
-        )
-
-        assert result is None
-
-    @pytest.mark.asyncio
-    @patch("app.style_guide.style_guide_checker.LLMTable")
-    @patch("app.style_guide.style_guide_checker.BedrockHandler")
-    async def test_with_conversation_context(
-        self, mock_bedrock_class, mock_llm_table_class
-    ):
-        """Conversation context is embedded in the prompt sent to the LLM."""
-        mock_handler = Mock()
-        mock_handler.invoke_async = AsyncMock(
-            return_value=_make_tool_use_response(
-                "provide_summary_and_fixed_document",
-                {"summary": "Summary.", "fixed_document": "Fixed doc."},
-            )
-        )
-        mock_bedrock_class.return_value = mock_handler
-        mock_llm_table_class.return_value.get_by_model.return_value = Mock()
-
-        violations = [
-            {
-                "rule_id": "r1", "rule_title": "R1", "validation_type": "deterministic",
-                "match_count": 1, "sentences": ["s"],
-            }
-        ]
-        context = "<ConversationContext><user>Previous message</user></ConversationContext>"
-
-        result = await generate_summary_and_fix(
-            document="Doc.",
-            violations=violations,
-            llm_model="some-model",
-            output_dir=Path("/tmp"),
-            conversation_context=context,
-        )
-
-        assert result is not None
-        # Verify the context appeared in the prompt that was sent to the handler
-        call_args = mock_handler.invoke_async.call_args
-        prompt_in_call = call_args[1]["messages"][0]["content"]
-        assert "Previous message" in prompt_in_call
-
-    @pytest.mark.asyncio
-    @patch("app.style_guide.style_guide_checker.LLMTable")
-    @patch("app.style_guide.style_guide_checker.BedrockHandler")
-    async def test_invalid_tool_input_returns_none(
-        self, mock_bedrock_class, mock_llm_table_class
-    ):
-        """A tool response that fails Pydantic validation returns None.
-
-        Tool use forces a single structured call; if the returned input doesn't
-        satisfy the schema the function returns None rather than raise.
-        """
-        # 'summary' is required but missing; 'fixed_document' is a number not a string
-        mock_handler = Mock()
-        mock_handler.invoke_async = AsyncMock(
-            return_value=_make_tool_use_response(
-                "provide_summary_and_fixed_document", {"fixed_document": 42}
-            )
-        )
-        mock_bedrock_class.return_value = mock_handler
-        mock_llm_table_class.return_value.get_by_model.return_value = Mock()
-
-        violations = [
-            {
-                "rule_id": "r1",
-                "rule_title": "R1",
-                "validation_type": "deterministic",
-                "match_count": 1,
-                "sentences": ["Bad sentence."],
-            }
-        ]
-
-        result = await generate_summary_and_fix(
-            document="Bad sentence.",
-            violations=violations,
-            llm_model="some-model",
-            output_dir=Path("/tmp"),
-        )
-
-        assert result is None
-        assert mock_handler.invoke_async.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -1462,7 +1247,7 @@ class TestCheckLLMValidationRulesUwotm8:
         document = "Please analyze the results."
         captured_rules = []
 
-        async def capture_call(prompt, llm, rules_with_occurrences):
+        async def capture_call(prompt, llm, rules_with_occurrences, context=None):
             captured_rules.extend(rules_with_occurrences)
             return []
 

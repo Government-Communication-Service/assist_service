@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from anthropic.types import ToolUseBlock
 
+from app.bedrock.bedrock_types import BedrockError, BedrockErrorType
 from app.chat.schemas import ChatTitleRequest
 from app.classification_and_title.prompts import TOOL_NAME_TITLE_AND_CLASSIFICATION
 from app.classification_and_title.schemas import ClassificationInput
@@ -80,15 +81,33 @@ def make_chat_row(title: str = "A new title") -> MagicMock:
 
 
 class TestCreateTitleAndClassification:
-    async def _run(self, llm_response=None, db_session=None, invoke_side_effect=None, max_attempts=2):
+    async def _run(
+        self,
+        llm_response=None,
+        db_session=None,
+        invoke_side_effect=None,
+        max_attempts=2,
+        query="Please draft a press release about potholes",
+    ):
         db_session = db_session or AsyncMock()
         db_session.execute = AsyncMock(return_value=make_user_query_result())
+        db_session.open = False
+
+        @asynccontextmanager
+        async def fake_async_db_session() -> AsyncIterator[AsyncMock]:
+            db_session.open = True
+            try:
+                yield db_session
+            finally:
+                db_session.open = False
+
         classifications = [
             make_classification(1, "Media handling and press releases"),
             make_classification(2, "Internal communications"),
         ]
 
         with (
+            patch("app.classification_and_title.service.async_db_session", new=fake_async_db_session),
             patch(
                 "app.classification_and_title.service.DbOperations.get_classifications",
                 new=AsyncMock(return_value=classifications),
@@ -104,16 +123,31 @@ class TestCreateTitleAndClassification:
             mock_llm_table.return_value.get_by_model.return_value = MagicMock()
             mock_bedrock_instance = MagicMock()
             mock_bedrock_instance.format_content_for_chat_title.return_value = [{"role": "user", "content": "hi"}]
-            if invoke_side_effect is not None:
-                mock_bedrock_instance.invoke_async = AsyncMock(side_effect=invoke_side_effect)
-            else:
-                mock_bedrock_instance.invoke_async = AsyncMock(return_value=llm_response)
+            invoke_async = AsyncMock(side_effect=invoke_side_effect, return_value=llm_response)
+
+            async def invoke_with_session_check(*args, **kwargs):
+                self.session_open_during_llm_call = self.session_open_during_llm_call or db_session.open
+                return await invoke_async(*args, **kwargs)
+
+            self.session_open_during_llm_call = False
+            mock_bedrock_instance.invoke_async = AsyncMock(side_effect=invoke_with_session_check)
             mock_bedrock.return_value = mock_bedrock_instance
 
             chat = make_chat()
-            data = ChatTitleRequest(query="Please draft a press release about potholes")
-            result = await create_title_and_classification(db_session, chat, data)
+            data = ChatTitleRequest(query=query)
+            result = await create_title_and_classification(chat, data)
+            self.format_content_mock = mock_bedrock_instance.format_content_for_chat_title
             return result, mock_bedrock_instance.invoke_async
+
+    @pytest.mark.asyncio
+    async def test_no_session_is_open_during_the_llm_call(self):
+        block = make_tool_use_block(task_type="Drafting", discipline="Media")
+        await self._run(
+            invoke_side_effect=[RuntimeError("bedrock is down"), make_llm_response([block])],
+            max_attempts=2,
+        )
+
+        assert not self.session_open_during_llm_call
 
     @pytest.mark.asyncio
     async def test_parses_title_category_task_type_and_discipline(self):
@@ -170,6 +204,27 @@ class TestCreateTitleAndClassification:
         assert invoke_mock.await_count == 2
 
     @pytest.mark.asyncio
+    async def test_input_too_long_is_not_retried(self):
+        error = BedrockError("Input is too long", BedrockErrorType.INPUT_TOO_LONG)
+        result, invoke_mock = await self._run(invoke_side_effect=[error, error], max_attempts=2)
+
+        assert result.title == ""
+        assert invoke_mock.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_long_query_is_cut_before_the_llm_call(self):
+        """Regression: a pasted document must not overflow the title model's context window."""
+        block = make_tool_use_block(task_type="Drafting", discipline="Media")
+        query = "start " + "x" * 50_000 + " end"
+        with patch.object(settings, "helper_call_max_query_chars", 1000):
+            await self._run(make_llm_response([block]), query=query)
+
+        sent = self.format_content_mock.call_args.args[0]
+        assert sent.startswith("<human-query>start ")
+        assert sent.endswith(" end</human-query>")
+        assert len(sent) < 1100
+
+    @pytest.mark.asyncio
     async def test_title_over_255_chars_is_truncated(self):
         block = make_tool_use_block(title="X" * 300, task_type="Drafting", discipline="Media")
         result, _ = await self._run(make_llm_response([block]))
@@ -224,7 +279,10 @@ class TestCreateTitleAndClassification:
 
 
 class TestUpdateChatTitle:
-    """update_chat_title opens three transactions: generate, title, classification mapping."""
+    """update_chat_title writes the title and the classification mapping in separate transactions.
+
+    create_title_and_classification is mocked here, so only the two write sessions are seen.
+    """
 
     def _patch_sessions(self) -> tuple[AbstractContextManager, list[AsyncMock]]:
         """Patch async_db_session with one AsyncMock session per block, recording rollbacks."""
@@ -284,9 +342,9 @@ class TestUpdateChatTitle:
             chat = make_chat(chat_id=7)
             response = await update_chat_title(chat, self._make_data())
 
-        assert len(sessions) == 3
-        generate_session, title_session, mapping_session = sessions
-        assert mock_create.call_args.args[0] is generate_session
+        assert len(sessions) == 2
+        title_session, mapping_session = sessions
+        assert mock_create.call_args.args[0] is chat
         assert mock_update_title.call_args.args[0] is title_session
         mock_insert_mapping.assert_awaited_once_with(
             db_session=mapping_session,
@@ -321,8 +379,7 @@ class TestUpdateChatTitle:
                 await update_chat_title(make_chat(), self._make_data())
 
         mock_insert_mapping.assert_not_awaited()
-        generate_session, title_session = sessions
-        assert not generate_session.rolled_back
+        (title_session,) = sessions
         assert title_session.rolled_back
 
     @pytest.mark.asyncio
@@ -346,8 +403,7 @@ class TestUpdateChatTitle:
             response = await update_chat_title(make_chat(), self._make_data())
 
         assert response.title == "A new title"
-        generate_session, title_session, mapping_session = sessions
-        assert not generate_session.rolled_back
+        title_session, mapping_session = sessions
         assert not title_session.rolled_back
         assert mapping_session.rolled_back
 
@@ -375,7 +431,7 @@ class TestUpdateChatTitle:
 
         mock_update_title.assert_not_awaited()
         mock_insert_mapping.assert_awaited_once()
-        assert len(sessions) == 2
+        assert len(sessions) == 1
         assert response.title == "Existing title"
 
 

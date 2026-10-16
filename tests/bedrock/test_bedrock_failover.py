@@ -1,21 +1,64 @@
+import asyncio
+import logging
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import anthropic
+import httpx
+import pytest
 from anthropic._exceptions import ServiceUnavailableError
 from anthropic.types import Message
 from anthropic.types.usage import Usage
 
 from app.bedrock import BedrockHandler, RunMode
-from app.bedrock.bedrock_types import AsyncAnthropicBedrock, AsyncAnthropicBedrockProvider
+from app.bedrock.bedrock_types import (
+    AsyncAnthropicBedrock,
+    AsyncAnthropicBedrockProvider,
+    BedrockError,
+    BedrockErrorType,
+)
+from app.bedrock.retry import _backoff_seconds
 from app.bedrock.schemas import LLMTransaction
-from app.chat.service import chat_stream_error_message
 from app.config import AWS_BEDROCK_REGION1, AWS_BEDROCK_REGION2
+
+
+@pytest.fixture(autouse=True)
+def no_call_logging():
+    """These tests are about region failover, not llm_internal_response logging."""
+    with patch("app.bedrock.bedrock.log_llm_call", new_callable=AsyncMock, return_value=None):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def no_backoff():
+    """Retry without sleeping between attempts."""
+    with patch("app.bedrock.retry._backoff_seconds", return_value=0):
+        yield
+
+
+_REQUEST = httpx.Request("POST", "https://bedrock-runtime.example/model/invoke")
+
+
+def _status_error(cls, status_code: int, message: str = "error"):
+    return cls(message, response=httpx.Response(status_code, request=_REQUEST), body=None)
+
+
+def _ok_message():
+    return Message(
+        id="msg_ok",
+        type="message",
+        role="assistant",
+        content=[],
+        model="claude-test",
+        stop_reason="end_turn",
+        usage=Usage(input_tokens=1, output_tokens=1),
+    )
+
 
 bedrock = BedrockHandler()
 bedrock_async = BedrockHandler(mode=RunMode.ASYNC)
 original_invoke_async_function = bedrock_async._invoke_async
 original_invoke_async_with_call_cost_details_function = bedrock_async._invoke_async_with_call_cost_details
-original_bedrock_stream_function = bedrock_async._stream
 
 
 @patch("app.bedrock.bedrock_types.AsyncAnthropicBedrockProvider.get")
@@ -29,13 +72,22 @@ async def test_failover_switches_from_west_to_east(mock_invoke_async, mock_provi
         return SimpleNamespace(aws_region=region)
 
     mock_provider_get.side_effect = _provider_side_effect
-    mock_invoke_async.side_effect = [Exception("west-down"), {"result": "ok"}]
+    ok = Message(
+        id="msg_ok",
+        type="message",
+        role="assistant",
+        content=[],
+        model="claude-test",
+        stop_reason="end_turn",
+        usage=Usage(input_tokens=1, output_tokens=1),
+    )
+    mock_invoke_async.side_effect = [anthropic.APIConnectionError(request=_REQUEST), ok]
 
     bedrock = BedrockHandler(mode=RunMode.ASYNC)
 
     result = await bedrock.invoke_async([{"role": "user", "content": "hello"}])
 
-    assert result == {"result": "ok"}
+    assert result.id == "msg_ok"
     # first call for init (west), second call after failover (east)
     assert mock_provider_get.call_args_list[0].args[0] == AWS_BEDROCK_REGION1
     assert mock_provider_get.call_args_list[1].args[0] == AWS_BEDROCK_REGION2
@@ -101,137 +153,6 @@ async def test_failover_moves_real_provider_client_region(monkeypatch):
     assert call_regions == [AWS_BEDROCK_REGION1, AWS_BEDROCK_REGION2]
 
 
-async def test_failover_streams_before_first_chunk(monkeypatch):
-    """Fail once before streaming starts; ensure retry switches to east and completes."""
-
-    AsyncAnthropicBedrockProvider._AsyncAnthropicBedrockProvider__clients.clear()
-
-    stream_regions: list[str] = []
-
-    class FakeStreamCtx:
-        def __init__(self, region: str, attempt: int):
-            self.region = region
-            self.attempt = attempt
-
-        async def __aenter__(self):
-            if self.region == AWS_BEDROCK_REGION1 and self.attempt == 0:
-                raise Exception("west-stream-down")
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        @property
-        def text_stream(self):
-            async def gen():
-                yield "Hi"
-
-            return gen()
-
-        async def get_final_message(self):
-            return {"result": "ok"}
-
-    class FakeMessages:
-        def __init__(self, region: str):
-            self.region = region
-            self.calls = 0
-
-        def stream(self, *args, **kwargs):
-            ctx = FakeStreamCtx(self.region, self.calls)
-            stream_regions.append(self.region)
-            self.calls += 1
-            return ctx
-
-    class FakeAsyncBedrock(AsyncAnthropicBedrock):
-        def __init__(self, aws_region: str, **kwargs):
-            self.aws_region = aws_region
-            self.messages = FakeMessages(aws_region)
-
-    monkeypatch.setattr("app.bedrock.bedrock_types.AsyncAnthropicBedrock", FakeAsyncBedrock)
-
-    bedrock = BedrockHandler(mode=RunMode.ASYNC)
-
-    def _error(ex: Exception):
-        return f"{ex}"
-
-    stream_result = bedrock.stream([{"role": "user", "content": "hello"}], system="", on_error=_error)
-    collected = ""
-    async for chunk in stream_result:
-        collected += chunk
-
-    assert collected == "Hi"
-    assert stream_regions == [AWS_BEDROCK_REGION1, AWS_BEDROCK_REGION2]
-
-
-async def test_failover_on_stream_timeout_no_first_chunk(monkeypatch):
-    """Test that streaming failover triggers when first chunk times out (stream hangs with no data)."""
-    import asyncio
-
-    AsyncAnthropicBedrockProvider._AsyncAnthropicBedrockProvider__clients.clear()
-
-    # Use a short timeout for testing to keep tests fast
-    test_timeout = 0.5
-    monkeypatch.setattr("app.bedrock.retry.STREAM_FIRST_CHUNK_TIMEOUT", test_timeout)
-
-    # Use delay slightly longer than configured timeout to ensure timeout triggers
-    test_delay = test_timeout + 0.5
-
-    stream_regions: list[str] = []
-
-    class FakeStreamCtx:
-        def __init__(self, region: str):
-            self.region = region
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        @property
-        def text_stream(self):
-            async def gen():
-                if self.region == AWS_BEDROCK_REGION1:
-                    # Simulate hanging stream - wait longer than timeout
-                    await asyncio.sleep(test_delay)
-                yield "Hi"
-
-            return gen()
-
-        async def get_final_message(self):
-            return {"result": "ok"}
-
-    class FakeMessages:
-        def __init__(self, region: str):
-            self.region = region
-
-        def stream(self, *args, **kwargs):
-            ctx = FakeStreamCtx(self.region)
-            stream_regions.append(self.region)
-            return ctx
-
-    class FakeAsyncBedrock(AsyncAnthropicBedrock):
-        def __init__(self, aws_region: str, **kwargs):
-            self.aws_region = aws_region
-            self.messages = FakeMessages(aws_region)
-
-    monkeypatch.setattr("app.bedrock.bedrock_types.AsyncAnthropicBedrock", FakeAsyncBedrock)
-
-    bedrock = BedrockHandler(mode=RunMode.ASYNC)
-
-    def _error(ex: Exception):
-        return f"{ex}"
-
-    stream_result = bedrock.stream([{"role": "user", "content": "hello"}], system="", on_error=_error)
-    collected = ""
-    async for chunk in stream_result:
-        collected += chunk
-
-    assert collected == "Hi"
-    # Should have tried West (timed out), then East (succeeded)
-    assert stream_regions == [AWS_BEDROCK_REGION1, AWS_BEDROCK_REGION2]
-
-
 @patch("app.bedrock.bedrock.BedrockHandler._invoke_async")
 async def test_aws_region_failover_for_llm_invoke_success(mock_invoke, caplog):
     bedrock = BedrockHandler(mode=RunMode.ASYNC)
@@ -246,7 +167,7 @@ async def test_aws_region_failover_for_llm_invoke_success(mock_invoke, caplog):
         stop_reason="end_turn",
         usage={"input_tokens": 10, "output_tokens": 5},
     )
-    mock_invoke.side_effect = [Exception("fail"), mock_message]
+    mock_invoke.side_effect = [_status_error(anthropic.RateLimitError, 429, "fail"), mock_message]
     result = await bedrock.invoke_async(messages)
     assert isinstance(result, Message)
     assert "Error in bedrock handler: fail, swapping" in caplog.text
@@ -260,110 +181,126 @@ async def test_aws_region_failover_for_llm_invoke_async_success(mock_invoke, cap
     mock_transaction = LLMTransaction(
         content="Hello!", input_tokens=10, output_tokens=5, input_cost=0.001, output_cost=0.002, completion_cost=0.003
     )
-    mock_invoke.side_effect = [Exception("fail"), mock_transaction]
+    mock_invoke.side_effect = [_status_error(anthropic.InternalServerError, 500, "fail"), mock_transaction]
     result = await bedrock.invoke_async_with_call_cost_details(messages)
     assert isinstance(result, LLMTransaction)
     assert "Error in bedrock handler: fail, swapping" in caplog.text
 
 
-@patch("app.bedrock.bedrock.BedrockHandler._stream")
-async def test_aws_region_failover_llm_stream_success(mock_bedrock_stream, caplog, monkeypatch):
-    monkeypatch.setattr("app.bedrock.retry.STREAM_FIRST_CHUNK_TIMEOUT", 60.0)
-    bedrock = BedrockHandler(mode=RunMode.ASYNC)
-    messages = [{"role": "user", "content": "hello"}]
-    system_message = "Respond only with Hi"
+@pytest.mark.parametrize(
+    "error",
+    [
+        _status_error(anthropic.RateLimitError, 429),
+        _status_error(anthropic.InternalServerError, 500),
+        _status_error(ServiceUnavailableError, 503),
+        anthropic.APIConnectionError(request=_REQUEST),
+        anthropic.APITimeoutError(request=_REQUEST),
+        httpx.ConnectError("refused"),
+    ],
+)
+@patch("app.bedrock.bedrock.BedrockHandler._invoke_async")
+async def test_transient_errors_are_retried(mock_invoke, error):
+    mock_invoke.side_effect = [error, _ok_message()]
 
-    mock_bedrock_stream.side_effect = [
-        Exception("fail"),
-        original_bedrock_stream_function(messages, system=system_message),
-    ]
+    result = await BedrockHandler(mode=RunMode.ASYNC).invoke_async([{"role": "user", "content": "hello"}])
 
-    def _error(ex: Exception):
-        return f"{ex}"
-
-    stream_result = bedrock.stream(messages, system=system_message, on_error=_error)
-    result = ""
-    async for t in stream_result:
-        result += t
-
-    assert result == "Hi"
-    assert "Error in bedrock handler: fail, swapping" in caplog.text
+    assert result.id == "msg_ok"
+    assert mock_invoke.call_count == 2
 
 
-@patch("app.bedrock.bedrock.BedrockHandler._stream")
-async def test_skip_failover_when_documents_present_and_input_too_long(mock_bedrock_stream):
-    bedrock = BedrockHandler(mode=RunMode.ASYNC)
-    messages = [{"role": "user", "content": "hello"}]
-    system_message = "Respond only with Hi"
-    mock_bedrock_stream.side_effect = [
-        ValueError("""Bad response code, expected 200:
-        {'status_code': 400,
-        'headers': {':exception-type': 'validationException'},
-        'body': b'{"message":"Input is too long for requested model."}'}""")
-    ]
-    chat = MagicMock()
+@pytest.mark.parametrize(
+    "error",
+    [
+        _status_error(anthropic.BadRequestError, 400),
+        _status_error(anthropic.AuthenticationError, 401),
+        _status_error(anthropic.PermissionDeniedError, 403),
+        ValueError("bug in the caller"),
+    ],
+)
+@patch("app.bedrock.bedrock.BedrockHandler._invoke_async")
+async def test_deterministic_errors_are_not_retried(mock_invoke, error):
+    mock_invoke.side_effect = [error, _ok_message()]
 
-    def _error_function(ex):
-        return chat_stream_error_message(chat, ex, has_documents=True, is_initial_call=True)
+    with pytest.raises(BedrockError) as exc_info:
+        await BedrockHandler(mode=RunMode.ASYNC).invoke_async([{"role": "user", "content": "hello"}])
 
-    stream_result = bedrock.stream(messages, system=system_message, on_error=_error_function)
-    expexted_result = [
-        '{"error_code": "BEDROCK_SERVICE_INPUT_TOO_LONG_ERROR", '
-        '"error_message": "Input is too long, too many documents selected, select fewer documents"}'
-    ]
-
-    stream_result = await anext(stream_result)
-    assert [stream_result] == expexted_result
+    assert exc_info.value.__cause__ is error
+    assert exc_info.value.error_type is None
+    assert mock_invoke.call_count == 1
 
 
-@patch("app.bedrock.bedrock.BedrockHandler._stream")
-async def test_skip_failover_when_context_limit_reached(mock_bedrock_stream):
-    bedrock = BedrockHandler(mode=RunMode.ASYNC)
-    messages = [{"role": "user", "content": "hello"}]
-    system_message = "Respond only with Hi"
-    mock_bedrock_stream.side_effect = [
-        ValueError("""Bad response code, expected 200:
-        {'status_code': 400,
-        'headers': {':exception-type': 'validationException'},
-        'body': b'{"input length and `max_tokens` exceed context limit: 200387 + 8192 > 204698,
-        decrease input length or `max_tokens` and try again"}'}""")
-    ]
-    chat = MagicMock()
+@pytest.mark.parametrize(
+    "message",
+    [
+        "validationException: Input is too long for requested model.",
+        "validationException: input length and `max_tokens` exceed context limit: 200387 + 8192 > 204698",
+    ],
+)
+@patch("app.bedrock.bedrock.BedrockHandler._invoke_async")
+async def test_input_too_long_is_mapped_and_not_retried(mock_invoke, message):
+    mock_invoke.side_effect = _status_error(anthropic.BadRequestError, 400, message)
 
-    def _error_function(ex):
-        return chat_stream_error_message(chat, ex, has_documents=False, is_initial_call=False)
+    with pytest.raises(BedrockError) as exc_info:
+        await BedrockHandler(mode=RunMode.ASYNC).invoke_async([{"role": "user", "content": "hello"}])
 
-    stream_result = bedrock.stream(messages, system=system_message, on_error=_error_function)
-    expexted_result = [
-        '{"error_code": "BEDROCK_SERVICE_INPUT_TOO_LONG_ERROR", '
-        '"error_message": "Input is too long, reduce input text or start a new chat with reduced input text"}'
-    ]
-
-    stream_result = await anext(stream_result)
-    assert [stream_result] == expexted_result
+    assert exc_info.value.error_type == BedrockErrorType.INPUT_TOO_LONG
+    assert mock_invoke.call_count == 1
 
 
-@patch("app.bedrock.bedrock.BedrockHandler._stream")
-async def test_skip_failover_when_documents_not_present_and_input_too_long(mock_bedrock_stream):
-    bedrock = BedrockHandler(mode=RunMode.ASYNC)
-    messages = [{"role": "user", "content": "hello"}]
-    system_message = "Respond only with Hi"
-    mock_bedrock_stream.side_effect = [
-        ValueError("""Bad response code, expected 200:
-        {'status_code': 400,
-        'headers': {':exception-type': 'validationException'},
-        'body': b'{"message":"Input is too long for requested model."}'}""")
-    ]
-    chat = MagicMock()
+@patch("app.bedrock.retry.AWS_BEDROCK_REGIONS_MAX_RETRIES", 2)
+@patch("app.bedrock.bedrock.BedrockHandler._invoke_async")
+async def test_final_failure_is_logged_with_its_stack(mock_invoke, caplog):
+    error = _status_error(anthropic.InternalServerError, 500, "still down")
+    mock_invoke.side_effect = error
 
-    def _error_function(ex):
-        return chat_stream_error_message(chat, ex, has_documents=False, is_initial_call=True)
+    with caplog.at_level(logging.ERROR), pytest.raises(BedrockError) as exc_info:
+        await BedrockHandler(mode=RunMode.ASYNC).invoke_async([{"role": "user", "content": "hello"}])
 
-    stream_result = bedrock.stream(messages, system=system_message, on_error=_error_function)
-    expexted_result = [
-        '{"error_code": "BEDROCK_SERVICE_INPUT_TOO_LONG_ERROR", '
-        '"error_message": "Input is too long, reduce input text"}'
-    ]
+    assert mock_invoke.call_count == 3
+    assert exc_info.value.__cause__ is error
+    [record] = [r for r in caplog.records if r.getMessage().startswith("AWS Bedrock call failed")]
+    assert record.exc_info[1] is error
+    assert "after 3 attempt(s)" in record.getMessage()
 
-    stream_result = await anext(stream_result)
-    assert [stream_result] == expexted_result
+
+@patch("app.bedrock.retry.AWS_BEDROCK_REGIONS_MAX_RETRIES", 2)
+@patch("app.bedrock.bedrock.BedrockHandler._invoke_async")
+async def test_final_timeout_is_mapped_to_timeout(mock_invoke):
+    mock_invoke.side_effect = anthropic.APITimeoutError(request=_REQUEST)
+
+    with pytest.raises(BedrockError) as exc_info:
+        await BedrockHandler(mode=RunMode.ASYNC).invoke_async([{"role": "user", "content": "hello"}])
+
+    assert exc_info.value.error_type == BedrockErrorType.TIMEOUT
+    assert mock_invoke.call_count == 3
+
+
+@patch("app.bedrock.retry.BEDROCK_RETRY_BUDGET_SECONDS", 0.05)
+@patch("app.bedrock.bedrock.BedrockHandler._invoke_async")
+async def test_hung_call_is_cut_off_by_the_budget(mock_invoke):
+    async def hang(*args, **kwargs):
+        await asyncio.sleep(10)
+
+    mock_invoke.side_effect = hang
+
+    with pytest.raises(BedrockError) as exc_info:
+        await BedrockHandler(mode=RunMode.ASYNC).invoke_async([{"role": "user", "content": "hello"}])
+
+    assert exc_info.value.error_type == BedrockErrorType.TIMEOUT
+    assert mock_invoke.call_count == 1
+
+
+@patch("app.bedrock.retry.BEDROCK_RETRY_BACKOFF_BASE_SECONDS", 0.5)
+@patch("app.bedrock.retry.BEDROCK_RETRY_BACKOFF_MAX_SECONDS", 4.0)
+def test_backoff_is_jittered_and_capped():
+    for attempt, ceiling in [(0, 0.5), (1, 1.0), (2, 2.0), (3, 4.0), (10, 4.0)]:
+        delays = [_backoff_seconds(attempt) for _ in range(200)]
+        assert all(0 <= d <= ceiling for d in delays)
+        assert len(set(delays)) > 1
+
+
+def test_retry_budget_must_fit_inside_request_timeout():
+    from app.config import AppSettings
+
+    with pytest.raises(ValueError, match="bedrock_retry_budget_seconds"):
+        AppSettings(request_timeout_seconds=60, bedrock_retry_budget_seconds=60)

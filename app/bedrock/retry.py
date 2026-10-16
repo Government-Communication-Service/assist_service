@@ -1,9 +1,13 @@
 import asyncio
 import logging
+import random
 import time
 from asyncio import iscoroutinefunction
 from functools import wraps
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
+
+import anthropic
+import httpx
 
 from app.bedrock.bedrock_types import (
     AnthropicBedrockProvider,
@@ -15,6 +19,9 @@ from app.config import (
     AWS_BEDROCK_REGION1,
     AWS_BEDROCK_REGION2,
     AWS_BEDROCK_REGIONS_MAX_RETRIES,
+    BEDROCK_RETRY_BACKOFF_BASE_SECONDS,
+    BEDROCK_RETRY_BACKOFF_MAX_SECONDS,
+    BEDROCK_RETRY_BUDGET_SECONDS,
     STREAM_FIRST_CHUNK_TIMEOUT,
 )
 
@@ -45,206 +52,164 @@ def switch_region(current_region: str, ex: Exception) -> str:
     return new_region
 
 
+def _is_retryable(ex: Exception) -> bool:
+    """Whether a failed call is worth retrying: throttling (429), server errors (5xx), connection errors
+    and timeouts. Anything else, such as a bad request or an auth error, fails the same way every time."""
+    if isinstance(ex, anthropic.APIStatusError):
+        return ex.status_code == 429 or ex.status_code >= 500
+    # APITimeoutError is an APIConnectionError
+    return isinstance(ex, (anthropic.APIConnectionError, httpx.TransportError, TimeoutError))
+
+
+def _backoff_seconds(attempt: int) -> float:
+    """Full-jitter exponential backoff before retry number `attempt + 1`."""
+    return random.uniform(0, min(BEDROCK_RETRY_BACKOFF_MAX_SECONDS, BEDROCK_RETRY_BACKOFF_BASE_SECONDS * 2**attempt))
+
+
+def _retry_delay(ex: Exception, attempt: int, deadline: float) -> float | None:
+    """The backoff before the next attempt, or None if the call should give up now."""
+    if not _is_retryable(ex) or attempt >= AWS_BEDROCK_REGIONS_MAX_RETRIES:
+        return None
+    delay = _backoff_seconds(attempt)
+    if time.monotonic() + delay >= deadline:
+        return None
+    return delay
+
+
+def _final_error(ex: Exception, attempts: int, region: str) -> BedrockError:
+    """Log the failure with its stack and turn it into a BedrockError carrying the error type callers check."""
+    logger.error(
+        "AWS Bedrock call failed after %d attempt(s) (region: %s): %s: %s",
+        attempts,
+        region,
+        type(ex).__name__,
+        ex,
+        exc_info=ex,
+    )
+    if _is_input_too_long(ex):
+        return BedrockError("Input is too long", BedrockErrorType.INPUT_TOO_LONG)
+    if isinstance(ex, (anthropic.APITimeoutError, httpx.TimeoutException, TimeoutError)):
+        return BedrockError(f"AWS Bedrock call timed out, last exception: {ex!r}", BedrockErrorType.TIMEOUT)
+    return BedrockError(f"AWS Bedrock call failed, last exception: {ex}")
+
+
 def handle_region_failover_with_retries(func):
     """
-    Decorator that handles region failover with retries when making AWS Bedrock API calls.
-    It retries the operation by switching between AWS regions. The failover occurs between two AWS regions
-    defined  in variable AWS_BEDROCK_REGIONS. The decorated function will be retried up to the specified
-    `AWS_BEDROCK_REGIONS_MAX_RETRIES` count, using the alternate region for each retry.
+    Decorator that retries a non-stream AWS Bedrock call in the other region on a transient failure.
 
-    Args:
-        max_retries (int): The maximum number of retry attempts for a failed operation. Default is 3.
-
-    Returns:
-        A decorated function that retries the operation with failover between AWS regions.
+    Only throttling, 5xx, connection errors and timeouts are retried, up to `AWS_BEDROCK_REGIONS_MAX_RETRIES`
+    times, alternating between the regions in AWS_BEDROCK_REGIONS with jittered exponential backoff. The whole
+    call, retries included, is bounded by `BEDROCK_RETRY_BUDGET_SECONDS`, which is less than the request timeout.
 
     Raises:
-        BedrockError: If the operation fails after the specified number of retries.
-
+        BedrockError: If the call fails with a non-retryable error, runs out of retries or runs out of time.
+            error_type is INPUT_TOO_LONG or TIMEOUT when the last error was one of those.
     """
 
     @wraps(func)
     def wrapper(bedrock_handler: "BedrockHandler", *args, **kwargs):
-        """
-        Wrapper function for retrying the decorated function with region failover.
-        It changes bedrock_handler's client to a new client with the new AWS region
-
-        Args:
-            bedrock_handler: The handler for AWS Bedrock API calls.
-            *args: Positional arguments passed to the decorated function.
-            **kwargs: Keyword arguments passed to the decorated function.
-
-        Returns:
-            The result of the decorated function if successful.
-
-        Raises:
-            BedrockError: If the operation fails after the specified number of retries.
-        """
-
-        retries = 0
-        # reference to last exception in case retry attempts failed
-        ex = None
-        while retries <= AWS_BEDROCK_REGIONS_MAX_RETRIES:
+        deadline = time.monotonic() + BEDROCK_RETRY_BUDGET_SECONDS
+        attempt = 0
+        while True:
+            region = bedrock_handler.client.aws_region
             try:
                 return func(bedrock_handler, *args, **kwargs)
             except Exception as e:
-                new_region = switch_region(bedrock_handler.client.aws_region, e)
-                # swap client for new region
-                bedrock_handler.client = AnthropicBedrockProvider.get(new_region)
-                retries += 1
-                ex = e
-
-        logger.error("AWS Bedrock call failed, last exception: %s", ex)
-        raise BedrockError(f"AWS Bedrock call failed, last exception: {str(ex)}") from ex
+                delay = _retry_delay(e, attempt, deadline)
+                if delay is None:
+                    raise _final_error(e, attempt + 1, region) from e
+                bedrock_handler.client = AnthropicBedrockProvider.get(switch_region(region, e))
+            time.sleep(delay)
+            attempt += 1
 
     @wraps(func)
     async def async_wrapper(bedrock_handler: "BedrockHandler", *args, **kwargs):
-        """
-        Asynchronous wrapper function for retrying the decorated function with region failover.
-        It changes bedrock_handler's async_client to a new client with the new AWS region
-
-        Args:
-            bedrock_handler: The handler for AWS Bedrock API calls.
-            *args: Positional arguments passed to the decorated function.
-            **kwargs: Keyword arguments passed to the decorated function.
-
-        Returns:
-            The result of the decorated function if successful.
-
-        Raises:
-            Exception: If the operation fails after the specified number of retries.
-        """
-
-        retries = 0
-        # reference to last exception in case retry attempts failed
-        ex = None
-        while retries <= AWS_BEDROCK_REGIONS_MAX_RETRIES:
+        deadline = time.monotonic() + BEDROCK_RETRY_BUDGET_SECONDS
+        attempt = 0
+        while True:
+            region = bedrock_handler.async_client.aws_region
             try:
-                return await func(bedrock_handler, *args, **kwargs)
+                return await asyncio.wait_for(
+                    func(bedrock_handler, *args, **kwargs), timeout=deadline - time.monotonic()
+                )
             except Exception as e:
-                new_region = switch_region(bedrock_handler.async_client.aws_region, e)
-                bedrock_handler.async_client = AsyncAnthropicBedrockProvider.get(new_region)
-                retries += 1
-                ex = e
-
-        logger.exception("AWS Bedrock call failed, last exception: %s", ex)
-        raise BedrockError(f"AWS Bedrock call failed, last exception: {str(ex)}") from ex
+                delay = _retry_delay(e, attempt, deadline)
+                if delay is None:
+                    raise _final_error(e, attempt + 1, region) from e
+                bedrock_handler.async_client = AsyncAnthropicBedrockProvider.get(switch_region(region, e))
+            await asyncio.sleep(delay)
+            attempt += 1
 
     # check which wrapper to use
     return async_wrapper if iscoroutinefunction(func) else wrapper
 
 
-async def with_region_failover_for_streaming(
-    bedrock_handler: "BedrockHandler",
-    func,
-    on_error: Callable[[Exception], str],
-    *args,
-    **kwargs,
-):
-    """
-    Decorator that handles region failover with retries when making AWS Bedrock API calls.
-    It retries the operation by switching between AWS regions. The failover occurs between two AWS regions
-    defined  in variable AWS_BEDROCK_REGIONS. The decorated function will be retried up to the specified
-    `AWS_BEDROCK_REGIONS_MAX_RETRIES` count, using the alternate region for each retry.
+def _is_input_too_long(ex: Exception) -> bool:
+    """Whether a Bedrock error says the request exceeds the model's context window."""
+    ex_msg = str(ex)
+    return "Input is too long for requested model." in ex_msg or (
+        "input length and `max_tokens` exceed context limit" in ex_msg
+    )
 
-    If streaming encounters an error after it has started, on_error function is used to generate a custom error json msg
 
-    Implements a time-to-first-chunk timeout to detect when a stream opens but no data flows,
-    allowing fast failover instead of waiting for full read timeout.
+async def stream_with_region_failover(bedrock_handler: "BedrockHandler", stream_func, **kwargs):
+    """Run one streaming call, retrying in the other region until its first event arrives.
+
+    Once the first event has been yielded the call is committed to its region: later errors
+    are raised, not retried, so a caller never sees a response twice.
 
     Args:
-        bedrock_handler: The handler for AWS Bedrock API calls.
-        func: The streaming Generator function that generates json strings
-        on_error: The function taking an exception and generating a json string,
-        used when an error encountered after the streaming has started.
-        *args: Positional arguments passed to the decorated function.
-        **kwargs: Keyword arguments passed to the decorated function.
+        bedrock_handler: Handler whose `async_client` is used and swapped on failover.
+        stream_func: Async generator function taking the client as its first argument.
+        **kwargs: Passed to stream_func.
+
+    Yields:
+        The events from stream_func.
 
     Raises:
-        BedrockError: If the operation fails after the specified number of retries.
-
-    Returns:
-        The result of the streaming function if no errors
+        BedrockError: INPUT_TOO_LONG if the request exceeds the context window; TIMEOUT or a
+            generic error if every attempt failed before its first event.
+        Exception: Whatever stream_func raised after its first event.
     """
-
     retries = 0
-    # reference to last exception in case retry attempts failed
-    ex = None
+    last_ex = None
     while retries <= AWS_BEDROCK_REGIONS_MAX_RETRIES:
-        streaming_started = False
+        region = bedrock_handler.async_client.aws_region
+        async_gen = stream_func(bedrock_handler.async_client, **kwargs).__aiter__()
         try:
-            # Get the async generator
-            async_gen = func(*args, **kwargs).__aiter__()
-
-            # Wait for first chunk with timeout to detect stalled streams
+            start_time = time.monotonic()
             try:
-                start_time = time.monotonic()
-                first_chunk = await asyncio.wait_for(
-                    async_gen.__anext__(),
-                    timeout=STREAM_FIRST_CHUNK_TIMEOUT
-                )
-                elapsed_time = time.monotonic() - start_time
-                logger.info(
-                    "Stream first chunk received in %.2fs (timeout: %.1fs, region: %s)",
-                    elapsed_time,
-                    STREAM_FIRST_CHUNK_TIMEOUT,
-                    bedrock_handler.async_client.aws_region,
-                )
-                yield first_chunk
-                streaming_started = True
+                first_event = await asyncio.wait_for(async_gen.__anext__(), timeout=STREAM_FIRST_CHUNK_TIMEOUT)
             except asyncio.TimeoutError as err:
-                elapsed_time = time.monotonic() - start_time
                 logger.warning(
-                    "Stream first chunk timeout after %.2fs (timeout: %.1fs, region: %s)",
-                    elapsed_time,
-                    STREAM_FIRST_CHUNK_TIMEOUT,
-                    bedrock_handler.async_client.aws_region,
+                    "Stream first event timeout after %.2fs (region: %s)", time.monotonic() - start_time, region
                 )
-                # No data received within timeout - close generator to prevent memory leak
-                try:
-                    await async_gen.aclose()
-                except Exception:
-                    pass  # Ignore cleanup errors
-                # Treat timeout as stream failure to trigger failover
                 raise BedrockError(
-                    f"Stream timed out waiting for first chunk after {STREAM_FIRST_CHUNK_TIMEOUT}s",
-                    BedrockErrorType.TIMEOUT
+                    f"Stream timed out waiting for first event after {STREAM_FIRST_CHUNK_TIMEOUT}s",
+                    BedrockErrorType.TIMEOUT,
                 ) from err
-
-            # Stream the rest of the chunks normally
-            async for item in async_gen:
-                yield item
-
-            # this is to exit while loop when streaming is completed.
-            return
         except Exception as e:
-            ex = e
-            ex_msg = f"{e}"
-            # check if error is due to large input, which can't be retried.
-            if (
-                isinstance(ex, ValueError)
-                and "validationException" in ex_msg
-                and (
-                    "Input is too long for requested model." in ex_msg
-                    or "input length and `max_tokens` exceed context limit" in ex_msg
-                )
-            ):
-                error_msg = "Input is too long"
-                logger.error(f"{error_msg}: {type(ex)}: {ex}")
-                yield on_error(BedrockError(error_msg, BedrockErrorType.INPUT_TOO_LONG))
-                return
-            # if error happened at the beginning of streaming, then switch over region
-            if not streaming_started:
-                new_region = switch_region(bedrock_handler.async_client.aws_region, e)
-                # swap client for new region
-                bedrock_handler.async_client = AsyncAnthropicBedrockProvider.get(new_region)
-                retries += 1
-            else:
-                # stream a custom error message payload if exception happened midway through streaming
-                yield on_error(e)
-                logger.error("AWS Bedrock error through streaming, exception: %s", ex)
-                return
+            try:
+                await async_gen.aclose()
+            except Exception as close_error:
+                logger.warning("Failed to close stream after an error: %s", close_error)
+            if _is_input_too_long(e):
+                logger.error(f"Input is too long: {type(e)}: {e}")
+                raise BedrockError("Input is too long", BedrockErrorType.INPUT_TOO_LONG) from e
+            new_region = switch_region(region, e)
+            bedrock_handler.async_client = AsyncAnthropicBedrockProvider.get(new_region)
+            retries += 1
+            last_ex = e
+            continue
 
-    # all attempts failed
-    logger.error("AWS Bedrock call failed, last exception: %s:%s", type(ex), ex)
-    yield on_error(ex)
+        logger.info("Stream first event received in %.2fs (region: %s)", time.monotonic() - start_time, region)
+        try:
+            yield first_event
+            async for event in async_gen:
+                yield event
+        finally:
+            await async_gen.aclose()
+        return
+
+    logger.error("AWS Bedrock call failed, last exception: %s:%s", type(last_ex), last_ex)
+    raise BedrockError(f"AWS Bedrock call failed, last exception: {last_ex}") from last_ex

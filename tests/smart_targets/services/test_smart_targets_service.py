@@ -1,6 +1,6 @@
 from unittest.mock import Mock
 
-from app.smart_targets.service import NUM_RECENT_TURNS_FOR_DECISION, SmartTargetsService
+from app.smart_targets.service import SMART_TARGETS_RECENT_TURNS, SmartTargetsService
 
 
 def _make_message(role: str, content: str) -> Mock:
@@ -8,14 +8,6 @@ def _make_message(role: str, content: str) -> Mock:
     m.role = role
     m.content = content
     return m
-
-
-class TestSmartTargetsService:
-    async def test_no_metric_selected(self, mock_get_available_metrics, mock_llm_smart_targets_choice, mock_messages):
-        service = SmartTargetsService()
-        available_metrics = await service.get_available_metrics()
-        r = await service._select_metrics(messages=mock_messages, available_metrics=available_metrics)
-        assert len(r) == 0, f"Expected no metrics to be selected, got {len(r)}"
 
 
 class TestWrapChatMessages:
@@ -34,8 +26,8 @@ class TestWrapChatMessages:
 
         wrapped = service._wrap_chat_messages(messages)
 
-        # Only the last NUM_RECENT_TURNS_FOR_DECISION messages should survive.
-        oldest_kept_index = len(messages) - NUM_RECENT_TURNS_FOR_DECISION
+        # Only the last SMART_TARGETS_RECENT_TURNS messages should survive.
+        oldest_kept_index = len(messages) - SMART_TARGETS_RECENT_TURNS
         dropped_turn = oldest_kept_index // 2 - 1
         assert f"user-turn-{dropped_turn}" not in wrapped
         assert f"assistant-turn-{dropped_turn}" not in wrapped

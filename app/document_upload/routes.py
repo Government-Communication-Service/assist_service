@@ -1,11 +1,10 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.endpoints import ENDPOINTS
 from app.auth.verify_service import verify_auth_token
-from app.database.db_session import get_db_session
+from app.database.db_session import DbSession
 from app.document_upload.schemas import DocumentCleanupResponse
 from app.document_upload.service import clean_expired_documents
 
@@ -19,7 +18,7 @@ logger = logging.getLogger(__name__)
     dependencies=[Depends(verify_auth_token)],
     response_model=DocumentCleanupResponse,
 )
-async def delete_expired_documents(db_session: AsyncSession = Depends(get_db_session)):
+async def delete_expired_documents(db_session: DbSession):
     """
     Remove expired documents from the database and OpenSearch for data protection compliance.
 

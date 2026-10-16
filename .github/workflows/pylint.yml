@@ -66,6 +66,11 @@ jobs:
             # unstructured SSRF via partition(url=...) (CVE-2026-71428). We never pass
             # url= to partition/partition_html/partition_md, only file= with uploaded bytes.
             CVE-2026-71428
+            # unstructured stored XSS in HTML output (CVE-2026-104250). Affects only
+            # to_html()/elements_to_html() on the v2 HTML/VLM partitioner path, which we
+            # never call. text_as_html from Table elements is only converted to Markdown via
+            # BeautifulSoup get_text(), and no unstructured HTML output is rendered in a browser.
+            CVE-2026-104250
 
       - name: Install Bandit
         run: pip install bandit

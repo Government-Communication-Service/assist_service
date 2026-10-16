@@ -5,7 +5,7 @@
 Connects to a copilot-api Postgres database over an SSH bastion (same connection pattern as
 scripts/db_queries/db-connect.sh) and renders every `message` row for a chat (matched by uuid
 prefix), joined with the `chat` and `user` tables for context. Token/length stats are visible in
-the collapsed summary line; full content / content_enhanced_with_rag / summary text is nested
+the collapsed summary line; full content / content_enhanced_with_rag / summary / raw_messages text is nested
 inside collapsible sections.
 
 The page has a text search box (matches against the rendered text of an entry) and a start/end
@@ -27,6 +27,7 @@ Example:
 """
 
 import argparse
+import json
 import sys
 import webbrowser
 from pathlib import Path
@@ -49,7 +50,7 @@ SELECT id, created_at::text AS created_at, role, tokens, cache_read_tokens, cach
        length(content) AS content_len,
        length(content_enhanced_with_rag) AS enhanced_len,
        length(summary) AS summary_len,
-       content, content_enhanced_with_rag, summary
+       content, content_enhanced_with_rag, summary, raw_messages
 FROM message
 WHERE chat_id = {chat_id}
 ORDER BY created_at
@@ -197,6 +198,13 @@ def render_header(chat: dict) -> str:
 </div>"""
 
 
+def format_raw_messages(raw_messages) -> str | None:
+    """Pretty-print a message's raw_messages JSON (None when the column is null)."""
+    if raw_messages is None:
+        return None
+    return json.dumps(raw_messages, indent=2, ensure_ascii=False)
+
+
 def render_message_entry(msg: dict, idx: int) -> str:
     role = msg.get("role") or "unknown"
     css = f"role-{role}" if role in ("user", "assistant", "system") else "role-dynamic"
@@ -210,6 +218,7 @@ def render_message_entry(msg: dict, idx: int) -> str:
         ("content", msg.get("content")),
         ("content_enhanced_with_rag", msg.get("content_enhanced_with_rag")),
         ("summary", msg.get("summary")),
+        ("raw_messages", format_raw_messages(msg.get("raw_messages"))),
     ]
     body_html = "".join(
         f"<details><summary>{label}</summary><pre>{escape(text)}</pre></details>" for label, text in body_sections

@@ -110,6 +110,9 @@ def build_table_chunk_documents(
     dicts, splitting into multiple parts if the resulting markdown table exceeds
     max_chars. Returns [] if all resulting content sanitizes to empty.
 
+    For spreadsheets, each chunk is prefixed with "Sheet: <name>" and the name is added to the
+    chunk name, since the sheet name often says what the table is about.
+
     Continuation chunks (element.metadata.is_continuation, set by unstructured's
     by_title chunking on tables split at an arbitrary data row) are rendered without
     a fabricated header row.
@@ -118,8 +121,12 @@ def build_table_chunk_documents(
     markdown = html_table_to_markdown(element.metadata.text_as_html, has_header=has_header)
     pieces = split_markdown_table(markdown, max_chars, has_header=has_header)
 
+    sheet_name = element.metadata.page_name
+    if sheet_name:
+        pieces = [f"Sheet: {sheet_name}\n{piece}" for piece in pieces]
+
     contents = [content for content in (sanitize(piece) for piece in pieces) if content]
-    name_base = sanitize(element.category)
+    name_base = sanitize(f"{element.category}: {sheet_name}" if sheet_name else element.category)
     result = []
     for i, content in enumerate(contents):
         name = f"{name_base} (part {i + 1}/{len(contents)})" if len(contents) > 1 else name_base

@@ -2,6 +2,7 @@
 Style Guide API Routes
 Endpoints for checking documents against GOV.UK style guide rules.
 """
+
 import logging
 from pathlib import Path
 from typing import List, Optional
@@ -11,11 +12,12 @@ from pydantic import BaseModel, Field
 
 from app.auth.verify_service import verify_auth_token
 from app.config import STYLE_GUIDE_LLM_MODEL
+from app.style_guide.prompts import format_checker_context
+from app.style_guide.service import describe_violation
 from app.style_guide.style_guide_checker import (
     check_case_insensitive_rules,
     check_case_sensitive_rules,
     check_llm_validation_rules,
-    generate_summary_and_fix,
     load_rule_mapping,
 )
 
@@ -42,12 +44,15 @@ class StyleGuideCheckRequest(BaseModel):
 class ViolationDetail(BaseModel):
     """Detail of a single violation."""
 
-    rule_id: str
-    rule_title: str
-    severity: str
-    example: str
-    sentence: str
-    position: int
+    rule_id: Optional[str] = Field(None, description="The rule's id in rule_mapping.json")
+    rule_title: Optional[str] = Field(None, description="The rule's name")
+    guidance: Optional[str] = Field(None, description="What the style guide says for this rule")
+    detected_by: str = Field(..., description="'pattern match' or 'model review'")
+    problem: Optional[str] = Field(None, description="What the pattern match found wrong")
+    correct_form: Optional[str] = Field(None, description="The correct form, for casing rules")
+    reason: Optional[str] = Field(None, description="Why the model judged it a violation")
+    count: int = Field(..., description="How many times it occurs")
+    examples: List[str] = Field(..., description="The sentences or text where it occurs")
 
 
 class StyleGuideCheckResponse(BaseModel):
@@ -55,9 +60,16 @@ class StyleGuideCheckResponse(BaseModel):
 
     violation_count: int = Field(..., description="Total number of violations found")
     violations: List[ViolationDetail] = Field(..., description="List of all violations")
-    summary: Optional[str] = Field(None, description="LLM-generated summary of issues")
-    fixed_document: Optional[str] = Field(None, description="LLM-generated corrected version")
-    violation_list: Optional[str] = Field(None, description="Formatted list of violations")
+
+
+def _checker_context(request: StyleGuideCheckRequest) -> str | None:
+    """Turn the request's audience and concerns into guidance for the validation prompts."""
+    parts = []
+    if request.target_audience:
+        parts.append(f"Target audience: {request.target_audience}")
+    if request.specific_concerns:
+        parts.append(f"Specific concerns: {request.specific_concerns}")
+    return "\n".join(parts) or None
 
 
 @router.post(
@@ -72,13 +84,13 @@ async def check_style_guide(request: StyleGuideCheckRequest) -> StyleGuideCheckR
     Check content against GOV.UK style guide rules.
 
     Performs both deterministic pattern matching and LLM-based validation
-    to identify style guide violations, then generates a summary and corrected version.
+    to identify style guide violations.
 
     Args:
         request: StyleGuideCheckRequest with content and optional parameters
 
     Returns:
-        StyleGuideCheckResponse with violations, summary, and fixed document
+        StyleGuideCheckResponse with the violations found
 
     Raises:
         HTTPException: If there's an error processing the request
@@ -96,7 +108,10 @@ async def check_style_guide(request: StyleGuideCheckRequest) -> StyleGuideCheckR
             logger.info("Running LLM validation...")
             llm_model = request.llm_model or STYLE_GUIDE_LLM_MODEL
             llm_violations = await check_llm_validation_rules(
-                request.content, RULES, llm_model=llm_model
+                request.content,
+                RULES,
+                llm_model=llm_model,
+                checker_context=format_checker_context(_checker_context(request)),
             )
         else:
             logger.info("Skipping LLM validation")
@@ -106,37 +121,11 @@ async def check_style_guide(request: StyleGuideCheckRequest) -> StyleGuideCheckR
 
         logger.info(f"Found {len(violations)} total violations")
 
-        # Generate summary and fixed document if violations found
-        summary_result = None
-        if violations:
-            llm_model = request.llm_model or STYLE_GUIDE_LLM_MODEL
-            summary_result = await generate_summary_and_fix(
-                document=request.content,
-                violations=violations,
-                llm_model=llm_model,
-                output_dir=SCRIPT_DIR,
-            )
-
-        # Format violations for response
-        violation_details = []
-        for v in violations:
-            violation_details.append(
-                ViolationDetail(
-                    rule_id=v.get("rule_id", ""),
-                    rule_title=v.get("rule_title", ""),
-                    severity=v.get("severity", ""),
-                    example=v.get("example", ""),
-                    sentence=v.get("sentence", ""),
-                    position=v.get("position", 0),
-                )
-            )
+        violation_details = [ViolationDetail(**describe_violation(v)) for v in violations]
 
         return StyleGuideCheckResponse(
             violation_count=len(violations),
             violations=violation_details,
-            summary=summary_result.get("summary") if summary_result else None,
-            fixed_document=summary_result.get("fixed_document") if summary_result else None,
-            violation_list=summary_result.get("violation_list") if summary_result else None,
         )
 
     except Exception as e:

@@ -1,0 +1,21 @@
+{
+  "scenario": "smoke",
+  "cases": [
+    {
+      "id": "smoke-001",
+      "needed_flags": [],
+      "turns": [
+        {"query": "In one sentence, what is a press release?", "expected_answer": "SMOKE TEST ONLY - not a real expected answer."},
+        {"query": "And what is a media briefing?", "expected_answer": "SMOKE TEST ONLY - not a real expected answer."}
+      ]
+    },
+    {
+      "id": "smoke-002",
+      "needed_flags": [],
+      "turns": [
+        {"query": "List the topics covered in this document, briefly.", "add_documents": ["random-topics.docx"], "expected_answer": "SMOKE TEST ONLY - not a real expected answer."},
+        {"query": "Which topic is covered first?", "expected_answer": "SMOKE TEST ONLY - not a real expected answer."}
+      ]
+    }
+  ]
+}

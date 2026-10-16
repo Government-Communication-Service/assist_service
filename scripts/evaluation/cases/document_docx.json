@@ -1,0 +1,59 @@
+{
+  "scenario": "document_docx",
+  "cases": [
+    {
+      "id": "document_docx-001",
+      "needed_flags": [],
+      "turns": [
+        {
+          "query": "I've attached a briefing on DNA topics in the UK. When was the National DNA Database established, and what did the European Court of Human Rights rule about it?",
+          "add_documents": [
+            "DNA_Topics_UK.docx"
+          ],
+          "expected_answer": "The NDNAD was established in 1995. In 2008 the European Court of Human Rights ruled that the blanket retention of DNA profiles (including of people arrested but not charged or convicted) violated privacy rights, which prompted the UK government to revise its policies."
+        },
+        {
+          "query": "And what does it say about the 100,000 Genomes Project?",
+          "expected_answer": "It was launched in 2012 by Genomics England. It aims to sequence the genomes of 100,000 patients, particularly those with rare diseases and cancers, to understand the genetic basis of these conditions and develop more effective, personalised treatments."
+        },
+        {
+          "query": "Which UK body regulates research involving human embryos, and how many participants does the UK Biobank have?",
+          "expected_answer": "The Human Fertilisation and Embryology Authority (HFEA) regulates research involving human embryos. The UK Biobank has 500,000 participants (it was launched in 2007)."
+        }
+      ]
+    },
+    {
+      "id": "document_docx-002",
+      "needed_flags": [],
+      "turns": [
+        {
+          "query": "Which topic does this document mention most often, and how many times does it appear?",
+          "add_documents": [
+            "random-topics.docx"
+          ],
+          "expected_answer": "Renaissance art, which appears 7 times (the next most frequent is Virtual reality, 4 times). The document has 50 sentences in total, each saying a topic 'is a fascinating field that continues to evolve with new discoveries and innovations'. [Do not judge a response as a failure if it gets the count slightly wrong, but in pairwise comparison, prefer the response that is the most accurate.]"
+        },
+        {
+          "query": "I've added a second document. In that one, which section covers DNA testing in immigration and asylum cases, and what is the main concern critics raise?",
+          "add_documents": [
+            "DNA_Topics_UK.docx"
+          ],
+          "expected_answer": "Section 7, 'DNA and Immigration Policies in the UK'. Critics argue that relying on genetic tests alone may overlook the complex nature of familial relationships, especially in cases involving adoption or non-biological family structures. Concerns about consent and misuse of genetic data are also raised."
+        }
+      ]
+    },
+    {
+      "id": "document_docx-003",
+      "needed_flags": [],
+      "turns": [
+        {
+          "query": "I've attached a briefing on DNA topics in the UK. Please write out just the section titles",
+          "add_documents": [
+            "DNA_Topics_UK.docx"
+          ],
+          "expected_answer": "1. History of DNA Discovery in the UK; 2. The UK's National DNA Database; 3. DNA Privacy and ethical concerns in the UK; 4. Genomic Medicine in the UK; 5. DNA Testing for Ancestry in the UK; 6. Forensic DNA Advancements in the UK; 7. DNA and Immigration Policies in the UK; 8. DNA Research and Biotechnology in the UK; 9. UK Laws and Regulations on Genetic Modification; 10. The UK Biobank and DNA Studies"
+        }
+      ]
+    }
+  ]
+}

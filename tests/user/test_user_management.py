@@ -1,11 +1,18 @@
 import logging
 import uuid
 
+import pytest
+
 from app.api.endpoints import ENDPOINTS
 from app.auth.constants import SESSION_AUTH_ALIAS
 
 api = ENDPOINTS()
 logger = logging.getLogger(__name__)
+
+
+@pytest.fixture
+def session_check_on(monkeypatch):
+    monkeypatch.setattr("app.user.utils.USER_UPDATE_REQUIRES_SESSION_AUTH", True)
 
 
 class TestUserManagement:
@@ -93,9 +100,15 @@ class TestUserManagement:
             "communicator_role": False,
         }
 
+        # The update needs the user's own User-Key-UUID and Session-Auth
+        user_headers = {**auth_token_only_headers, "User-Key-UUID": user_uuid}
+        session_response = await async_client.post(api.get_sessions(), headers=user_headers)
+        assert session_response.status_code == 200
+        user_headers[SESSION_AUTH_ALIAS] = session_response.json()[SESSION_AUTH_ALIAS]
+
         # Send the PUT request to update the user
         update_url = api.update_user(user_uuid)
-        update_response = await async_client.put(update_url, json=update_payload, headers=auth_token_only_headers)
+        update_response = await async_client.put(update_url, json=update_payload, headers=user_headers)
 
         # Assert the response status and content
         assert update_response.status_code == 200
@@ -104,12 +117,9 @@ class TestUserManagement:
         expected_message = f"Successfully updated user with UUID: {user_uuid}"
         assert expected_message in data["message"]
 
-    async def test_update_nonexistent_user(self, async_client, async_http_requester, auth_token_only_headers):
-        # Generate a random UUID that shouldn't exist in the system
-
-        nonexistent_uuid = str(uuid.uuid4())
-
-        update_payload = {
+    @staticmethod
+    def _update_payload():
+        return {
             "job_title": "Senior Software Engineer",
             "region": "South",
             "sector": "Technology",
@@ -118,10 +128,52 @@ class TestUserManagement:
             "communicator_role": False,
         }
 
-        update_url = api.update_user(nonexistent_uuid)
+    async def test_update_nonexistent_user(self, async_client, auth_token_only_headers):
+        """With the session check off, a token-only update of an unknown user still returns 404."""
+        nonexistent_uuid = str(uuid.uuid4())
 
-        response = await async_client.put(update_url, json=update_payload, headers=auth_token_only_headers)
+        response = await async_client.put(
+            api.update_user(nonexistent_uuid), json=self._update_payload(), headers=auth_token_only_headers
+        )
         assert response.status_code == 404
+
+    async def test_update_user_with_token_only_when_session_check_off(self, async_client, auth_token_only_headers):
+        user_uuid = str(uuid.uuid4())
+        create_response = await async_client.post(
+            api.create_user(), json={"uuid": user_uuid}, headers=auth_token_only_headers
+        )
+        assert create_response.status_code == 201
+
+        response = await async_client.put(
+            api.update_user(user_uuid), json=self._update_payload(), headers=auth_token_only_headers
+        )
+        assert response.status_code == 200, response.text
+
+    async def test_update_user_requires_session_auth(self, async_client, auth_token_only_headers, session_check_on):
+        user_uuid = str(uuid.uuid4())
+        headers = {**auth_token_only_headers, "User-Key-UUID": user_uuid}
+
+        response = await async_client.put(api.update_user(user_uuid), json=self._update_payload(), headers=headers)
+        assert response.status_code == 400, response.text
+
+    async def test_update_user_requires_user_key_uuid(self, async_client, auth_token_only_headers, session_check_on):
+        response = await async_client.put(
+            api.update_user(str(uuid.uuid4())), json=self._update_payload(), headers=auth_token_only_headers
+        )
+        assert response.status_code == 400, response.text
+
+    async def test_update_another_user_is_rejected(self, async_client, default_headers, session_check_on):
+        """A caller can't update another user's profile, even with a valid Session-Auth of their own."""
+        response = await async_client.put(
+            api.update_user(str(uuid.uuid4())), json=self._update_payload(), headers=default_headers
+        )
+        assert response.status_code == 403, response.text
+
+    async def test_update_own_user_with_session(self, async_client, user_id, default_headers, session_check_on):
+        response = await async_client.put(
+            api.update_user(user_id), json=self._update_payload(), headers=default_headers
+        )
+        assert response.status_code == 200, response.text
 
     async def test_create_auth_session_all_user_properties(self, async_client, auth_token_only_headers):
         """

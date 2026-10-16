@@ -18,6 +18,7 @@ from sqlalchemy.future import select
 
 from app.central_guidance.constants import CENTRAL_RAG_INDEX_NAME
 from app.central_guidance.schemas import DocumentChunkResponse, ListDocumentChunkResponse
+from app.config import OPENSEARCH_INDEX_REQUEST_TIMEOUT_SECONDS
 from app.database.db_operations import DbOperations
 from app.database.models import (
     Document,
@@ -64,7 +65,7 @@ async def sync_central_index(session: AsyncSession) -> bool:
             opensearch_client.cluster.health(
                 index=CENTRAL_RAG_INDEX_NAME,
                 wait_for_status="yellow",
-                request_timeout=30,
+                request_timeout=OPENSEARCH_INDEX_REQUEST_TIMEOUT_SECONDS,
             )
         except Exception as e:
             logger.warning(
@@ -133,7 +134,7 @@ async def sync_central_index(session: AsyncSession) -> bool:
                         opensearch_client.cluster.health(
                             index=CENTRAL_RAG_INDEX_NAME,
                             wait_for_status="yellow",
-                            request_timeout=30,
+                            request_timeout=OPENSEARCH_INDEX_REQUEST_TIMEOUT_SECONDS,
                         )
                     except Exception:
                         pass

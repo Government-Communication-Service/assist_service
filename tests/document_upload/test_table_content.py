@@ -143,8 +143,11 @@ def test_split_markdown_table_without_header_splits_without_repeating_anything()
         assert "---" not in piece
 
 
-def _make_table_element(html: str, is_continuation: bool = False) -> Table:
-    return Table(text="ignored", metadata=ElementMetadata(text_as_html=html, is_continuation=is_continuation))
+def _make_table_element(html: str, is_continuation: bool = False, page_name: str | None = None) -> Table:
+    return Table(
+        text="ignored",
+        metadata=ElementMetadata(text_as_html=html, is_continuation=is_continuation, page_name=page_name),
+    )
 
 
 def test_build_table_chunk_documents_single_piece():
@@ -156,6 +159,20 @@ def test_build_table_chunk_documents_single_piece():
     assert len(documents) == 1
     assert documents[0]["chunk_name"] == "Table"
     assert "| a | b |" in documents[0]["chunk_content"]
+
+
+def test_build_table_chunk_documents_includes_sheet_name_in_every_part():
+    header = "<tr><td>col1</td><td>col2</td></tr>"
+    rows = "".join(f"<tr><td>row{i}</td><td>val{i}</td></tr>" for i in range(50))
+    element = _make_table_element(f"<table>{header}{rows}</table>", page_name="heavy car users")
+    document = SimpleNamespace(name="doc.xlsx", url="http://example.com/doc.xlsx", uuid="doc-uuid")
+
+    documents = build_table_chunk_documents(element, document, sanitize=lambda s: s, max_chars=200)
+
+    assert len(documents) > 1
+    assert documents[0]["chunk_name"] == "Table: heavy car users (part 1/%d)" % len(documents)
+    for doc in documents:
+        assert doc["chunk_content"].startswith("Sheet: heavy car users\n")
 
 
 def test_build_table_chunk_documents_splits_and_numbers_parts():

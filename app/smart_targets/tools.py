@@ -2,7 +2,10 @@
 
 from typing import Any
 
-from app.smart_targets.prompts import SMART_TARGETS_TOOL_DEFINITION
+from pydantic import Field
+
+from app.bedrock.tool_schema import LenientList, ToolArgs, ToolDef
+from app.config import SMART_TARGETS_MAX_TOOL_METRICS
 
 SELECT_FILTERS_TOOL_NAME = "select_filters_for_smart_targets_tool"
 
@@ -74,37 +77,32 @@ def generate_select_filters_tool_schema(filters_data: dict[str, Any]) -> dict[st
     }
 
 
-SELECT_METRICS_TOOL_NAME = "select_campaign_metrics"
-SELECT_METRICS_TOOL = {
-    "name": SELECT_METRICS_TOOL_NAME,
-    "description": f"A tool used to retrieve information about one or more CampaignMetrics from the Smart Targets tool. Select multiple metrics if the user's question would benefit from data about different types of measurements (e.g., both impressions and click-through rates, or awareness and understanding metrics). {SMART_TARGETS_TOOL_DEFINITION}",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "reasoning": {
-                "description": "A scratchpad to reason through your response before answering.",
-                "type": "string",
-            },
-            "selected_metrics": {
-                "description": "An array of selected metrics with context for each",
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "metric_name": {
-                            "description": "The 'name' of the campaign metric you wish to select.",
-                            "type": "string",
-                        },
-                        "context_for_filters": {
-                            "description": "Relevant information extracted from the chat that will help with filter selection for this specific metric (e.g., specific audiences, time periods, channels, or other constraints mentioned by the user).",
-                            "type": "string",
-                        },
-                    },
-                    "required": ["metric_name", "context_for_filters"],
-                },
-                "minItems": 0,
-            },
-        },
-        "required": ["selected_metrics"],
-    },
-}
+class SmartTargetsMetricRequest(ToolArgs):
+    """One metric to look up."""
+
+    metric_name: str = Field(description="A Smart Targets metric name, exactly as listed in the system prompt")
+    context_for_filters: str = Field(
+        description=(
+            "Plain-language description of the campaigns to compare against, used to choose filters: "
+            "audiences, channels, dates, spend, campaign type and any other constraints from the conversation"
+        )
+    )
+
+
+class QuerySmartTargetsArgs(ToolArgs):
+    """Get benchmark statistics about past government communications campaigns from the Smart Targets
+    tool (the Benchmark Database). For each requested metric (e.g. impressions, click-through rate,
+    awareness) it chooses filters from your context_for_filters and returns aggregate statistics for the
+    matching campaigns: median, 25th and 75th percentiles, 95% confidence interval, and the counts of
+    campaigns and measurements. Filters are loosened automatically if too few campaigns match. The
+    statistics describe the whole filtered selection, so to compare (e.g. across years or audiences)
+    request the same metric several times with different context_for_filters. If the count of
+    measurements differs from the count of campaigns, the metric was measured across several channels.
+    Use it to set realistic expectations for a campaign's performance."""
+
+    metrics: LenientList[SmartTargetsMetricRequest] = Field(
+        description=f"1 to {SMART_TARGETS_MAX_TOOL_METRICS} metrics to look up"
+    )
+
+
+QUERY_SMART_TARGETS = ToolDef("query_smart_targets", QuerySmartTargetsArgs, strict=False)

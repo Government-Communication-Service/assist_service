@@ -1,10 +1,5 @@
 import pytest
 
-from app.bedrock import BedrockHandler, RunMode
-from app.config import LLM_DEFAULT_MODEL
-from app.database.db_operations import DbOperations
-from app.database.models import GovUkSearchQuery
-from app.database.table import LLMTable
 from app.gov_uk_search.service import GovUKSearch
 from app.gov_uk_search.utils import build_search_url
 
@@ -77,41 +72,24 @@ class TestGovUKSearchRegression:
         assert "&order=public_timestamp" in url_with_timestamp
 
     @pytest.mark.asyncio
-    async def test_relevance_order_api_call(self, db_session):
+    async def test_relevance_order_api_call(self):
         """
         Integration test to ensure API calls with relevance ordering work correctly.
 
         This test verifies that the fix for the relevance ordering issue works
         in practice by making an actual API call that would have previously failed.
         """
-        # Setup
-        llm_obj = LLMTable().get_by_model(LLM_DEFAULT_MODEL)
-        web_browsing_llm = BedrockHandler(llm=llm_obj, mode=RunMode.ASYNC)
-
-        response = await DbOperations.insert_llm_internal_response_id_query(
-            db_session=db_session,
-            web_browsing_llm=web_browsing_llm.llm,
-            content="TEST",
-            tokens_in=10,
-            tokens_out=100,
-            completion_cost=10 * web_browsing_llm.llm.input_cost_per_token
-            + 100 * web_browsing_llm.llm.output_cost_per_token,
-        )
-        llm_internal_response_id_query = response.id
 
         # This call would have previously failed with 422 error when order_by_field_name="relevance"
-        resp, gov_uk_search_query = await GovUKSearch.simple_search(
+        resp = await GovUKSearch.search(
             query="legal consequences rioting during trial",
-            db_session=db_session,
             count=10,
             order_by_field_name="relevance",  # This was the problematic parameter
             fields=["title", "description", "link", "primary_publishing_organisation", "public_timestamp"],
-            llm_internal_response_id_query=llm_internal_response_id_query,
         )
 
         # Verify the call succeeded (no 422 error)
         assert isinstance(resp, dict)
-        assert isinstance(gov_uk_search_query, GovUkSearchQuery)
         assert "results" in resp
         # Should have results or empty list, but not error
         assert isinstance(resp["results"], list)

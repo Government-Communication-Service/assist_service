@@ -1,0 +1,43 @@
+{
+  "scenario": "document_odt",
+  "cases": [
+    {
+      "id": "document_odt-001",
+      "needed_flags": [],
+      "turns": [
+        {
+          "query": "What is this document called, and what is it about?",
+          "add_documents": [
+            "random-topics.odt"
+          ],
+          "expected_answer": "It is titled 'Random Topics Exploration'. It is a series of repeated sentences, each saying that a topic (e.g. psychology, architecture, blockchain, quantum physics, climate change) 'is a fascinating field that continues to evolve with new discoveries and innovations'. It has no other substantive content."
+        },
+        {
+          "query": "Which topic is mentioned most often?",
+          "expected_answer": "Renaissance art, mentioned 7 times (next is Virtual reality with 4). [Judge a response acceptable even if it gets the counts slightly wrong, but in pairwise comparison prefer the more accurate answer]"
+        },
+        {
+          "query": "Is robotics covered, and how many times? What about cryptography?",
+          "expected_answer": "Yes, robotics is mentioned once. Cryptography is mentioned twice."
+        }
+      ]
+    },
+    {
+      "id": "document_odt-002",
+      "needed_flags": [],
+      "turns": [
+        {
+          "query": "How many different topics does this document cover, and which one comes first?",
+          "add_documents": [
+            "random-topics.odt"
+          ],
+          "expected_answer": "23 different topics (50 mentions in total). The first topic mentioned is Psychology."
+        },
+        {
+          "query": "And which topic is mentioned last?",
+          "expected_answer": "Renaissance art."
+        }
+      ]
+    }
+  ]
+}

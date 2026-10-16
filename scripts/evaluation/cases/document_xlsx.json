@@ -1,0 +1,83 @@
+{
+  "scenario": "document_xlsx",
+  "cases": [
+    {
+      "id": "document_xlsx-001",
+      "needed_flags": [],
+      "turns": [
+        {
+          "query": "From this survey summary, which technology statement has the highest overall agreement, and what percentage is it?",
+          "add_documents": [
+            "questionnaire_summary.xlsx"
+          ],
+          "expected_answer": "'We have to pay attention so that the development of artificial intelligence doesn't get out of hand', at about 82.6% overall."
+        },
+        {
+          "query": "How does agreement with 'Technology changes my life for the better' vary between the youngest and oldest age groups?",
+          "expected_answer": "It falls with age: about 75.8% among 18-24s versus about 55.9% among those aged 55+ (65.4% overall)."
+        },
+        {
+          "query": "What proportion say they are willing to pay more money to access 5G, overall and among the over-55s?",
+          "expected_answer": "About 18.9% overall and about 8.2% among those aged 55+ (30.7% among 18-24s)."
+        }
+      ]
+    },
+    {
+      "id": "document_xlsx-002",
+      "needed_flags": [],
+      "turns": [
+        {
+          "query": "This workbook looks at postcode districts for three audience segments. How many households and postcode districts are in the heavy car users segment, and what share of all households is that?",
+          "add_documents": [
+            "Postcode targeting.xlsx"
+          ],
+          "expected_answer": "2,018,262 households, about 7.1% of the 28,241,476 total households. It covers 168 of the 2,923 postcode districts (about 5.7%)."
+        },
+        {
+          "query": "Which of the three segments covers the most postcode districts, and how many?",
+          "expected_answer": "Empty nesters, with 299 postcode districts (about 10.2% of 2,923), compared with 168 for heavy car users and 146 for suburban families."
+        },
+        {
+          "query": "In the Northern Ireland sheet, which postcode district scores highest for Suburban Families, and which for Comfortable Empty Nesters?",
+          "expected_answer": "Suburban Families: BT1 (about 211.0). Comfortable Empty Nesters: BT93 (about 359.7)."
+        }
+      ]
+    },
+    {
+      "id": "document_xlsx-003",
+      "needed_flags": [],
+      "turns": [
+        {
+          "query": "From this survey summary, which technology statement has the highest overall agreement, and what percentage is it?",
+          "add_documents": [
+            "questionnaire_summary.xlsx"
+          ],
+          "expected_answer": "'We have to pay attention so that the development of artificial intelligence doesn't get out of hand', at about 82.6% overall."
+        },
+        {
+          "query": "How does agreement with 'Technology changes my life for the better' vary between the youngest and oldest age groups?",
+          "expected_answer": "It falls with age: about 75.8% among 18-24s versus about 55.9% among those aged 55+ (65.4% overall)."
+        },
+        {
+          "query": "What proportion say they are willing to pay more money to access 5G, overall and among the over-55s?",
+          "expected_answer": "About 18.9% overall and about 8.2% among those aged 55+ (30.7% among 18-24s)."
+        },
+        {
+          "query": "This workbook looks at postcode districts for three audience segments. How many households and postcode districts are in the heavy car users segment, and what share of all households is that?",
+          "add_documents": [
+            "Postcode targeting.xlsx"
+          ],
+          "expected_answer": "2,018,262 households, about 7.1% of the 28,241,476 total households. It covers 168 of the 2,923 postcode districts (about 5.7%)."
+        },
+        {
+          "query": "Which of the three segments covers the most postcode districts, and how many?",
+          "expected_answer": "Empty nesters, with 299 postcode districts (about 10.2% of 2,923), compared with 168 for heavy car users and 146 for suburban families."
+        },
+        {
+          "query": "In the Northern Ireland sheet, which postcode district scores highest for Suburban Families, and which for Comfortable Empty Nesters?",
+          "expected_answer": "Suburban Families: BT1 (about 211.0). Comfortable Empty Nesters: BT93 (about 359.7)."
+        }
+      ]
+    }
+  ]
+}

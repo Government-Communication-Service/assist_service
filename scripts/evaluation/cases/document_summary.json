@@ -1,0 +1,44 @@
+{
+  "scenario": "document_summary",
+  "cases": [
+    {
+      "id": "document_summary-001",
+      "needed_flags": [],
+      "turns": [
+        {
+          "query": "Please summarise this document in no more than 200 words.",
+          "add_documents": [
+            "large.txt"
+          ],
+          "expected_answer": "A summary of government strategic communications guidance covering: planning (situation analysis, objectives, audience insight); channel selection (paid, earned, owned, integrated); message development and testing; digital communications; crisis communications; stakeholder engagement; inclusive communications; working with suppliers and agencies; measuring return on investment; content strategy; and a glossary of key terms. It should cover most of these themes, not just the first few. (The document's sections are repeated; noting that is acceptable but not required.) The limit is 200 words: judge length by eye, and a line or two of preamble is fine if the summary itself is clearly signposted and of about the right length."
+        },
+        {
+          "query": "What does it say about crisis communications: what should a crisis plan identify, and what should happen after a crisis?",
+          "expected_answer": "The plan should be in place before a crisis and identify the most likely scenarios, the key spokespersons, the approval process and the channels to be used, with regular exercises. After a crisis, a thorough evaluation should be done (what worked, what could be better, lessons for the plan) and the learning documented and shared across the organisation."
+        }
+      ]
+    },
+    {
+      "id": "document_summary-002",
+      "skip": "This case has 100% success rate for both environments",
+      "needed_flags": [],
+      "turns": [
+        {
+          "query": "Give me the main themes of this document as a short bulleted list.",
+          "add_documents": [
+            "large.txt"
+          ],
+          "expected_answer": "Themes should include most of: strategic planning, channel selection and media planning, message development and testing, digital communications, crisis communications, stakeholder engagement and consultation, inclusive communications, working with suppliers and agencies, measuring ROI, content strategy and planning, and a glossary of key terms."
+        },
+        {
+          "query": "What does it say about measuring return on investment, in particular the challenge of attribution?",
+          "expected_answer": "Attribution is one of the main challenges: it is hard to isolate communications' contribution from other factors that influenced the outcome. Econometric modelling can help but needs sufficient data and investment. Where full financial ROI is not possible, teams should demonstrate value through robust evaluation of the contribution to government objectives."
+        },
+        {
+          "query": "And what does it say about making communications accessible and inclusive?",
+          "expected_answer": "Consider accessibility at the planning stage; digital content should meet the Web Content Accessibility Guidelines; printed materials available in accessible formats on request; videos captioned and audio described; use plain English (GCS Plain English guidance); reflect diversity in images and case studies and avoid stereotypes; consider translation and interpretation where many people do not have English as a first language."
+        }
+      ]
+    }
+  ]
+}

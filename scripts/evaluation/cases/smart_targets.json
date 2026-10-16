@@ -1,0 +1,37 @@
+{
+  "scenario": "smart_targets",
+  "cases": [
+    {
+      "id": "smart_targets-001",
+      "needed_flags": [
+        "use_smart_targets"
+      ],
+      "turns": [
+        {
+          "query": "What are typical campaign recognition scores for government campaigns?",
+          "expected_answer": "Across all 514 campaigns in the Smart Targets data, the median campaign recognition is 52%, with an interquartile range of about 39% to 64%. A good answer gives these figures, or a filtered set if it explains the filters used."
+        },
+        {
+          "query": "Is it possible to get that split by channel: TV and radio?",
+          "expected_answer": "No: the campaign-recognition data has no channel breakdown, so TV and radio cannot be separated. A good answer says so plainly, may repeat the all-channel figures (median 52%, interquartile range about 39% to 64%, 514 campaigns) and may suggest alternatives, but must not give TV-only or radio-only figures or invent a gap between them."
+        }
+      ]
+    },
+    {
+      "id": "smart_targets-002",
+      "needed_flags": [
+        "use_smart_targets"
+      ],
+      "turns": [
+        {
+          "query": "What campaign recognition score should I aim for on a campaign in London?",
+          "expected_answer": "Very little London data exists: 1 campaign is tagged London-only and 5 London within 70 miles, too few to be reliable. The tool drops filters until at least 20 campaigns remain, so the usable benchmark is the all-campaign figure: median 52%, interquartile range about 39% to 64%, 514 campaigns. A good answer gives these figures and says they are not London-specific or that London data is too thin; a London-only figure presented as robust should be treated as overclaiming."
+        },
+        {
+          "query": "Is that higher or lower than for the whole of the UK?",
+          "expected_answer": "UK-wide (UK including Northern Ireland) is 198 campaigns, median 53%, interquartile range about 40% to 66%; across all campaigns it is median 52%, 514 campaigns. A good answer gives one of these and concludes that London is not meaningfully different, noting the London sample is too small to conclude anything firm; it must not claim London is clearly higher or lower."
+        }
+      ]
+    }
+  ]
+}

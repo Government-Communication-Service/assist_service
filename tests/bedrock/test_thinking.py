@@ -1,10 +1,7 @@
 """Tests for the thinking_kwargs helper and ThinkingLevel enum."""
 
-from unittest.mock import MagicMock, patch
-
 import pytest
 
-from app.bedrock import BedrockHandler, RunMode
 from app.bedrock.thinking import ThinkingLevel, thinking_kwargs
 
 
@@ -53,26 +50,3 @@ def test_thinking_level_values_are_strings():
     """Members are str instances so they serialise cleanly in API responses."""
     for member in ThinkingLevel:
         assert isinstance(member.value, str)
-
-
-@patch("app.bedrock.bedrock.bedrock_stream")
-def test_stream_on_complete_not_in_extra_api_kwargs(mock_bedrock_stream):
-    """Regression: on_complete must not leak into extra_api_kwargs and reach the SDK."""
-    llm = MagicMock()
-    llm.model = "gpt-4o"  # non-cross-region so model id is unchanged
-    llm.max_tokens = 1000
-    handler = BedrockHandler(llm=llm, mode=RunMode.ASYNC)
-
-    on_complete_cb = MagicMock()
-
-    handler._stream(
-        messages=[],
-        system="",
-        on_complete=on_complete_cb,
-        output_config={"effort": "high"},
-    )
-
-    stream_input = mock_bedrock_stream.call_args[0][0]
-    assert stream_input.on_complete is on_complete_cb
-    assert "on_complete" not in stream_input.extra_api_kwargs
-    assert stream_input.extra_api_kwargs == {"output_config": {"effort": "high"}}

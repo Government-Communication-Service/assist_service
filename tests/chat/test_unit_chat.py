@@ -3,9 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import pytest
-from anthropic.types import TextBlock
 
-from app.bedrock.schemas import LLMResponse
 from app.chat.prompts import build_chat_system_prompt
 from app.chat.schemas import (
     CentralGuidanceSource,
@@ -15,7 +13,6 @@ from app.chat.schemas import (
     Sources,
     UserDocumentSource,
 )
-from app.chat.service import chat_save_llm_output
 from app.config import settings
 from app.database.table import async_db_session
 
@@ -26,6 +23,20 @@ pytestmark = [
     pytest.mark.messages,
     pytest.mark.unit,
 ]
+
+
+@pytest.fixture(autouse=True)
+def _reset_system_prompt_last_known_good():
+    """`build_chat_system_prompt` caches the last successful API-sourced segment at module
+    scope (see app.chat.prompts); tests that exercise failures must not see another test's
+    success (or vice versa)."""
+    import app.chat.prompts as prompts_module
+
+    prompts_module._LAST_GOOD_SEGMENTS.clear()
+    prompts_module._last_dynamic_block_hash = None
+    yield
+    prompts_module._LAST_GOOD_SEGMENTS.clear()
+    prompts_module._last_dynamic_block_hash = None
 
 
 def test_message_defaults():
@@ -76,35 +87,6 @@ async def test_cache_control_absent_when_disabled():
         async with async_db_session() as db_session:
             response = await build_chat_system_prompt(db_session)
     assert all("cache_control" not in block for block in response)
-
-
-@patch("app.chat.service.ChatTable")
-@patch("app.chat.service.MessageTable")
-def test_chat_save_llm_output_writes_cache_tokens_to_user_message(mock_message_table_cls, mock_chat_table_cls):
-    """chat_save_llm_output records cache_read/cache_write tokens on the user message row."""
-    mock_message_repo = MagicMock()
-    mock_message_table_cls.return_value = mock_message_repo
-    mock_message_repo.create.return_value = MagicMock(id=2, chat_id=1)
-
-    llm = MagicMock()
-    llm.input_cost_per_token = 1e-6
-    llm.output_cost_per_token = 5e-6
-
-    llm_response = LLMResponse(
-        content=[TextBlock(type="text", text="hello")],
-        input_tokens=10,
-        output_tokens=5,
-        cache_read_tokens=3,
-        cache_write_tokens=7,
-    )
-    user_message = MagicMock(id=1, citation=None, sources=None)
-    ai_message_defaults = MessageDefaults(chat_id=1, auth_session_id=2, llm_id=3)
-
-    chat_save_llm_output(ai_message_defaults, llm_response, user_message, llm)
-
-    _, update_payload = mock_message_repo.update.call_args[0]
-    assert update_payload["cache_read_tokens"] == 3
-    assert update_payload["cache_write_tokens"] == 7
 
 
 def test_empty_sources_serialization():
@@ -352,3 +334,240 @@ async def test_bmdb_error_continues_gracefully():
 
     assert isinstance(response, list)
     assert "metric1" in " ".join(block["text"] for block in response)
+
+
+@pytest.mark.asyncio
+def _mock_edition() -> AsyncMock:
+    edition = AsyncMock()
+    edition.version_number = "1.0"
+    edition.date_received = "2026-03-01"
+    edition.latest_campaign_end_date = "2026-02-28"
+    edition.earliest_campaign_end_date = "2024-01-01"
+    edition.n_campaigns = 50
+    edition.max_media_spend = 100000
+    edition.min_media_spend = 1000
+    return edition
+
+
+@pytest.mark.asyncio
+async def test_smart_targets_metrics_are_sorted():
+    """API order isn't deterministic; the prompt must not vary just because the API reordered."""
+    with patch("app.chat.prompts.SMART_TARGETS_SERVICE_DISABLED", False):
+        with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
+            with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
+                mock_smart.return_value.get_available_metrics = AsyncMock(return_value=["zebra", "apple"])
+                mock_bmdb.get_latest_edition = AsyncMock(return_value=_mock_edition())
+
+                async with async_db_session() as db_session:
+                    response = await build_chat_system_prompt(db_session)
+
+    full_text = " ".join(block["text"] for block in response)
+    assert full_text.index("apple") < full_text.index("zebra")
+
+
+@pytest.mark.asyncio
+async def test_smart_targets_metrics_fall_back_to_last_known_good_on_transient_failure():
+    """A later failure re-uses the last successful value instead of dropping the segment,
+    which would otherwise change the (cached) system prompt for every chat in this process."""
+    from app.smart_targets.exceptions import GetSmartTargetsMetricsError
+
+    with patch("app.chat.prompts.SMART_TARGETS_SERVICE_DISABLED", False):
+        with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
+            with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
+                mock_bmdb.get_latest_edition = AsyncMock(return_value=_mock_edition())
+                mock_smart.return_value.get_available_metrics = AsyncMock(return_value=["metric1"])
+                async with async_db_session() as db_session:
+                    await build_chat_system_prompt(db_session)
+
+                mock_smart.return_value.get_available_metrics = AsyncMock(
+                    side_effect=GetSmartTargetsMetricsError("down")
+                )
+                async with async_db_session() as db_session:
+                    response = await build_chat_system_prompt(db_session)
+
+    assert "metric1" in " ".join(block["text"] for block in response)
+
+
+def _agent_turn(should_compact: bool = False, prefix_before_current_turn: list[dict] | None = None):
+    from app.chat.service import _AgentTurn
+
+    return _AgentTurn(
+        chat=MagicMock(id=1),
+        input_data=MagicMock(),
+        llm=MagicMock(),
+        llm_obj=MagicMock(),
+        system=[{"type": "text", "text": "system"}],
+        user_message=MagicMock(id=10, content="question"),
+        history=[],
+        formatted_messages=[{"role": "user", "content": "question"}],
+        prefix_before_current_turn=prefix_before_current_turn or [],
+        ai_message_defaults=MessageDefaults(chat_id=1, auth_session_id=2, llm_id=3),
+        should_compact=should_compact,
+        last_assistant_message_id=9,
+        request_kwargs={"thinking": {"type": "disabled"}},
+    )
+
+
+def _loop_result():
+    from decimal import Decimal
+
+    from app.chat.agent_loop import AgentLoopResult, ModelCallUsage
+
+    def usage(input_tokens, cache_read):
+        return ModelCallUsage(
+            llm_internal_response_id=None,
+            input_tokens=input_tokens,
+            output_tokens=5,
+            cache_read_tokens=cache_read,
+            cache_write_tokens=7,
+            completion_cost=Decimal("0.01"),
+            stop_reason="end_turn",
+        )
+
+    return AgentLoopResult(
+        display_text="The colour answer",
+        raw_messages=[{"role": "assistant", "content": [{"type": "text", "text": "The color answer"}]}],
+        citations=[{"docname": "Doc", "docurl": "https://example.com"}],
+        sources=Sources(central_guidance_sources=[CentralGuidanceSource(pretty_name="Doc", url="https://example.com")]),
+        model_calls=[usage(10, 3), usage(20, 4)],
+    )
+
+
+@patch("app.chat.service.ChatTable")
+@patch("app.chat.service.MessageTable")
+def test_agent_turn_save_writes_summed_usage_and_raw_messages(mock_message_table_cls, mock_chat_table_cls):
+    mock_message_repo = MagicMock()
+    mock_message_table_cls.return_value = mock_message_repo
+    mock_message_repo.create.return_value = MagicMock(id=2, chat_id=1)
+    turn = _agent_turn()
+
+    turn._save(_loop_result())
+
+    _, user_update = mock_message_repo.update.call_args[0]
+    assert (user_update["tokens"], user_update["cache_read_tokens"], user_update["cache_write_tokens"]) == (30, 7, 14)
+    assistant = mock_message_repo.create.call_args[0][0]
+    assert assistant["content"] == "The colour answer"
+    assert assistant["raw_messages"][0]["content"][0]["text"] == "The color answer"
+    assert assistant["tokens"] == 10
+    assert str(assistant["completion_cost"]) == "0.02"
+    assert assistant["citation"] == user_update["citation"] == '[{"docname": "Doc", "docurl": "https://example.com"}]'
+    assert assistant["parent_message_id"] == 10
+
+
+@patch("app.chat.service.schedule_compaction")
+@patch("app.chat.service.ChatTable")
+@patch("app.chat.service.MessageTable")
+def test_agent_turn_save_schedules_compaction_with_tools(mock_message_table_cls, mock_chat_table_cls, mock_schedule):
+    mock_message_table_cls.return_value.create.return_value = MagicMock(id=2, chat_id=1)
+    turn = _agent_turn(should_compact=True)
+    turn._tool_specs = [{"name": "search"}]
+
+    turn._save(_loop_result())
+
+    kwargs = mock_schedule.call_args.kwargs
+    assert kwargs["up_to_message_id"] == 9
+    assert kwargs["prefix_tokens"] == 10 + 3 + 7
+    assert kwargs["extra_api_kwargs"] == {"thinking": {"type": "disabled"}, "tools": [{"name": "search"}]}
+
+
+@patch("app.chat.service.schedule_compaction")
+@patch("app.chat.service.ChatTable")
+@patch("app.chat.service.MessageTable")
+def test_agent_turn_compaction_prefix_keeps_a_trailing_tool_result(
+    mock_message_table_cls, mock_chat_table_cls, mock_schedule
+):
+    """A stored turn that ends with a tool_result is merged into the current user message in
+    formatted_messages; the compaction prefix must keep it, or the request ends on a bare tool_use."""
+    long_text = "long " * 1000
+    tool_result = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "r"}]}
+    prefix = [
+        {"role": "user", "content": long_text},
+        {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_1", "name": "x", "input": {}}]},
+        tool_result,
+    ]
+    mock_message_table_cls.return_value.create.return_value = MagicMock(id=2, chat_id=1)
+    turn = _agent_turn(should_compact=True, prefix_before_current_turn=prefix)
+
+    turn._save(_loop_result())
+
+    sent = mock_schedule.call_args.kwargs["formatted_messages"]
+    assert sent[-1] == tool_result
+    assert "cache_control" in sent[1]["content"][-1]
+    assert sent[0] == prefix[0]
+
+
+async def test_record_tool_calls_adds_one_row_per_record():
+    from contextlib import asynccontextmanager
+
+    from app.chat.agent_loop import ToolCallRecord
+    from app.chat.service import _record_tool_calls
+
+    added = []
+
+    class FakeSession:
+        def add_all(self, rows):
+            added.extend(rows)
+
+    @asynccontextmanager
+    async def fake_async_db_session():
+        yield FakeSession()
+
+    record = ToolCallRecord(
+        iteration=1,
+        tool_use_id="toolu_1",
+        tool_name="search_gov_uk",
+        args={"queries": ["x"]},
+        is_error=False,
+        duration_ms=120,
+        result_chars=500,
+        llm_internal_response_id=77,
+    )
+
+    with patch("app.chat.service.async_db_session", fake_async_db_session):
+        await _record_tool_calls(2, [record])
+
+    assert [(r.message_id, r.llm_internal_response_id, r.tool_name, r.args, r.duration_ms) for r in added] == [
+        (2, 77, "search_gov_uk", {"queries": ["x"]}, 120)
+    ]
+
+
+@pytest.mark.parametrize("entry_point", ["chat_add_message", "chat_create"])
+async def test_non_streaming_turn_runs_after_the_request_session_closes(entry_point):
+    """The request-scope writes are committed and the session closed before the agent loop runs (M5)."""
+    from contextlib import asynccontextmanager
+
+    from app.chat import service
+
+    session_open = False
+    open_during_run = []
+
+    @asynccontextmanager
+    async def fake_async_db_session():
+        nonlocal session_open
+        session_open = True
+        try:
+            yield AsyncMock()
+        finally:
+            session_open = False
+
+    async def run():
+        open_during_run.append(session_open)
+        return MagicMock(client_response=lambda: {}, dict=lambda: {})
+
+    turn = MagicMock(run=run)
+    chat = MagicMock(id=1, user_id=1, client_response=lambda: {}, dict=lambda: {})
+    with (
+        patch.object(service, "async_db_session", fake_async_db_session),
+        patch.object(service, "chat_create_message", AsyncMock(return_value=turn)),
+        patch.object(service, "_chat_message_with_documents", AsyncMock(side_effect=lambda c, s, data: data)),
+        patch.object(service, "ChatTable", return_value=MagicMock(create=MagicMock(return_value=chat))),
+        patch.object(service, "ChatWithLatestMessage", MagicMock()),
+        patch.object(service, "ChatCreateMessageInput", MagicMock()),
+    ):
+        data = MagicMock(stream=False, use_case_id=None, to_dict=lambda: {})
+        if entry_point == "chat_add_message":
+            await service.chat_add_message(chat, data)
+        else:
+            await service.chat_create(data)
+
+    assert open_during_run == [False]

@@ -5,11 +5,65 @@ from urllib.parse import quote, urlparse
 import httpx
 from bs4 import BeautifulSoup
 
+from app.config import GOV_UK_BASE_URL, GOV_UK_HTTP_TIMEOUT_SECONDS
 from app.gov_uk_search.constants import SEARCH_URL
 from app.logs.logs_handler import logger
 
 # GovUKContent will be imported from client.py within extract_content_from_gov_uk
 # from app.gov_uk_search.client import GovUKContent
+
+
+GOV_UK_HOSTS = {"www.gov.uk", "gov.uk"}
+GOV_UK_ASSETS_HOST = "assets.publishing.service.gov.uk"
+
+
+def normalise_gov_uk_url(url: str) -> str:
+    """Turn a GOV.UK URL or path into a canonical https://www.gov.uk URL, dropping any query and fragment.
+
+    Args:
+        url: A GOV.UK page URL, or a path starting with "/".
+
+    Returns:
+        The canonical page URL.
+
+    Raises:
+        ValueError: The URL isn't a page on gov.uk, so nothing else is ever fetched.
+    """
+    url = url.strip()
+    parsed = urlparse(f"{GOV_UK_BASE_URL}{url}" if url.startswith("/") else url)
+    is_gov_uk = (
+        parsed.scheme in ("http", "https")
+        and parsed.hostname in GOV_UK_HOSTS
+        and parsed.username is None
+        and parsed.port is None
+    )
+    if not is_gov_uk or parsed.path.strip("/") == "":
+        raise ValueError("url must be the address of a page on www.gov.uk")
+    return f"{GOV_UK_BASE_URL}{parsed.path}"
+
+
+def normalise_gov_uk_asset_url(url: str) -> str:
+    """Turn a GOV.UK attachment URL into a canonical https URL on the GOV.UK assets host.
+
+    Args:
+        url: The address of a file attached to a GOV.UK page.
+
+    Returns:
+        The canonical file URL, without any query or fragment.
+
+    Raises:
+        ValueError: The URL isn't a file on the GOV.UK assets host, so nothing else is ever fetched.
+    """
+    parsed = urlparse(url.strip())
+    is_asset = (
+        parsed.scheme in ("http", "https")
+        and parsed.hostname == GOV_UK_ASSETS_HOST
+        and parsed.username is None
+        and parsed.port is None
+    )
+    if not is_asset or parsed.path.strip("/") == "":
+        raise ValueError(f"url must be the address of a file on {GOV_UK_ASSETS_HOST}")
+    return f"https://{GOV_UK_ASSETS_HOST}{parsed.path}"
 
 
 def build_search_url(
@@ -85,7 +139,7 @@ async def extract_content_with_httpx(url: str) -> str:
         Extracted content as a string
     """
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=GOV_UK_HTTP_TIMEOUT_SECONDS) as client:
             response = await client.get(url)
             response.raise_for_status()
 

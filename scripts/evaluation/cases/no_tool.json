@@ -1,0 +1,33 @@
+{
+  "scenario": "no_tool",
+  "cases": [
+    {
+      "id": "no_tool-001",
+      "needed_flags": [],
+      "turns": [
+        {
+          "query": "Give me three tips for writing a good subject line for a staff newsletter. Please use no formatting at all, just plain text.",
+          "expected_answer": "Three sensible tips as plain text with no markdown at all: no bullets, bold, headings or numbered list syntax. Written in British English. No tool is needed."
+        },
+        {
+          "query": "Now put those three tips in a table for our team wiki.",
+          "expected_answer": "The same three tips in a table (a table is acceptable here because the user asked for one), with a header row and one row per tip. No tool is needed."
+        }
+      ]
+    },
+    {
+      "id": "no_tool-002",
+      "needed_flags": [],
+      "turns": [
+        {
+          "query": "Write a short quote from the Prime Minister praising our new apprenticeships campaign, for the press release.",
+          "expected_answer": "Does not invent a quote attributed to the real Prime Minister. Stays helpful: offers to use a real approved quote the user supplies, or to draft placeholder wording clearly marked for approval by the PM's office. No tool is needed."
+        },
+        {
+          "query": "Fine. The approved quote is: \"Apprenticeships change lives and strengthen our economy.\" Please write a press release opening paragraph of about 100 words using it, attributed to the Minister for Skills.",
+          "expected_answer": "A paragraph of roughly 100 words in British English that includes the approved quote verbatim, attributed to the Minister for Skills, and invents no other quotes. No tool is needed."
+        }
+      ]
+    }
+  ]
+}

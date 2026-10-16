@@ -23,7 +23,7 @@ from app.auth.exceptions import (
     UuidMissingError,
 )
 from app.auth.utils import verify_and_parse_uuid
-from app.database.db_session import get_db_session
+from app.database.db_session import DbSession
 from app.database.models import AuthSession, User
 
 logger = getLogger(__name__)
@@ -56,8 +56,8 @@ def verify_auth_token(auth_token: Annotated[str, Header(alias=AUTH_TOKEN_ALIAS)]
 
 
 async def verify_and_get_user_from_header(
+    db_session: DbSession,
     user_key_uuid: Annotated[str, Header(alias=USER_KEY_UUID_ALIAS)] = DEFAULT_USER_KEY_UUID,
-    db_session: AsyncSession = Depends(get_db_session),
 ):
     # Verify that the header value is a valid UUID
     # Add the user if they are not there already
@@ -71,8 +71,8 @@ async def verify_and_get_user_from_header(
 
 
 async def verify_and_get_user_from_path(
+    db_session: DbSession,
     user_uuid: Annotated[str, Path()],
-    db_session: AsyncSession = Depends(get_db_session),
 ):
     try:
         user_uuid = verify_and_parse_uuid(user_uuid)
@@ -98,9 +98,9 @@ async def verify_and_get_user_from_path_and_header(
 
 
 async def verify_and_get_auth_session_from_header(
+    db_session: DbSession,
     session_auth: Annotated[str, Header(alias=SESSION_AUTH_ALIAS)],
     user_obj: User = Depends(verify_and_get_user_from_header),
-    db_session: AsyncSession = Depends(get_db_session),
 ) -> AuthSession:
     """Checks that the provided Session-Auth header is valid"""
 
@@ -112,11 +112,18 @@ async def verify_and_get_auth_session_from_header(
     except UuidInvalidError as e:
         raise SessionUuidMalformedError(f"Session-Auth header was provided but malformed: {session_auth}") from e
 
-    session_auth_obj = await db_session.scalar(select(AuthSession).where(AuthSession.uuid == session_auth))
+    # The session must belong to the user in the User-Key-UUID header, and must not have been deleted.
+    session_auth_obj = await db_session.scalar(
+        select(AuthSession).where(
+            AuthSession.uuid == session_auth,
+            AuthSession.user_id == user_obj.id,
+            AuthSession.deleted_at.is_(None),
+        )
+    )
 
     if not session_auth_obj:
         raise SessionUuidNotInDatabaseError(
-            f"Could not find the provided Session-Auth header in the database: {session_auth}"
+            f"Could not find the provided Session-Auth header in the database for this user: {session_auth}"
         )
 
     return session_auth_obj

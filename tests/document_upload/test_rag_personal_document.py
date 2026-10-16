@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import json
 import logging
 
 import pytest
@@ -19,49 +20,37 @@ from app.database.table import async_db_session
 
 logger = logging.getLogger()
 
+pytestmark = pytest.mark.usefixtures("mock_llm_response")
 
-@pytest.mark.parametrize(
-    "test_scenario, chat_query, expected_citation, message_chunk_found, use_central_rag",
-    [
-        (
-            "user_document_referenced_in_chat_used_in_llm_rag_process",
-            "What is machine learning and how does it work?",
-            '[{"docname": "Introduction_to_Machine_Learning_with_Python.pdf", "docurl": null}]',
-            True,
-            "true",
-        ),
-        (
-            "user_document_referenced_in_chat_used_in_llm_rag_process",
-            "What is machine learning and how does it work?",
-            '[{"docname": "Introduction_to_Machine_Learning_with_Python.pdf", "docurl": null}]',
-            True,
-            "false",
-        ),
-    ],
-)
+SEARCH_DOCUMENTS = "search_uploaded_documents"
+SEARCH_CENTRAL_GUIDANCE = "search_central_guidance"
+
+
+def _offered_tools(request: dict) -> set[str]:
+    return {tool["name"] for tool in request.get("tools", [])}
+
+
+def _search(*queries: str) -> list[tuple[str, dict]]:
+    return [(SEARCH_DOCUMENTS, {"queries": list(queries)})]
+
+
 @pytest.mark.asyncio
 async def test_use_personal_document_in_rag_process(
-    test_scenario,
-    chat_query,
-    expected_citation,
-    message_chunk_found,
-    use_central_rag,
     async_client,
     user_id,
     async_http_requester,
     file_uploader,
+    mock_chat_model,
 ):
     """
-    Uploads a user document, then starts a new chat with reference to the uploaded document
-    then checks whether the document uploaded was cited in the RAG process.
+    Uploads a user document, starts a chat referencing it, and has the model search it: the
+    search is recorded, the document is cited and its expiry is extended.
     """
+    mock_chat_model.script(_search("machine learning", "how it works"), "Machine learning is…")
 
-    # Upload the document
     api = ENDPOINTS()
     file_path = "tests/resources/Introduction_to_Machine_Learning_with_Python.pdf"
     response = await file_uploader(file_path, "test_delete_file")
-
-    # Get document_id from the response
     document_uuid = response["document_uuid"]
     logger.info(f"Uploaded document_uuid: {document_uuid}")
     # allow time for document to be indexed before referencing in chat message (longer for large PDF)
@@ -75,57 +64,47 @@ async def test_use_personal_document_in_rag_process(
         result = await db_session1.execute(
             select(DocumentUserMapping).filter_by(document_id=document.id, user_id=user.id)
         )
-        document_user_mapping = result.scalar()
-        first_expiry_date = document_user_mapping.expired_at
+        first_expiry_date = result.scalar().expired_at
 
-    # Fetch chat endpoint URL and make another request with the uploaded document
     url = api.chats(user_uuid=user_id)
     response_data = await async_http_requester(
-        test_scenario,
+        "user_document_referenced_in_chat_used_in_llm_rag_process",
         async_client.post,
         url,
-        json={"query": chat_query, "use_rag": use_central_rag, "document_uuids": [document_uuid]},
+        json={
+            "query": "What is machine learning and how does it work?",
+            "document_uuids": [document_uuid],
+        },
     )
 
-    # assert document referenced in rag process
-    message_uuid = response_data["message"]["uuid"]
-    logger.info(f"Checking message : {message_uuid}")
+    # The tool list is constant per deploy (cache stability); use_rag only gates central guidance
+    # at call time, not whether it's offered.
+    offered = _offered_tools(mock_chat_model.requests[0])
+    assert {SEARCH_DOCUMENTS, SEARCH_CENTRAL_GUIDANCE} <= offered
 
+    message_uuid = response_data["message"]["uuid"]
     async with async_db_session() as db_session2:
-        # assert document expiry date extended and document user mapping created
         result = await db_session2.execute(
             select(DocumentUserMapping).filter_by(document_id=document.id, user_id=user.id)
         )
-        document_user_mapping_after_chat = result.scalar()
-        updated_expiry_date = document_user_mapping_after_chat.expired_at
-        assert updated_expiry_date > first_expiry_date
+        assert result.scalar().expired_at > first_expiry_date
 
         result = await db_session2.execute(select(Message).filter_by(uuid=message_uuid))
-        ai_message = result.scalar()
-        user_message_id = ai_message.parent_message_id
+        user_message_id = result.scalar().parent_message_id
 
-        # check RAG process populated relevant tables
-        if message_chunk_found:
-            result = await db_session2.execute(
-                select(MessageDocumentChunkMapping).filter_by(message_id=user_message_id)
-            )
-            message_chunk_count = result.all()
-            assert len(message_chunk_count) > 0
+        result = await db_session2.execute(select(MessageDocumentChunkMapping).filter_by(message_id=user_message_id))
+        assert len(result.all()) > 0
 
         result = await db_session2.execute(select(RewrittenQuery).filter_by(message_id=user_message_id))
-        rewritten_query_count = result.all()
-        assert len(rewritten_query_count) > 0
-        if use_central_rag == "true":
-            num_indexes_checked = 2  # check central indexes and personal index checked.
-        else:
-            num_indexes_checked = 1  # only personal index checked.
+        assert sorted(q.content for (q,) in result.all()) == ["how it works", "machine learning"]
+
+        # Only the index the model searched is recorded.
         result = await db_session2.execute(select(MessageSearchIndexMapping).filter_by(message_id=user_message_id))
-        indexes_checked = result.all()
-        assert len(indexes_checked) == num_indexes_checked
+        assert len(result.all()) == 1
 
-        assert response_data["message"]["citation"] == expected_citation
-
-        logger.info("test_document_uploaded passed")
+    assert response_data["message"]["citation"] == (
+        '[{"docname": "Introduction_to_Machine_Learning_with_Python.pdf", "docurl": null}]'
+    )
 
 
 async def test_request_to_use_non_owned_file(async_client, user_id, async_http_requester):
@@ -149,12 +128,15 @@ async def test_request_to_use_non_owned_file(async_client, user_id, async_http_r
 
 
 @pytest.mark.asyncio
-async def test_save_referenced_documents_in_chat(async_client, user_id, async_http_requester, file_uploader):
+async def test_save_referenced_documents_in_chat(
+    async_client, user_id, async_http_requester, file_uploader, mock_chat_model
+):
     """
-    Checks documents referenced in a new chat are used in RAG for subsequent chat messages
+    Checks documents referenced in a new chat stay searchable for subsequent chat messages
     and documents are returned when a chat is retrieved through api.
     Checks document user mapping expiry time and last used time are updated.
     """
+    mock_chat_model.script(_search("DNA"), "DNA is…", _search("DNA structure"), "More about DNA…")
 
     date_test_start = datetime.datetime.now()
     api = ENDPOINTS()
@@ -182,6 +164,9 @@ async def test_save_referenced_documents_in_chat(async_client, user_id, async_ht
         add_msg_url,
         json={"query": "explain more about DNA"},
     )
+
+    # The follow-up message didn't re-send document_uuids; the chat's documents are still searchable.
+    assert SEARCH_DOCUMENTS in _offered_tools(mock_chat_model.requests[2])
 
     url = api.get_chat_messages(user_uuid=user_id, chat_uuid=chat_uuid)
     chat_history = await async_http_requester("test_save_document_uuids_in_message", async_client.get, url)
@@ -240,11 +225,17 @@ async def test_save_referenced_documents_in_chat(async_client, user_id, async_ht
 
 
 @pytest.mark.asyncio
-async def test_deleted_docs_not_used_in_chat(async_client, user_id, async_http_requester, file_uploader):
+async def test_deleted_docs_not_used_in_chat(
+    async_client, user_id, async_http_requester, file_uploader, mock_chat_model
+):
     """
-    Checks documents referenced in a new chat are used in RAG for subsequent chat messages
-    and documents are returned when a chat is retrieved through api.
+    Checks deleted documents are no longer searched in later messages. The document search
+    tool stays offered (the tool list is constant per deploy) even once every attached
+    document is deleted, but nothing is cited from it.
     """
+    mock_chat_model.script(
+        _search("DNA"), "DNA is…", _search("DNA structure"), "More about DNA…", "Without the documents…"
+    )
 
     api = ENDPOINTS()
     file_path = "tests/resources/DNA_Topics_UK.docx"
@@ -300,17 +291,17 @@ async def test_deleted_docs_not_used_in_chat(async_client, user_id, async_http_r
     # assert user message1
     assert user_msg1["content"] == "what is DNA"
     assert user_msg1["role"] == "user"
-    assert user_msg1["citation"] is not None
+    assert {d["docname"] for d in json.loads(user_msg1["citation"])} == {"DNA_Topics_UK.docx", "DNA_Topics_UK2.docx"}
 
     # assert ai message1
     assert ai_msg1["content"] is not None
     assert ai_msg1["role"] == "assistant"
-    assert ai_msg1["citation"] is not None
+    assert {d["docname"] for d in json.loads(ai_msg1["citation"])} == {"DNA_Topics_UK.docx", "DNA_Topics_UK2.docx"}
 
-    # assert user message2
+    # assert user message2: only the undeleted document was searched
     assert user_msg2["content"] == "explain more about DNA"
     assert user_msg2["role"] == "user"
-    assert '{"docname": "DNA_Topics_UK2.docx", "docurl": null}' in user_msg2["citation"]
+    assert json.loads(user_msg2["citation"]) == [{"docname": "DNA_Topics_UK2.docx", "docurl": None}]
 
     # assert ai message2
     assert ai_msg2["content"] is not None
@@ -360,14 +351,15 @@ async def test_deleted_docs_not_used_in_chat(async_client, user_id, async_http_r
     user_msg3 = chat_history["messages"][4]
     ai_msg3 = chat_history["messages"][5]
 
-    # check citations
+    # Still offered (constant tool list), but with every document deleted there's nothing to cite.
+    assert SEARCH_DOCUMENTS in _offered_tools(mock_chat_model.requests[4])
     assert user_msg3["content"] == "explain more about DNA please"
     assert user_msg3["role"] == "user"
-    assert user_msg3["citation"] == "[]"
+    assert not json.loads(user_msg3["citation"])
 
     assert ai_msg3["content"] is not None
     assert ai_msg3["role"] == "assistant"
-    assert ai_msg3["citation"] == "[]"
+    assert not json.loads(ai_msg3["citation"])
 
     # check both docs marked as deleted.
     assert len(chat_history["documents"]) == 2
@@ -384,4 +376,3 @@ async def test_deleted_docs_not_used_in_chat(async_client, user_id, async_http_r
     assert document2["created_at"] is not None
     assert document2["expired_at"] > document2["created_at"]
     assert document2["deleted_at"] is not None
-

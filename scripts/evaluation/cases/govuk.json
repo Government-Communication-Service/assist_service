@@ -1,0 +1,82 @@
+{
+  "scenario": "govuk",
+  "cases": [
+    {
+      "id": "govuk-001",
+      "skip": "The success rate is 100% for both environments",
+      "needed_flags": [
+        "use_gov_uk_search_api"
+      ],
+      "turns": [
+        {
+          "query": "What are the current National Living Wage and National Minimum Wage hourly rates for each age group?",
+          "expected_answer": "From April 2026: £12.71 for workers aged 21 and over (National Living Wage), £10.85 for ages 18 to 20, £8 for under 18s, and £8 for apprentices."
+        },
+        {
+          "query": "When do these rates change next?",
+          "expected_answer": "The rates change on 1 April every year, so the next change is on 1 April 2027."
+        },
+        {
+          "query": "Who counts as an apprentice for the lower rate?",
+          "expected_answer": "Apprentices get the apprentice rate if they are aged under 19, or aged 19 or over and in the first year of their apprenticeship. After the first year, 19 and overs get the minimum wage for their age."
+        }
+      ]
+    },
+    {
+      "id": "govuk-002",
+      "needed_flags": [
+        "use_gov_uk_search_api"
+      ],
+      "turns": [
+        {
+          "query": "How much does a standard adult passport cost if I apply online?",
+          "expected_answer": "£102 for an adult (16 and over) standard 34-page passport applied for online. The paper form price is £115.50."
+        },
+        {
+          "query": "And for a child?",
+          "expected_answer": "£66.50 for a child (under 16) standard 34-page passport online, or £80 by paper form."
+        },
+        {
+          "query": "Is there a charge to have my supporting documents sent back?",
+          "expected_answer": "No for normal second class post, which is free. Secure delivery usually costs an extra £5."
+        }
+      ]
+    },
+    {
+      "id": "govuk-003",
+      "needed_flags": [
+        "use_gov_uk_search_api"
+      ],
+      "turns": [
+        {
+          "query": "Can you search for the Cabinet's Rewiring the State statement please. What are the 'three fronts' that action will be taken on? Summarise each in one sentence.",
+          "expected_answer": "The plan involves action on three fronts: (a) supporting local leaders to drive growth and improve public services, by giving mayors control of powers over skills, employment support, transport, housing, innovation and culture, plus more local control of public services; (b) providing control over local tax revenue, replacing central grants with a share of local income tax for every mayor from 2028, with greater retention of business rates and an Overnight Visitor Levy; (c) developing strong local institutions, with a strategic authority in every area in England by the end of 2028, mayors where there is local support, and stronger capacity and accountability. Each summarised in about one sentence. Any response that fails to retrieve the page is not acceptable."
+        },
+        {
+          "query": "List the three main headings in the statement. What is odd about the formatting of the last heading?",
+          "expected_answer": "The three main headings are: I. The New Model of Government; II. Implications for Central Government, The Civil Service, and Arm's Length Bodies; III. Steps to deliver change. The odd formatting is that the last heading is in sentence case ('Steps to deliver change') while the other two are in title case with capital initials. The answer can be acceptable if the three headings are correct, even if the assistant does not correctly diagnose the formatting inconsistency, but prefer a response that does."
+        },
+        {
+          "query": "What is the last sentence in the statement?",
+          "expected_answer": "\"And, in September, we will meet with all the mayors, as well as our permanent secretaries, the Cabinet Secretary and the mayors' chief executives, to discuss progress on rewiring the state.\" (The final sentence of the statement; the apostrophe style may differ.)"
+        }
+      ]
+    },
+    {
+      "id": "govuk-004",
+      "needed_flags": [
+        "use_gov_uk_search_api"
+      ],
+      "turns": [
+        {
+          "query": "According to the most recent STRB report, what are the recommended pay increases for teachers in 2026, 2027 and 2028?",
+          "expected_answer": "The School Teachers' Review Body 36th Report (2026) recommends 3.5% from September 2026, 3.0% from September 2027 and an indicative 3.0% from September 2028 (subject to a future remit), about 9.8% over three years. The Unqualified Teacher range minimum outside London and the Fringe (Rest of England) gets 5% in September 2026. Any response that fails to retrieve the information is not acceptable."
+        },
+        {
+          "query": "List the 'other matters' mentioned in the report's exec summary",
+          "expected_answer": "Four: salary safeguarding (reduce the period from three years to at least one full academic year); recognition schemes (let schools offer modest, well-governed awards alongside pay); working time arrangements (clearer articulation and stronger governance now, with reform considered in a future remit); and unqualified teachers and the National Living Wage (the 5% uplift plus a fuller review in the next remit)."
+        }
+      ]
+    }
+  ]
+}

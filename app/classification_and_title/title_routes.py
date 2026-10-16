@@ -1,6 +1,5 @@
 # ruff: noqa: B008
 from fastapi import APIRouter, Body, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.endpoints import ENDPOINTS
 from app.auth.verify_service import (
@@ -11,7 +10,7 @@ from app.auth.verify_service import (
 from app.chat.schemas import ChatRequest, ChatSuccessResponse
 from app.chat.utils import chat_validator
 from app.classification_and_title.service import patch_chat_title, update_chat_title
-from app.database.db_session import get_db_session
+from app.database.db_session import DbSession
 from app.database.models import Chat
 
 router = APIRouter()
@@ -53,8 +52,8 @@ async def get_chat_title(chat=Depends(chat_validator)) -> ChatSuccessResponse:
     ],
 )
 async def user_update_chat_title(
+    db_session: DbSession,
     chat=Depends(chat_validator),
     title: str = Body(..., embed=True),
-    db_session: AsyncSession = Depends(get_db_session),
 ) -> ChatSuccessResponse:
     return await patch_chat_title(db_session=db_session, chat=chat, title=title)

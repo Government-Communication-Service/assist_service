@@ -1,0 +1,41 @@
+{
+  "scenario": "central_rag",
+  "cases": [
+    {
+      "id": "central_rag-001",
+      "needed_flags": [
+        "use_rag"
+      ],
+      "turns": [
+        {
+          "query": "What are the stages of the GCS Evaluation Cycle metrics?",
+          "expected_answer": "The six stages are inputs, outputs, outtakes, outcomes, impacts, and learning and innovation. Metrics are divided into inputs, outputs, outtakes and outcomes (in line with AMEC definitions). Impact then summarises how outcomes contribute to organisational and policy objectives, and learning and innovation is the final stage of the cycle."
+        },
+        {
+          "query": "How are outtakes different from outcomes?",
+          "expected_answer": "Outtakes are the audience's perception: what they think, feel or intend to do (awareness, understanding, attitudes, intentions). Outcomes are actual changes in behaviour or active engagement."
+        },
+        {
+          "query": "What is the last stage of the cycle for?",
+          "expected_answer": "Learning and innovation is embedded at the final stage to capture strategic learnings that drive new ideas and improvements, linking evaluation to continuous learning."
+        }
+      ]
+    },
+    {
+      "id": "central_rag-002",
+      "needed_flags": [
+        "use_rag"
+      ],
+      "turns": [
+        {
+          "query": "When analysing barriers using COM-B, which kinds of barrier can a communications campaign typically influence?",
+          "expected_answer": "Capability barriers (awareness, knowledge, skills) and motivation barriers (beliefs, attitudes). Opportunity barriers (resources such as time, money, tools, access, and the wider system) are unlikely to be influenced by communications and may need policy interventions."
+        },
+        {
+          "query": "What questions should I ask to find motivation barriers?",
+          "expected_answer": "Does the audience believe they should do it? Do they want to do it? Do they have habits in place to support it? Are there consequences if they don't do it?"
+        }
+      ]
+    }
+  ]
+}

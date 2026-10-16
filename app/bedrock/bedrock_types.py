@@ -5,8 +5,7 @@ from typing import Optional
 import httpx
 from anthropic import AnthropicBedrock, AsyncAnthropicBedrock
 
-BEDROCK_API_READ_TIMEOUT_SECS = 115
-BEDROCK_API_CONNECT_TIMEOUT_SECS = 3
+from app.config import BEDROCK_API_CONNECT_TIMEOUT_SECONDS, BEDROCK_API_READ_TIMEOUT_SECONDS
 
 
 class BedrockErrorType(str, Enum):
@@ -37,7 +36,9 @@ class AnthropicBedrockProvider:
             current_client = AnthropicBedrock(
                 aws_region=aws_region,
                 max_retries=0,
-                timeout=httpx.Timeout(timeout=BEDROCK_API_READ_TIMEOUT_SECS, connect=BEDROCK_API_CONNECT_TIMEOUT_SECS),
+                timeout=httpx.Timeout(
+                    timeout=BEDROCK_API_READ_TIMEOUT_SECONDS, connect=BEDROCK_API_CONNECT_TIMEOUT_SECONDS
+                ),
             )
             cls.__clients[aws_region] = current_client
 
@@ -59,7 +60,9 @@ class AsyncAnthropicBedrockProvider:
             current_client = AsyncAnthropicBedrock(
                 aws_region=aws_region,
                 max_retries=0,
-                timeout=httpx.Timeout(timeout=BEDROCK_API_READ_TIMEOUT_SECS, connect=BEDROCK_API_CONNECT_TIMEOUT_SECS),
+                timeout=httpx.Timeout(
+                    timeout=BEDROCK_API_READ_TIMEOUT_SECONDS, connect=BEDROCK_API_CONNECT_TIMEOUT_SECONDS
+                ),
             )
             cls.__clients[aws_region] = current_client
 

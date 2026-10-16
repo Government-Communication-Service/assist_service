@@ -6,8 +6,9 @@ from anthropic.types import ToolUseBlock
 from httpx import AsyncClient, HTTPError, HTTPStatusError
 
 from app.bedrock.bedrock import BedrockHandler, RunMode
+from app.bedrock.call_log import LlmCallContext
 from app.chat.utils import prepare_recent_turns_for_decision
-from app.config import LLM_SMART_TARGETS_MODEL
+from app.config import LLM_SMART_TARGETS_MODEL, SMART_TARGETS_MAX_TOOL_METRICS, SMART_TARGETS_RECENT_TURNS
 from app.database.models import Message
 from app.database.table import LLMTable
 from app.smart_targets.constants import (
@@ -20,9 +21,7 @@ from app.smart_targets.exceptions import GetSmartTargetsMetricsError, SmartTarge
 from app.smart_targets.prompts import (
     SYSTEM_PROMPT_SELECT_FILTERS_DYNAMIC,
     USER_PROMPT_SELECT_FILTERS,
-    USER_PROMPT_SELECT_METRIC,
     get_system_prompt_select_filters_with_context,
-    get_system_prompt_select_metrics,
 )
 from app.smart_targets.schemas import (
     SelectedFilter,
@@ -30,17 +29,10 @@ from app.smart_targets.schemas import (
 )
 from app.smart_targets.tools import (
     SELECT_FILTERS_TOOL_NAME,
-    SELECT_METRICS_TOOL,
-    SELECT_METRICS_TOOL_NAME,
     generate_select_filters_tool_schema,
 )
 
 logger = getLogger(__name__)
-
-# LLM_SMART_TARGETS_MODEL has a much smaller context window than the main chat model, and this
-# service receives the full, unbounded (uncompacted) message history, so unlike the main chat
-# completion it must not send the whole conversation - see prepare_recent_turns_for_decision.
-NUM_RECENT_TURNS_FOR_DECISION = 6
 
 
 class SmartTargetsService:
@@ -61,7 +53,7 @@ class SmartTargetsService:
             raise SmartTargetsConnectionError("Failed to verify connection with the GCS Data API") from e
 
     def _wrap_chat_messages(self, messages: list[Message]) -> str:
-        messages_prep: list[dict] = prepare_recent_turns_for_decision(messages, num_turns=NUM_RECENT_TURNS_FOR_DECISION)
+        messages_prep: list[dict] = prepare_recent_turns_for_decision(messages, num_turns=SMART_TARGETS_RECENT_TURNS)
         all_but_final_messages = messages_prep[0:-1]
         last_message = messages_prep[-1]
 
@@ -93,59 +85,6 @@ class SmartTargetsService:
             metrics[name] = {"id": shifted_index, "name": name, "uuid": m["uuid"]}
         return metrics
 
-    def _wrap_metrics(self, available_metrics: dict) -> str:
-        wrapped_metrics = "<CampaignMetrics>\n"
-        for name, m in available_metrics.items():
-            metric_id = m["id"]
-            wrapped_metrics += f"<metric {metric_id}>name={name}</metric {metric_id}\n>"
-        wrapped_metrics += "</CampaignMetrics>"
-        return wrapped_metrics
-
-    async def _select_metrics(self, messages: list[Message], available_metrics: dict = None) -> list[dict]:
-        wrapped_metrics = self._wrap_metrics(available_metrics)
-        system = get_system_prompt_select_metrics(wrapped_metrics)
-        r = await self.bedrock_handler.invoke_async(
-            system=system,
-            messages=[
-                {"role": "user", "content": f"{USER_PROMPT_SELECT_METRIC}\n{self._wrap_chat_messages(messages)}"}
-            ],
-            tools=[SELECT_METRICS_TOOL],
-            tool_choice={"type": "tool", "name": SELECT_METRICS_TOOL_NAME},
-        )
-        for content in r.content:
-            if content.type == "tool_use":
-                selected_metrics_data = content.input["selected_metrics"]
-                result = []
-                for metric_data in selected_metrics_data:
-                    selected_metric_name = metric_data["metric_name"]
-                    context_for_filters = metric_data["context_for_filters"]
-                    if selected_metric_name in available_metrics:
-                        selected_metric = available_metrics[selected_metric_name]
-                        try:
-                            selected_metric_uuid = selected_metric["uuid"]
-                            if selected_metric_uuid:
-                                parsed_selected_metric_uuid = UUID(selected_metric_uuid)
-                                result.append(
-                                    {
-                                        "uuid": parsed_selected_metric_uuid,
-                                        "name": selected_metric_name,
-                                        "context_for_filters": context_for_filters,
-                                    }
-                                )
-                            else:
-                                logger.debug("The LLM chose not to select any metrics")
-                                continue
-                        except Exception:
-                            logger.exception(
-                                "Could not append selected metric: "
-                                f"{selected_metric=}, {selected_metric_name}, "
-                                f"{selected_metric_uuid=}, {context_for_filters=}"
-                            )
-                            continue
-                logger.info(f"Selected Smart Targets metrics: {result}")
-                return result
-        raise Exception("No tool use was detected.")
-
     async def _get_filters_for_selected_metric(self, metric_uuid: UUID) -> dict:
         url = URL_SMART_TARGETS_FILTERS.format(metric_uuid=metric_uuid)
         r = await self.async_client.get(url)
@@ -165,6 +104,7 @@ class SmartTargetsService:
         raw_filters_data: dict,
         metric_name: str | None = None,
         extracted_context: str | None = None,
+        context: LlmCallContext | None = None,
     ) -> SelectedFilters:
         user_message: str = f"{USER_PROMPT_SELECT_FILTERS}\n{self._wrap_chat_messages(messages)}"
         tool = generate_select_filters_tool_schema(raw_filters_data)
@@ -176,6 +116,7 @@ class SmartTargetsService:
             system_prompt = SYSTEM_PROMPT_SELECT_FILTERS_DYNAMIC
 
         r = await self.bedrock_handler.invoke_async(
+            context=context,
             system=system_prompt,
             messages=[{"role": "user", "content": user_message}],
             tools=[tool],
@@ -420,7 +361,7 @@ class SmartTargetsService:
         return "\n".join(result)
 
     async def _process_single_metric(
-        self, messages: list[Message], metric_info: dict
+        self, messages: list[Message], metric_info: dict, context: LlmCallContext | None = None
     ) -> tuple[str, str, str, str] | str:
         """Process a single metric and return formatted results"""
         metric_uuid = metric_info["uuid"]
@@ -436,15 +377,31 @@ class SmartTargetsService:
 
             # Select filters with the extracted context
             selected_filters = await self._select_filters(
-                messages, raw_filters_data, metric_name=metric_name, extracted_context=extracted_context
+                messages,
+                raw_filters_data,
+                metric_name=metric_name,
+                extracted_context=extracted_context,
+                context=context,
             )
 
-            # Iteratively prune filters if campaign count is too low
+            # Drop filters the model invented: they aren't sent to the API and can't be pruned
+            known_filter_names = {f["name"] for f in raw_filters_data.get("filters", [])}
+            unknown_filter_names = [f.name for f in selected_filters.filters if f.name not in known_filter_names]
+            if unknown_filter_names:
+                logger.warning(f"Metric {metric_name}: dropping unknown filters {unknown_filter_names}")
+                selected_filters = SelectedFilters(
+                    reasoning=selected_filters.reasoning,
+                    filters=[f for f in selected_filters.filters if f.name in known_filter_names],
+                )
+
+            # Iteratively prune filters if campaign count is too low.
+            # Each pass removes at most one filter, so one query per filter plus the unfiltered one is enough.
             current_filters = selected_filters
             summary_data = None
             min_campaigns_threshold = 20
+            max_queries = len(current_filters.filters) + 1
 
-            while True:
+            for query_number in range(1, max_queries + 1):
                 # Convert current filters to query parameters
                 query_params: dict = self._convert_tool_results_to_query_params(current_filters, raw_filters_data)
 
@@ -462,8 +419,21 @@ class SmartTargetsService:
                 if n_campaigns >= min_campaigns_threshold or not current_filters.filters:
                     break
 
-                # Prune one filter and try again
-                current_filters = await self._prune_selected_filters(current_filters, raw_filters_data)
+                if query_number == max_queries:
+                    logger.error(
+                        f"Metric {metric_name}: filter pruning hit its bound of {max_queries} queries "
+                        f"with filters {[f.name for f in current_filters.filters]}"
+                    )
+                    break
+
+                # Prune one filter and try again; stop if none of the remaining filters can be pruned
+                pruned_filters = await self._prune_selected_filters(current_filters, raw_filters_data)
+                if pruned_filters.filters == current_filters.filters:
+                    logger.warning(
+                        f"Metric {metric_name}: no prunable filter left in {[f.name for f in current_filters.filters]}"
+                    )
+                    break
+                current_filters = pruned_filters
 
             # Format response for this metric with final pruned filters
             formatted_response = self._format_measurements_response(
@@ -482,39 +452,48 @@ class SmartTargetsService:
             logger.error(f"Error processing metric {metric_name}: {str(e)}")
             return f"ERROR processing metric '{metric_name}': {str(e)}"
 
-    def _create_context_string(self, selected_metrics: list[dict], all_results: list) -> str:
-        """Create properly formatted context string for LLM consumption"""
-        if len(all_results) == 1:
-            result = all_results[0]
-            return result[0]
-        context_parts = []
-        for result in all_results:
-            metric_name = result[2]
-            metric_data = result[0]
-            context_parts.append(f"{metric_name} Summary Statistics:\n\n{metric_data}")
+    async def query_metrics_for_tool(
+        self, requests: list[tuple[str, str]], messages: list[Message], context: LlmCallContext | None = None
+    ) -> tuple[str, list[dict[str, str]]]:
+        """Look up the chat model's requested metrics, choosing filters for each.
 
-        return "\n\n".join(context_parts)
+        Args:
+            requests: (metric name, context for filters) pairs, at most SMART_TARGETS_MAX_TOOL_METRICS used.
+            messages: The chat's messages including this turn's, for filter selection.
+            context: What the filter-selection calls are for, recorded on their llm_internal_response rows.
 
-    async def use_smart_targets_tool(self, messages: list[Message]) -> tuple[str, list[dict[str, str]]] | None:
-        """Process multiple metrics in parallel and return combined results"""
-        available_metrics: dict = await self.get_available_metrics()
-        selected_metrics: list[dict] = await self._select_metrics(messages, available_metrics)
+        Returns:
+            The tool result text, and a source dict (docname, docurl) per metric returned.
+        """
+        available_metrics = await self.get_available_metrics()
+        metric_infos = []
+        unknown = []
+        for metric_name, context_for_filters in requests[:SMART_TARGETS_MAX_TOOL_METRICS]:
+            metric = available_metrics.get(metric_name)
+            if metric is None or not metric["uuid"]:
+                unknown.append(metric_name)
+                continue
+            metric_infos.append(
+                {"uuid": UUID(metric["uuid"]), "name": metric_name, "context_for_filters": context_for_filters}
+            )
 
-        if not selected_metrics:
-            logger.debug("No metrics were selected for analysis.")
-            return None
+        results = await asyncio.gather(*(self._process_single_metric(messages, info, context) for info in metric_infos))
 
-        # Process all metrics in parallel using asyncio.gather
-        metric_tasks = [self._process_single_metric(messages, metric_info) for metric_info in selected_metrics]
-
-        all_results = await asyncio.gather(*metric_tasks)
-
-        # Create formatted context string using new method
-        final_response = self._create_context_string(selected_metrics, all_results)
-        citations = [
-            {"docname": f"Smart Targets dashboard: metric={result[2]}; filters={result[3]}", "docurl": result[1]}
-            for result in all_results
-        ]
-        logger.debug(f"Smart Targets context string: {final_response}")
-        logger.info(f"Citations: {citations}")
-        return final_response, citations
+        parts = []
+        sources = []
+        for info, result in zip(metric_infos, results, strict=True):
+            if isinstance(result, str):
+                parts.append(f"{info['name']}: the data could not be retrieved.")
+                continue
+            formatted, url, metric_name, filters_display = result
+            parts.append(f"{metric_name} summary statistics:\n\n{formatted}")
+            sources.append(
+                {"docname": f"Smart Targets dashboard: metric={metric_name}; filters={filters_display}", "docurl": url}
+            )
+        if unknown:
+            names = ", ".join(name for name in available_metrics if available_metrics[name]["uuid"])
+            parts.append(f"Unknown metric(s): {', '.join(unknown)}. Available metrics: {names}")
+        return (
+            "<results-from-smart-targets-tool>\n" + "\n\n".join(parts) + "\n</results-from-smart-targets-tool>",
+            sources,
+        )

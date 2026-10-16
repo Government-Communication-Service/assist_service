@@ -1,6 +1,3 @@
-from enum import Enum
-from typing import Type
-
 from sqlalchemy import (
     DECIMAL,
     JSON,
@@ -213,6 +210,11 @@ class Message(Base):
     # ChatCompaction. Retained so historical rows survive; safe to drop in a later migration.
     summary = Column(Text, nullable=True)
     summary_llm_response_id = Column(Integer, ForeignKey("llm_internal_response.id"), nullable=True)
+    # The exact API messages this row stands for, replayed verbatim. On assistant rows: every
+    # message the agent loop appended this turn (tool_use turns, tool_result turns, final answer).
+    # On user rows: this turn's context block plus the user's query, exactly as sent.
+    # JSON, not JSONB: JSONB reorders keys, which breaks byte-identical replay (prompt cache).
+    raw_messages = Column(JSON, nullable=True)
     cache_read_tokens = Column(Integer, nullable=True)
     cache_write_tokens = Column(Integer, nullable=True)
     chat = relationship("Chat", back_populates="messages")
@@ -496,7 +498,7 @@ class RewrittenQuery(Base):
 
     search_index_id = Column(Integer, ForeignKey("search_index.id"), nullable=False)
     message_id = Column(Integer, ForeignKey("message.id"), nullable=False)
-    llm_internal_response_id = Column(Integer, ForeignKey("llm_internal_response.id"), nullable=False)
+    llm_internal_response_id = Column(Integer, ForeignKey("llm_internal_response.id"), nullable=True)
     content = Column(Text, nullable=False)
 
 
@@ -551,6 +553,33 @@ class LlmInternalResponse(Base):
     cache_read_tokens = Column(Integer, nullable=True)
     cache_write_tokens = Column(Integer, nullable=True)
     completion_cost = Column(DECIMAL(precision=10, scale=8), nullable=False)
+    # What the call was for (e.g. "chat_loop", "title"). Free text, so new call types need no migration.
+    purpose = Column(Text, nullable=True)
+    # Best-effort context: null when the call site couldn't supply it.
+    chat_id = Column(Integer, ForeignKey("chat.id"), nullable=True, index=True)
+    # The user message of the turn the call served, not the assistant reply (which doesn't exist yet).
+    message_id = Column(Integer, ForeignKey("message.id"), nullable=True)
+
+
+class ToolCall(Base):
+    """One tool_use block from the chat agent loop and what happened to it."""
+
+    __tablename__ = "tool_call"
+
+    # The assistant message for the turn.
+    message_id = Column(Integer, ForeignKey("message.id"), nullable=False)
+    # The logged model call that requested the tool.
+    llm_internal_response_id = Column(Integer, ForeignKey("llm_internal_response.id"), nullable=True)
+    iteration = Column(Integer, nullable=False)
+    tool_use_id = Column(Text, nullable=False)
+    tool_name = Column(Text, nullable=False)
+    # Validated arguments; null if the input didn't validate or the tool was unknown.
+    args = Column(JSON, nullable=True)
+    is_error = Column(Boolean, nullable=False)
+    duration_ms = Column(Integer, nullable=False)
+    result_chars = Column(Integer, nullable=False)
+
+    __table_args__ = (Index("idx_tool_call_message_id", "message_id"),)
 
 
 # The user prompt is an LLM prompt stored in the user's Personalised Prompt Library.
@@ -581,7 +610,7 @@ class GovUkSearchResult(Base):
 
     message_id = Column(Integer, ForeignKey("message.id"), nullable=False)
     gov_uk_search_query_id = Column(Integer, ForeignKey("gov_uk_search_query.id"), nullable=False)
-    llm_internal_response_id = Column(Integer, ForeignKey("llm_internal_response.id"), nullable=False)
+    llm_internal_response_id = Column(Integer, ForeignKey("llm_internal_response.id"), nullable=True)
     content = Column(Text, nullable=False)
     url = Column(Text, nullable=False)
     is_used = Column(Boolean, nullable=False)
@@ -591,7 +620,7 @@ class GovUkSearchResult(Base):
 class GovUkSearchQuery(Base):
     __tablename__ = "gov_uk_search_query"
 
-    llm_internal_response_id = Column(Integer, ForeignKey("llm_internal_response.id"), nullable=False)
+    llm_internal_response_id = Column(Integer, ForeignKey("llm_internal_response.id"), nullable=True)
     message_id = Column(Integer, ForeignKey("message.id"))
     content = Column(Text, nullable=False)
 
@@ -599,7 +628,7 @@ class GovUkSearchQuery(Base):
 class UseGovUkSearchDecision(Base):
     __tablename__ = "use_gov_uk_search_decision"
 
-    llm_internal_response_id = Column(Integer, ForeignKey("llm_internal_response.id"), nullable=False)
+    llm_internal_response_id = Column(Integer, ForeignKey("llm_internal_response.id"), nullable=True)
     message_id = Column(Integer, ForeignKey("message.id"))
     decision = Column(Boolean, nullable=False)
 
@@ -632,64 +661,6 @@ class ChatClassificationMapping(Base):
 
 engine = create_engine(database_url())
 Session = sessionmaker(bind=engine)
-
-
-class ModelEnum(str, Enum):
-    user = "user"
-    chat = "chat"
-    message = "message"
-    auth_session = "auth_session"
-    user_group = "user_group"
-    message_user_group_mapping = "message_user_group_mapping"
-    redaction = "redaction"
-    theme = "theme"
-    use_case = "use_case"
-    user_action = "user_action"
-    action_type = "action_type"
-    feedback = "feedback"
-    feedback_score = "feedback_score"
-    feedback_label = "feedback_label"
-    llm = "llm"
-    search_index = "search_index"
-    document_chunk = "document_chunk"
-    document = "document"
-    rewritten_query = "rewritten_query"
-    message_document_chunk_mapping = "message_document_chunk_mapping"
-    message_search_index_mapping = "message_search_index_mapping"
-    system_prompt = "system_prompt"
-    llm_internal_response = "llm_internal_response"
-    user_prompt = "user_prompt"
-
-
-def get_model_class(model: ModelEnum) -> Type["Base"]:
-    model_mapping = {
-        ModelEnum.user: User,
-        ModelEnum.chat: Chat,
-        ModelEnum.message: Message,
-        ModelEnum.auth_session: AuthSession,
-        ModelEnum.user_group: UserGroup,
-        ModelEnum.message_user_group_mapping: MessageUserGroupMapping,
-        ModelEnum.redaction: Redaction,
-        ModelEnum.feedback: Feedback,
-        ModelEnum.theme: Theme,
-        ModelEnum.use_case: UseCase,
-        ModelEnum.user_action: UserAction,
-        ModelEnum.action_type: ActionType,
-        ModelEnum.feedback_score: FeedbackScore,
-        ModelEnum.feedback_label: FeedbackLabel,
-        ModelEnum.llm: LLM,
-        ModelEnum.search_index: SearchIndex,
-        ModelEnum.document_chunk: DocumentChunk,
-        ModelEnum.document: Document,
-        ModelEnum.rewritten_query: RewrittenQuery,
-        ModelEnum.message_document_chunk_mapping: MessageDocumentChunkMapping,
-        ModelEnum.message_search_index_mapping: MessageSearchIndexMapping,
-        ModelEnum.system_prompt: SystemPrompt,
-        ModelEnum.llm_internal_response: LlmInternalResponse,
-        ModelEnum.user_prompt: UserPrompt,
-    }
-    return model_mapping[model]
-
 
 Index("ix_user_uuid", User.uuid)
 Index("ix_chat_uuid", Chat.uuid)

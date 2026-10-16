@@ -2,7 +2,7 @@ from httpx import AsyncClient
 
 from app.audience_segments.constants import AUDIENCE_SEGMENT_ENDPOINT
 from app.audience_segments.schemas import AudienceSegmentSchema
-from app.config import GCS_DATA_API_URL
+from app.config import AUDIENCE_SEGMENTS_API_TIMEOUT_SECONDS, GCS_DATA_API_URL
 
 
 class AudienceSegmentsClient:
@@ -10,7 +10,7 @@ class AudienceSegmentsClient:
 
     @classmethod
     async def get_all_audience_segments(cls) -> list[AudienceSegmentSchema]:
-        async with AsyncClient(timeout=10.0) as client:
+        async with AsyncClient(timeout=AUDIENCE_SEGMENTS_API_TIMEOUT_SECONDS) as client:
             response = await client.get(cls.URL)
             response.raise_for_status()
             data = response.json()
@@ -19,7 +19,7 @@ class AudienceSegmentsClient:
 
     @classmethod
     async def get_audience_segment(cls, audience_segment_uuid) -> AudienceSegmentSchema:
-        async with AsyncClient(timeout=10.0) as client:
+        async with AsyncClient(timeout=AUDIENCE_SEGMENTS_API_TIMEOUT_SECONDS) as client:
             url = f"{cls.URL}/{audience_segment_uuid}"
             response = await client.get(url)
             response.raise_for_status()

@@ -1,6 +1,5 @@
 from fastapi import Depends, Path
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.exceptions import (
     UuidInvalidError,
@@ -8,7 +7,7 @@ from app.auth.exceptions import (
 )
 from app.auth.utils import verify_and_parse_uuid
 from app.auth.verify_service import verify_and_get_user_from_path_and_header
-from app.database.db_session import get_db_session
+from app.database.db_session import DbSession
 from app.database.models import User, UserPrompt
 from app.personal_prompts.exceptions import (
     PromptUuidInvalidError,
@@ -19,9 +18,9 @@ from app.personal_prompts.exceptions import (
 
 # When the user makes a request for a prompt, this dependency is used
 async def verify_and_get_user_prompt_by_uuid(
+    db_session: DbSession,
     user: User = Depends(verify_and_get_user_from_path_and_header),
     user_prompt_uuid: str = Path(...),
-    db_session: AsyncSession = Depends(get_db_session),
 ) -> UserPrompt:
     try:
         user_prompt_uuid = verify_and_parse_uuid(user_prompt_uuid)

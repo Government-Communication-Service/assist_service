@@ -8,7 +8,7 @@ class AudienceSegmentSchema(BaseModel):
     name: str
     pretty_name: str
     insights_markdown: str
-    connect_url: str
+    connect_url: str | None = None
 
     def wrap_for_context(self):
         prompt_context = f"<segment-insights segment-name:{self.pretty_name}>"

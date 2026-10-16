@@ -20,14 +20,18 @@ class TestShareAudienceSegments:
         user_id,
         async_client,
         async_http_requester,
-        mock_get_audience_segment_1_response,
+        mock_get_audience_segments_response,
         mock_llm_response,
+        mock_chat_model,
     ):
         """
         Test that audience segment references are preserved when a chat is shared.
         This is a regression test for the bug where audience segment sources
         disappear when viewing a shared chat link.
         """
+        mock_chat_model.script(
+            [("get_audience_segments", {"segment_names": [AUDIENCE_SEGMENT_1["pretty_name"]]})], "Three words each."
+        )
         api = ENDPOINTS()
 
         # Step 1: Create a chat with audience segments
@@ -90,14 +94,12 @@ class TestShareAudienceSegments:
         # Parse and verify the sources
         shared_sources = json.loads(assistant_message["sources"])
         assert "audience_segments_sources" in shared_sources, (
-            "BUG CONFIRMED: audience_segments_sources missing from shared chat! "
-            f"Sources: {shared_sources}"
+            f"BUG CONFIRMED: audience_segments_sources missing from shared chat! Sources: {shared_sources}"
         )
 
         # Verify the content matches
         assert len(shared_sources["audience_segments_sources"]) == 1, (
-            f"Expected 1 audience segment source in shared chat, "
-            f"got {len(shared_sources['audience_segments_sources'])}"
+            f"Expected 1 audience segment source in shared chat, got {len(shared_sources['audience_segments_sources'])}"
         )
 
         assert AUDIENCE_SEGMENT_1["uuid"] in shared_sources["audience_segments_sources"][0]["url"], (
