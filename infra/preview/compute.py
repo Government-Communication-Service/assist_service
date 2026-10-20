@@ -41,6 +41,17 @@ class Compute(Construct):
             machine_image=ecs.EcsOptimizedImage.amazon_linux2023(),
             security_group=instance_security_group,
             role=instance_role,
+            block_devices=[
+                autoscaling.BlockDevice(
+                    device_name="/dev/xvda",
+                    volume=autoscaling.BlockDeviceVolume.ebs(
+                        30,
+                        volume_type=autoscaling.EbsDeviceVolumeType.GP3,
+                        encrypted=True,
+                        delete_on_termination=True,
+                    ),
+                )
+            ],
             min_capacity=1,
             max_capacity=1,
             desired_capacity=1,
