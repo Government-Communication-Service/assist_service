@@ -22,7 +22,6 @@ from app.chat.schemas import (
     CentralGuidanceSource,
     ChatCreateMessageInput,
     GovUkSearchSource,
-    SmartTargetsSource,
     Sources,
     StyleGuideSource,
     UserDocumentSource,
@@ -30,7 +29,7 @@ from app.chat.schemas import (
 from app.chat.utils import truncate_query_for_helper_call
 from app.config import (
     AUDIENCE_SEGMENTS_MAX_TOOL_SEGMENTS,
-    SMART_TARGETS_SERVICE_DISABLED,
+    CAMPAIGN_BENCHMARKS_SERVICE_DISABLED,
     TOOL_STATUS_LABEL_MAX_QUERY_CHARS,
     USE_RAG,
 )
@@ -52,7 +51,7 @@ from app.gov_uk_search.tools import (
     SearchGovUkArgs,
 )
 from app.smart_targets.service import SmartTargetsService
-from app.smart_targets.tools import QUERY_SMART_TARGETS, QuerySmartTargetsArgs
+from app.smart_targets.tools import QUERY_CAMPAIGN_BENCHMARKS, QuerySmartTargetsArgs
 from app.style_guide.service import check_style_guide_for_tool
 from app.style_guide.tools import CHECK_STYLE_GUIDE, CheckStyleGuideArgs
 
@@ -287,20 +286,15 @@ async def _exec_get_gov_uk_pdf(
 async def _exec_query_smart_targets(
     ctx: ToolContext, args: QuerySmartTargetsArgs, call: ToolCall, db_session: AsyncSession
 ) -> ToolExecResult:
-    content, sources = await SmartTargetsService().query_metrics_for_tool(
+    content, _sources = await SmartTargetsService().query_metrics_for_tool(
         requests=[(m.metric_name, m.context_for_filters) for m in args.metrics],
         messages=[*ctx.history, ctx.user_message],
         context=LlmCallContext(
             purpose="smart_targets_select_filters", chat_id=ctx.chat.id, message_id=ctx.user_message.id
         ),
     )
-    # Smart Targets sources are shown separately by the frontend, not in the citations array.
-    return ToolExecResult(
-        content=content,
-        sources=Sources(
-            smart_targets_sources=[SmartTargetsSource(pretty_name=s["docname"], url=s["docurl"]) for s in sources]
-        ),
-    )
+    # Smart Targets currently attaches no sources; `_sources` holds them if they are added back.
+    return ToolExecResult(content=content)
 
 
 def _metrics_label(args: QuerySmartTargetsArgs) -> str:
@@ -434,13 +428,13 @@ TOOL_REGISTRY: dict[str, RegisteredTool[Any]] = {
             error_label="Couldn't read the GOV.UK PDF",
         ),
         RegisteredTool(
-            tool_def=QUERY_SMART_TARGETS,
+            tool_def=QUERY_CAMPAIGN_BENCHMARKS,
             executor=_exec_query_smart_targets,
-            enabled=lambda: not SMART_TARGETS_SERVICE_DISABLED,
+            enabled=lambda: not CAMPAIGN_BENCHMARKS_SERVICE_DISABLED,
             is_available=lambda ctx: bool(ctx.input_data.use_smart_targets),
             unavailable_message=(
-                "Smart Targets is turned off in this chat. Tell the user they can turn on the 'Smart Targets' "
-                "option in the chat options."
+                "Campaign benchmarks is turned off in this chat. Tell the user they can turn on the "
+                "'Campaign benchmarks' option in the chat options."
             ),
             running_label=lambda args: f"Getting Smart Targets benchmarks for {_metrics_label(args)}",
             done_label=lambda args: f"Got Smart Targets benchmarks for {_metrics_label(args)}",

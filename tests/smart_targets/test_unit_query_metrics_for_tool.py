@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 from app.bedrock.call_log import LlmCallContext
-from app.smart_targets.service import SMART_TARGETS_MAX_TOOL_METRICS, SmartTargetsService
+from app.smart_targets.service import CAMPAIGN_BENCHMARKS_MAX_TOOL_METRICS, SmartTargetsService
 
 METRICS = {
     "no-metric-selected": {"id": "0", "name": "no-metric-selected", "uuid": None},
@@ -69,4 +69,4 @@ async def test_metric_count_is_capped():
 
     await service.query_metrics_for_tool([("Impressions", str(i)) for i in range(10)], messages=[])
 
-    assert service._process_single_metric.await_count == SMART_TARGETS_MAX_TOOL_METRICS
+    assert service._process_single_metric.await_count == CAMPAIGN_BENCHMARKS_MAX_TOOL_METRICS

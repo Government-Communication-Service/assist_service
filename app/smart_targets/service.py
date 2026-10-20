@@ -8,14 +8,18 @@ from httpx import AsyncClient, HTTPError, HTTPStatusError
 from app.bedrock.bedrock import BedrockHandler, RunMode
 from app.bedrock.call_log import LlmCallContext
 from app.chat.utils import prepare_recent_turns_for_decision
-from app.config import LLM_SMART_TARGETS_MODEL, SMART_TARGETS_MAX_TOOL_METRICS, SMART_TARGETS_RECENT_TURNS
+from app.config import (
+    CAMPAIGN_BENCHMARKS_MAX_TOOL_METRICS,
+    CAMPAIGN_BENCHMARKS_RECENT_TURNS,
+    LLM_CAMPAIGN_BENCHMARKS_MODEL,
+)
 from app.database.models import Message
 from app.database.table import LLMTable
 from app.smart_targets.constants import (
-    URL_SMART_TARGETS_FILTERS,
-    URL_SMART_TARGETS_HEALTHCHECK,
-    URL_SMART_TARGETS_METRICS,
-    URL_SMART_TARGETS_SUMMARY,
+    URL_CAMPAIGN_BENCHMARKS_FILTERS,
+    URL_CAMPAIGN_BENCHMARKS_HEALTHCHECK,
+    URL_CAMPAIGN_BENCHMARKS_METRICS,
+    URL_CAMPAIGN_BENCHMARKS_SUMMARY,
 )
 from app.smart_targets.exceptions import GetSmartTargetsMetricsError, SmartTargetsConnectionError
 from app.smart_targets.prompts import (
@@ -38,12 +42,12 @@ logger = getLogger(__name__)
 class SmartTargetsService:
     def __init__(self):
         self.async_client: AsyncClient = AsyncClient()
-        llm = LLMTable().get_by_model(LLM_SMART_TARGETS_MODEL)
+        llm = LLMTable().get_by_model(LLM_CAMPAIGN_BENCHMARKS_MODEL)
         self.bedrock_handler: BedrockHandler = BedrockHandler(llm=llm, mode=RunMode.ASYNC)
 
     async def verify_connection(self):
         try:
-            r = await self.async_client.get(URL_SMART_TARGETS_HEALTHCHECK)
+            r = await self.async_client.get(URL_CAMPAIGN_BENCHMARKS_HEALTHCHECK)
             r.raise_for_status()
             logger.info("Succesfully connected to GCS Data API")
             return
@@ -53,7 +57,9 @@ class SmartTargetsService:
             raise SmartTargetsConnectionError("Failed to verify connection with the GCS Data API") from e
 
     def _wrap_chat_messages(self, messages: list[Message]) -> str:
-        messages_prep: list[dict] = prepare_recent_turns_for_decision(messages, num_turns=SMART_TARGETS_RECENT_TURNS)
+        messages_prep: list[dict] = prepare_recent_turns_for_decision(
+            messages, num_turns=CAMPAIGN_BENCHMARKS_RECENT_TURNS
+        )
         all_but_final_messages = messages_prep[0:-1]
         last_message = messages_prep[-1]
 
@@ -66,7 +72,7 @@ class SmartTargetsService:
 
     async def get_available_metrics(self) -> dict:
         try:
-            r = await self.async_client.get(URL_SMART_TARGETS_METRICS)
+            r = await self.async_client.get(URL_CAMPAIGN_BENCHMARKS_METRICS)
             r.raise_for_status()
         except HTTPError as e:
             raise GetSmartTargetsMetricsError("Failed to get metrics from the Smart Targets tool") from e
@@ -86,7 +92,7 @@ class SmartTargetsService:
         return metrics
 
     async def _get_filters_for_selected_metric(self, metric_uuid: UUID) -> dict:
-        url = URL_SMART_TARGETS_FILTERS.format(metric_uuid=metric_uuid)
+        url = URL_CAMPAIGN_BENCHMARKS_FILTERS.format(metric_uuid=metric_uuid)
         r = await self.async_client.get(url)
         return r.json()
 
@@ -283,7 +289,7 @@ class SmartTargetsService:
 
     async def _get_summary_for_metric(self, metric_uuid: UUID, query_params: dict) -> dict:
         """Retrieve measurements from the API with query parameters"""
-        url = URL_SMART_TARGETS_SUMMARY.format(metric_uuid=metric_uuid)
+        url = URL_CAMPAIGN_BENCHMARKS_SUMMARY.format(metric_uuid=metric_uuid)
 
         try:
             r = await self.async_client.get(url, params=query_params)
@@ -351,12 +357,16 @@ class SmartTargetsService:
         if upper_q != "N/A":
             result.append(f"- Upper quartile: {upper_q} {unit}")
 
-        # Add confidence interval
-        ci = stats.get("confidence_interval_95", [])
-        if ci and len(ci) >= 2:
-            ci_low = ci[0]
-            ci_high = ci[1]
-            result.append(f"- 95% confidence interval: {ci_low} to {ci_high} {unit}")
+        # Add the spread of the data; the API returns the 2.5th and 97.5th percentiles (min and max below 40 points)
+        spread = stats.get("confidence_interval_95", [])
+        if spread and len(spread) >= 2:
+            spread_low = spread[0]
+            spread_high = spread[1]
+            if isinstance(n_measurements, int) and n_measurements < 40:
+                label = "Minimum to maximum (too few data points for percentiles)"
+            else:
+                label = "2.5th to 97.5th percentile range (middle 95% of data points)"
+            result.append(f"- {label}: {spread_low} to {spread_high} {unit}")
 
         return "\n".join(result)
 
@@ -458,7 +468,7 @@ class SmartTargetsService:
         """Look up the chat model's requested metrics, choosing filters for each.
 
         Args:
-            requests: (metric name, context for filters) pairs, at most SMART_TARGETS_MAX_TOOL_METRICS used.
+            requests: (metric name, context for filters) pairs, at most CAMPAIGN_BENCHMARKS_MAX_TOOL_METRICS used.
             messages: The chat's messages including this turn's, for filter selection.
             context: What the filter-selection calls are for, recorded on their llm_internal_response rows.
 
@@ -468,7 +478,7 @@ class SmartTargetsService:
         available_metrics = await self.get_available_metrics()
         metric_infos = []
         unknown = []
-        for metric_name, context_for_filters in requests[:SMART_TARGETS_MAX_TOOL_METRICS]:
+        for metric_name, context_for_filters in requests[:CAMPAIGN_BENCHMARKS_MAX_TOOL_METRICS]:
             metric = available_metrics.get(metric_name)
             if metric is None or not metric["uuid"]:
                 unknown.append(metric_name)
@@ -494,6 +504,8 @@ class SmartTargetsService:
             names = ", ".join(name for name in available_metrics if available_metrics[name]["uuid"])
             parts.append(f"Unknown metric(s): {', '.join(unknown)}. Available metrics: {names}")
         return (
-            "<results-from-smart-targets-tool>\n" + "\n\n".join(parts) + "\n</results-from-smart-targets-tool>",
+            "<results-from-campaign-benchmarks-tool>\n"
+            + "\n\n".join(parts)
+            + "\n</results-from-campaign-benchmarks-tool>",
             sources,
         )

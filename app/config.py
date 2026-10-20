@@ -1,7 +1,7 @@
 import os
 from enum import Enum
 
-from pydantic import SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import (
     AWSSecretsManagerSettingsSource,
     BaseSettings,
@@ -120,7 +120,10 @@ class AppSettings(BaseSettings):
     # --- feature flags ---
     is_dev: bool = False
     use_rag: bool = True
-    smart_targets_service_disabled: bool = False
+    # Old SMART_TARGETS_* env var names are still read so existing deployments keep working.
+    campaign_benchmarks_service_disabled: bool = Field(
+        False, validation_alias=AliasChoices("campaign_benchmarks_service_disabled", "smart_targets_service_disabled")
+    )
     debug_mode: bool = False
     debug_logging: bool = False
 
@@ -153,7 +156,10 @@ class AppSettings(BaseSettings):
     llm_govuk_query_generator: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
     llm_document_relevancy_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     llm_gov_uk_search_followup_assessment: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
-    llm_smart_targets_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    llm_campaign_benchmarks_model: str = Field(
+        "anthropic.claude-sonnet-4-5-20250929-v1:0",
+        validation_alias=AliasChoices("llm_campaign_benchmarks_model", "llm_smart_targets_model"),
+    )
     llm_style_guide_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
     chat_thinking_level: ThinkingLevel = ThinkingLevel.disabled
     # Total attempts (not retries) for the combined title+classification Haiku call; 1 = no retry.
@@ -246,10 +252,14 @@ class AppSettings(BaseSettings):
     # Characters of an uploaded document returned per read_uploaded_document call.
     uploaded_documents_max_read_chars: int = 30_000
 
-    # --- smart targets ---
-    smart_targets_max_tool_metrics: int = 4
+    # --- campaign benchmarks ---
+    campaign_benchmarks_max_tool_metrics: int = Field(
+        4, validation_alias=AliasChoices("campaign_benchmarks_max_tool_metrics", "smart_targets_max_tool_metrics")
+    )
     # Recent conversation turns shown to the filter selector.
-    smart_targets_recent_turns: int = 6
+    campaign_benchmarks_recent_turns: int = Field(
+        6, validation_alias=AliasChoices("campaign_benchmarks_recent_turns", "smart_targets_recent_turns")
+    )
 
     # --- audience segments ---
     audience_segments_max_tool_segments: int = 4
@@ -354,8 +364,8 @@ class AppSettings(BaseSettings):
         "uploaded_documents_max_tool_queries",
         "uploaded_documents_max_result_chars",
         "uploaded_documents_max_read_chars",
-        "smart_targets_max_tool_metrics",
-        "smart_targets_recent_turns",
+        "campaign_benchmarks_max_tool_metrics",
+        "campaign_benchmarks_recent_turns",
         "audience_segments_max_tool_segments",
         "audience_segments_library_cache_seconds",
         "audience_segments_library_retry_backoff_seconds",
@@ -431,7 +441,7 @@ GCS_DATA_API_URL = settings.gcs_data_api_url
 
 # Feature flags
 USE_RAG = settings.use_rag
-SMART_TARGETS_SERVICE_DISABLED = settings.smart_targets_service_disabled
+CAMPAIGN_BENCHMARKS_SERVICE_DISABLED = settings.campaign_benchmarks_service_disabled
 
 # OpenSearch (non-secret)
 OPENSEARCH_USER = settings.opensearch_user
@@ -461,7 +471,7 @@ LLM_CHUNK_REVIEWER = settings.llm_chunk_reviewer
 LLM_GOVUK_QUERY_GENERATOR = settings.llm_govuk_query_generator
 LLM_DOCUMENT_RELEVANCY_MODEL = settings.llm_document_relevancy_model
 LLM_GOV_UK_SEARCH_FOLLOWUP_ASSESSMENT = settings.llm_gov_uk_search_followup_assessment
-LLM_SMART_TARGETS_MODEL = settings.llm_smart_targets_model
+LLM_CAMPAIGN_BENCHMARKS_MODEL = settings.llm_campaign_benchmarks_model
 CHAT_THINKING_LEVEL = settings.chat_thinking_level
 
 # Central guidance RAG
@@ -475,9 +485,9 @@ UPLOADED_DOCUMENTS_MAX_TOOL_QUERIES = settings.uploaded_documents_max_tool_queri
 UPLOADED_DOCUMENTS_MAX_RESULT_CHARS = settings.uploaded_documents_max_result_chars
 UPLOADED_DOCUMENTS_MAX_READ_CHARS = settings.uploaded_documents_max_read_chars
 
-# Smart Targets
-SMART_TARGETS_MAX_TOOL_METRICS = settings.smart_targets_max_tool_metrics
-SMART_TARGETS_RECENT_TURNS = settings.smart_targets_recent_turns
+# Campaign benchmarks
+CAMPAIGN_BENCHMARKS_MAX_TOOL_METRICS = settings.campaign_benchmarks_max_tool_metrics
+CAMPAIGN_BENCHMARKS_RECENT_TURNS = settings.campaign_benchmarks_recent_turns
 
 # Audience segments
 AUDIENCE_SEGMENTS_MAX_TOOL_SEGMENTS = settings.audience_segments_max_tool_segments

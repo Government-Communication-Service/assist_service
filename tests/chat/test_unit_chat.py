@@ -253,7 +253,7 @@ def test_nested_source_objects_round_trip():
 async def test_smart_targets_disabled_skips_services():
     """Test that services are not called when Smart Targets is disabled."""
     # Use context managers for clarity and to avoid pytest patch parameter issues in CI
-    with patch("app.chat.prompts.SMART_TARGETS_SERVICE_DISABLED", True):
+    with patch("app.chat.prompts.CAMPAIGN_BENCHMARKS_SERVICE_DISABLED", True):
         with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
             with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
                 async with async_db_session() as db_session:
@@ -268,7 +268,7 @@ async def test_smart_targets_disabled_skips_services():
 @pytest.mark.asyncio
 async def test_smart_targets_enabled_calls_services():
     """Test that services are called when Smart Targets is enabled."""
-    with patch("app.chat.prompts.SMART_TARGETS_SERVICE_DISABLED", False):
+    with patch("app.chat.prompts.CAMPAIGN_BENCHMARKS_SERVICE_DISABLED", False):
         with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
             with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
                 mock_smart.return_value.get_available_metrics = AsyncMock(return_value=["metric1", "metric2"])
@@ -289,7 +289,7 @@ async def test_smart_targets_enabled_calls_services():
     mock_smart.return_value.get_available_metrics.assert_called_once()
     mock_bmdb.get_latest_edition.assert_called_once()
     full_text = " ".join(block["text"] for block in response)
-    assert "Smart Targets" in full_text
+    assert "campaign benchmarks tool" in full_text
     assert "metric1" in full_text
 
 
@@ -298,7 +298,7 @@ async def test_smart_targets_error_continues_gracefully():
     """Test that system prompt builds even if Smart Targets service fails."""
     from app.smart_targets.exceptions import GetSmartTargetsMetricsError
 
-    with patch("app.chat.prompts.SMART_TARGETS_SERVICE_DISABLED", False):
+    with patch("app.chat.prompts.CAMPAIGN_BENCHMARKS_SERVICE_DISABLED", False):
         with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
             with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
                 mock_smart.return_value.get_available_metrics = AsyncMock(
@@ -321,7 +321,7 @@ async def test_bmdb_error_continues_gracefully():
     """Test that system prompt builds even if BMDB service fails."""
     from app.bmdb.exceptions import GetBenchmarkDatabaseEditionError
 
-    with patch("app.chat.prompts.SMART_TARGETS_SERVICE_DISABLED", False):
+    with patch("app.chat.prompts.CAMPAIGN_BENCHMARKS_SERVICE_DISABLED", False):
         with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
             with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
                 mock_smart.return_value.get_available_metrics = AsyncMock(return_value=["metric1"])
@@ -352,7 +352,7 @@ def _mock_edition() -> AsyncMock:
 @pytest.mark.asyncio
 async def test_smart_targets_metrics_are_sorted():
     """API order isn't deterministic; the prompt must not vary just because the API reordered."""
-    with patch("app.chat.prompts.SMART_TARGETS_SERVICE_DISABLED", False):
+    with patch("app.chat.prompts.CAMPAIGN_BENCHMARKS_SERVICE_DISABLED", False):
         with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
             with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
                 mock_smart.return_value.get_available_metrics = AsyncMock(return_value=["zebra", "apple"])
@@ -371,7 +371,7 @@ async def test_smart_targets_metrics_fall_back_to_last_known_good_on_transient_f
     which would otherwise change the (cached) system prompt for every chat in this process."""
     from app.smart_targets.exceptions import GetSmartTargetsMetricsError
 
-    with patch("app.chat.prompts.SMART_TARGETS_SERVICE_DISABLED", False):
+    with patch("app.chat.prompts.CAMPAIGN_BENCHMARKS_SERVICE_DISABLED", False):
         with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
             with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
                 mock_bmdb.get_latest_edition = AsyncMock(return_value=_mock_edition())

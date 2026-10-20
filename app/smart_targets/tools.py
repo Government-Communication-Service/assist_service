@@ -5,9 +5,9 @@ from typing import Any
 from pydantic import Field
 
 from app.bedrock.tool_schema import LenientList, ToolArgs, ToolDef
-from app.config import SMART_TARGETS_MAX_TOOL_METRICS
+from app.config import CAMPAIGN_BENCHMARKS_MAX_TOOL_METRICS
 
-SELECT_FILTERS_TOOL_NAME = "select_filters_for_smart_targets_tool"
+SELECT_FILTERS_TOOL_NAME = "select_filters_for_campaign_benchmarks_tool"
 
 
 def generate_select_filters_tool_schema(filters_data: dict[str, Any]) -> dict[str, Any]:
@@ -80,7 +80,7 @@ def generate_select_filters_tool_schema(filters_data: dict[str, Any]) -> dict[st
 class SmartTargetsMetricRequest(ToolArgs):
     """One metric to look up."""
 
-    metric_name: str = Field(description="A Smart Targets metric name, exactly as listed in the system prompt")
+    metric_name: str = Field(description="A campaign benchmarks metric name, exactly as listed in the system prompt")
     context_for_filters: str = Field(
         description=(
             "Plain-language description of the campaigns to compare against, used to choose filters: "
@@ -90,19 +90,20 @@ class SmartTargetsMetricRequest(ToolArgs):
 
 
 class QuerySmartTargetsArgs(ToolArgs):
-    """Get benchmark statistics about past government communications campaigns from the Smart Targets
+    """Get benchmark statistics about past government communications campaigns from the campaign benchmarks
     tool (the Benchmark Database). For each requested metric (e.g. impressions, click-through rate,
     awareness) it chooses filters from your context_for_filters and returns aggregate statistics for the
-    matching campaigns: median, 25th and 75th percentiles, 95% confidence interval, and the counts of
-    campaigns and measurements. Filters are loosened automatically if too few campaigns match. The
-    statistics describe the whole filtered selection, so to compare (e.g. across years or audiences)
-    request the same metric several times with different context_for_filters. If the count of
-    measurements differs from the count of campaigns, the metric was measured across several channels.
-    Use it to set realistic expectations for a campaign's performance."""
+    matching campaigns: median, 25th and 75th percentiles, 2.5th and 97.5th percentiles (the range of the
+    middle 95% of data points; minimum and maximum if there are fewer than 40), and the counts of campaigns
+    and measurements. Filters are loosened automatically if too few campaigns match. The statistics describe
+    the whole filtered selection, so to compare (e.g. across years or audiences) request the same metric
+    several times with different context_for_filters. If the count of measurements differs from the count of
+    campaigns, the metric was measured across several channels. Use it to set realistic expectations for a
+    campaign's performance."""
 
     metrics: LenientList[SmartTargetsMetricRequest] = Field(
-        description=f"1 to {SMART_TARGETS_MAX_TOOL_METRICS} metrics to look up"
+        description=f"1 to {CAMPAIGN_BENCHMARKS_MAX_TOOL_METRICS} metrics to look up"
     )
 
 
-QUERY_SMART_TARGETS = ToolDef("query_smart_targets", QuerySmartTargetsArgs, strict=False)
+QUERY_CAMPAIGN_BENCHMARKS = ToolDef("query_campaign_benchmarks", QuerySmartTargetsArgs, strict=False)

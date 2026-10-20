@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy.future import select
 
 from app.api.endpoints import ENDPOINTS
-from app.chat.schemas import CentralGuidanceSource, SmartTargetsSource, Sources
+from app.chat.schemas import CentralGuidanceSource, Sources
 from app.database.models import Chat, Message
 
 api = ENDPOINTS()
@@ -84,7 +84,7 @@ def parse_streaming_response(response_data) -> tuple[list[dict], dict]:
 
 
 @pytest.mark.asyncio
-@patch("app.chat.tools.SMART_TARGETS_SERVICE_DISABLED", False)
+@patch("app.chat.tools.CAMPAIGN_BENCHMARKS_SERVICE_DISABLED", False)
 @patch("app.chat.tools.SmartTargetsService")
 async def test_smart_targets_with_central_guidance_streaming(
     mock_smart_targets_service,
@@ -116,7 +116,7 @@ async def test_smart_targets_with_central_guidance_streaming(
             "- Lower quartile: 35.2 percentage\n"
             "- Median: 48.5\n"
             "- Upper quartile: 62.8 percentage\n"
-            "- 95% confidence interval: 42.3 to 54.7 percentage",
+            "- 2.5th to 97.5th percentile range (middle 95% of data points): 42.3 to 54.7 percentage",
             # Sources list
             [
                 {
@@ -180,20 +180,12 @@ async def test_smart_targets_with_central_guidance_streaming(
     # Parse and validate sources structure in streaming response
     stream_sources = Sources.model_validate_json(message_streamed["sources"])
 
-    # Verify Smart Targets sources are present
-    assert stream_sources.smart_targets_sources is not None, "Smart Targets sources should be present"
-    assert len(stream_sources.smart_targets_sources) >= 1, "Should have at least 1 Smart Targets source"
+    # Smart Targets attaches no sources
+    assert not stream_sources.smart_targets_sources, "Smart Targets sources should be empty"
 
     # Verify Central Guidance sources are present
     assert stream_sources.central_guidance_sources is not None, "Central Guidance sources should be present"
     assert len(stream_sources.central_guidance_sources) >= 1, "Should have at least 1 Central Guidance source"
-
-    # Validate Smart Targets source structure
-    for source in stream_sources.smart_targets_sources:
-        assert isinstance(source, SmartTargetsSource), "Should be SmartTargetsSource type"
-        assert source.pretty_name != "", "Smart Targets source should have pretty_name"
-        assert source.url != "", "Smart Targets source should have url"
-        logger.info(f"Smart Targets source: {source.pretty_name} - {source.url}")
 
     # Validate Central Guidance source structure
     for source in stream_sources.central_guidance_sources:
@@ -234,27 +226,18 @@ async def test_smart_targets_with_central_guidance_streaming(
     db_sources = Sources.model_validate_json(assistant_message.sources)
 
     # Verify Smart Targets sources in database
-    assert db_sources.smart_targets_sources is not None, "DB should have Smart Targets sources"
-    assert len(db_sources.smart_targets_sources) >= 1, "DB should have at least 1 Smart Targets source"
+    assert not db_sources.smart_targets_sources, "DB should have no Smart Targets sources"
 
     # Verify Central Guidance sources in database
     assert db_sources.central_guidance_sources is not None, "DB should have Central Guidance sources"
     assert len(db_sources.central_guidance_sources) >= 1, "DB should have at least 1 Central Guidance source"
 
     # Verify database sources match streaming response sources
-    assert len(db_sources.smart_targets_sources) == len(stream_sources.smart_targets_sources), (
-        "DB and stream should have same number of Smart Targets sources"
-    )
     assert len(db_sources.central_guidance_sources) == len(stream_sources.central_guidance_sources), (
         "DB and stream should have same number of Central Guidance sources"
     )
 
     # Verify actual content matches
-    for i, db_source in enumerate(db_sources.smart_targets_sources):
-        stream_source = stream_sources.smart_targets_sources[i]
-        assert db_source.pretty_name == stream_source.pretty_name, "Smart Targets source names should match"
-        assert db_source.url == stream_source.url, "Smart Targets source URLs should match"
-
     for i, db_source in enumerate(db_sources.central_guidance_sources):
         stream_source = stream_sources.central_guidance_sources[i]
         assert db_source.pretty_name == stream_source.pretty_name, "Central Guidance source names should match"
@@ -296,8 +279,7 @@ async def test_smart_targets_with_central_guidance_streaming(
     get_chat_sources = Sources.model_validate_json(get_chat_assistant_msg["sources"])
 
     # Verify Smart Targets sources in GET response
-    assert get_chat_sources.smart_targets_sources is not None, "GET response should have Smart Targets sources"
-    assert len(get_chat_sources.smart_targets_sources) >= 1, "GET response should have at least 1 Smart Targets source"
+    assert not get_chat_sources.smart_targets_sources, "GET response should have no Smart Targets sources"
 
     # Verify Central Guidance sources in GET response
     assert get_chat_sources.central_guidance_sources is not None, "GET response should have Central Guidance sources"
@@ -306,19 +288,11 @@ async def test_smart_targets_with_central_guidance_streaming(
     )
 
     # Verify GET response sources match streaming response sources
-    assert len(get_chat_sources.smart_targets_sources) == len(stream_sources.smart_targets_sources), (
-        "GET and stream should have same number of Smart Targets sources"
-    )
     assert len(get_chat_sources.central_guidance_sources) == len(stream_sources.central_guidance_sources), (
         "GET and stream should have same number of Central Guidance sources"
     )
 
     # Verify actual content matches streaming response
-    for i, get_source in enumerate(get_chat_sources.smart_targets_sources):
-        stream_source = stream_sources.smart_targets_sources[i]
-        assert get_source.pretty_name == stream_source.pretty_name, "GET Smart Targets source names should match stream"
-        assert get_source.url == stream_source.url, "GET Smart Targets source URLs should match stream"
-
     for i, get_source in enumerate(get_chat_sources.central_guidance_sources):
         stream_source = stream_sources.central_guidance_sources[i]
         assert get_source.pretty_name == stream_source.pretty_name, (
@@ -361,10 +335,7 @@ async def test_smart_targets_with_central_guidance_streaming(
     get_messages_sources = Sources.model_validate_json(get_messages_assistant_msg["sources"])
 
     # Verify Smart Targets sources
-    assert get_messages_sources.smart_targets_sources is not None, "GET messages should have Smart Targets sources"
-    assert len(get_messages_sources.smart_targets_sources) >= 1, (
-        "GET messages should have at least 1 Smart Targets source"
-    )
+    assert not get_messages_sources.smart_targets_sources, "GET messages should have no Smart Targets sources"
 
     # Verify Central Guidance sources
     assert get_messages_sources.central_guidance_sources is not None, (
@@ -375,21 +346,11 @@ async def test_smart_targets_with_central_guidance_streaming(
     )
 
     # Verify both GET endpoints return identical sources
-    assert len(get_messages_sources.smart_targets_sources) == len(get_chat_sources.smart_targets_sources), (
-        "Both GET endpoints should have same number of Smart Targets sources"
-    )
     assert len(get_messages_sources.central_guidance_sources) == len(get_chat_sources.central_guidance_sources), (
         "Both GET endpoints should have same number of Central Guidance sources"
     )
 
     # Verify content matches between both GET endpoints
-    for i, msg_source in enumerate(get_messages_sources.smart_targets_sources):
-        chat_source = get_chat_sources.smart_targets_sources[i]
-        assert msg_source.pretty_name == chat_source.pretty_name, (
-            "Smart Targets source names should match between GET endpoints"
-        )
-        assert msg_source.url == chat_source.url, "Smart Targets source URLs should match between GET endpoints"
-
     for i, msg_source in enumerate(get_messages_sources.central_guidance_sources):
         chat_source = get_chat_sources.central_guidance_sources[i]
         assert msg_source.pretty_name == chat_source.pretty_name, (

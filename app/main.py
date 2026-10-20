@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.config import IS_DEV, REQUEST_TIMEOUT_SECONDS, SMART_TARGETS_SERVICE_DISABLED, URL_HOSTNAME
+from app.config import CAMPAIGN_BENCHMARKS_SERVICE_DISABLED, IS_DEV, REQUEST_TIMEOUT_SECONDS, URL_HOSTNAME
 from app.database.table import AsyncEngineProvider
 from app.exceptions.handlers import register_exception_handlers
 from app.logs import BUGSNAG_ENABLED, BugsnagLogger
@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
     verify_connection_to_opensearch()
 
     # Verify connection with the GCS Data API
-    if SMART_TARGETS_SERVICE_DISABLED and IS_DEV:
+    if CAMPAIGN_BENCHMARKS_SERVICE_DISABLED and IS_DEV:
         logger.info("Skipping Smart Targets Service connection verification")
     else:
         await SmartTargetsService().verify_connection()
