@@ -13,9 +13,11 @@ loaded from `cdk.context.json` (gitignored — copy `cdk.context.json.example`
 first).
 """
 
+import os
 import subprocess
 
 import aws_cdk as cdk
+from cdk_nag import AwsSolutionsChecks
 from config import settings
 from preview.foundation_stack import PreviewFoundationStack
 from preview.service_stack import PreviewServiceStack
@@ -35,5 +37,10 @@ PreviewServiceStack(app, "PreviewService", settings=settings, foundation=foundat
 
 cdk.Tags.of(app).add("project", "copilot-api-preview")
 cdk.Tags.of(app).add("git-commit", git_commit)
+
+# Opt-in: `CDK_NAG=1 cdk synth` runs the AwsSolutions checks. Unacknowledged findings
+# are errors and fail the synth, so it is off by default.
+if os.environ.get("CDK_NAG") == "1":
+    cdk.Validations.of(app).add_plugins(AwsSolutionsChecks(app))
 
 app.synth()

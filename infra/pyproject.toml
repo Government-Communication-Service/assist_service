@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "aws-cdk-lib>=2.230.0",
+    "cdk-nag>=3.0.2",
     "constructs>=10.0.0,<11.0.0",
     "pydantic-settings>=2.14.2",
 ]

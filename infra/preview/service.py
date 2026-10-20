@@ -152,12 +152,14 @@ class Service(Construct):
         alb.add_listener(
             "HttpsListener",
             port=443,
+            open=False,
             certificates=[certificate],
             default_action=elbv2.ListenerAction.forward([target_group]),
         )
         alb.add_listener(
             "HttpListener",
             port=80,
+            open=False,
             default_action=elbv2.ListenerAction.redirect(port="443", protocol="HTTPS", permanent=True),
         )
 

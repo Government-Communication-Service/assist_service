@@ -38,6 +38,9 @@ class Network(Construct):
         )
         allowed_ips = ec2.Peer.prefix_list(settings.alb_ingress_prefix_list_id)
         self.alb_sg.add_ingress_rule(allowed_ips, ec2.Port.tcp(443), "HTTPS from the allowed-IPs prefix list")
+        self.alb_sg.add_ingress_rule(
+            allowed_ips, ec2.Port.tcp(80), "HTTP (redirect to HTTPS) from the allowed-IPs prefix list"
+        )
 
         # --- ECS task security group: only reachable from the ALB ----------
         self.task_sg = ec2.SecurityGroup(
