@@ -1,4 +1,3 @@
-import asyncio
 import logging
 
 import pytest
@@ -23,9 +22,6 @@ class TestChatDocumentMidConversation:
         file_path = "tests/resources/DNA_Topics_UK.docx"
         upload_response = await file_uploader(file_path, "mid_chat_doc")
         document_uuid = upload_response["document_uuid"]
-
-        # Allow time for indexing
-        await asyncio.sleep(5)
 
         # Add message with document to existing chat
         endpoint = api.get_chat_item(user_id, chat.uuid)
@@ -59,8 +55,6 @@ class TestChatDocumentMidConversation:
         file_path = "tests/resources/DNA_Topics_UK.docx"
         upload_response = await file_uploader(file_path, "persistent_doc")
         document_uuid = upload_response["document_uuid"]
-
-        await asyncio.sleep(5)
 
         # First message: add document to chat
         endpoint = api.get_chat_item(user_id, chat.uuid)
@@ -102,8 +96,6 @@ class TestChatDocumentMidConversation:
         upload_response1 = await file_uploader("tests/resources/DNA_Topics_UK.docx", "multi_doc_1")
         document_uuid1 = upload_response1["document_uuid"]
 
-        await asyncio.sleep(5)
-
         endpoint = api.get_chat_item(user_id, chat.uuid)
         await async_http_requester(
             "add first document",
@@ -115,8 +107,6 @@ class TestChatDocumentMidConversation:
         # Upload second document and add to same chat
         upload_response2 = await file_uploader("tests/resources/random-topics.docx", "multi_doc_2")
         document_uuid2 = upload_response2["document_uuid"]
-
-        await asyncio.sleep(5)
 
         await async_http_requester(
             "add second document",
@@ -145,8 +135,6 @@ class TestChatDocumentMidConversation:
         upload_response = await file_uploader("tests/resources/DNA_Topics_UK.docx", "unauthorized_doc")
         document_uuid = upload_response["document_uuid"]
 
-        await asyncio.sleep(5)
-
         # Try to add document to chat (should succeed for owner)
         endpoint = api.get_chat_item(user_id, chat.uuid)
         response = await async_http_requester(
@@ -167,8 +155,6 @@ class TestChatDocumentMidConversation:
         file_path = "tests/resources/DNA_Topics_UK.docx"
         upload_response = await file_uploader(file_path, "stream_doc")
         document_uuid = upload_response["document_uuid"]
-
-        await asyncio.sleep(5)
 
         # Add message with document using stream endpoint
         endpoint = api.get_chat_stream(user_id, chat.uuid)

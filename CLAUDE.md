@@ -26,7 +26,7 @@ This is the Copilot API (now known as "Assist"), a GenAI-powered FastAPI service
 - **Run all tests**: `make test` (sets up test DB and runs full suite)
 - **Specific test suites**:
   - `make test-chat` - Chat functionality tests
-  - `make test-bedrock` - AWS Bedrock integration tests
+  - `make test-bedrock` - AWS Bedrock handler tests (mocked)
   - `make test-central-guidance` - RAG/central guidance tests
   - `make test-document-upload` - Document upload tests
   - `make test-gov-uk-search` - Gov.UK search integration tests
@@ -222,6 +222,10 @@ Key environment variables (defined in `.env`):
 - **Integration tests**: Test component interactions
 - **E2E tests**: Test full API workflows
 - **Test isolation**: Each test run recreates the test database from scratch
+- **No live external services**: Tests never call AWS or OpenSearch; only PostgreSQL is real. `tests/conftest.py` sets this up for every test:
+  - The chat model is replaced by a scripted fake (`mock_chat_model`; request it to script replies or tool calls). Mock other model calls (`BedrockHandler.invoke_async`) yourself; a test that sends a request to Bedrock fails.
+  - OpenSearch is an in-memory fake (`tests/fake_opensearch.py`) with simple word-count scoring, so it can't test search relevance.
+  - Other AWS calls made through boto3 (e.g. S3) are served by moto.
 
 ## Local Development
 
@@ -230,6 +234,10 @@ Key environment variables (defined in `.env`):
 3. Run `make start` to build and start all services
 4. API available at `http://localhost:5312` (docs at `/docs`)
 5. Database admin at `http://localhost:4040`
+
+## Pull Requests
+
+Title pull requests `Type(scope): summary`, e.g. `Fix(chat): stop duplicate citations` or `Refactor(tests): mock Bedrock and OpenSearch`.
 
 ## Deployment
 

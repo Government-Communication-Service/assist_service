@@ -8,8 +8,11 @@ import pytest
 from sqlalchemy.future import select
 
 from app.api.endpoints import ENDPOINTS
+from app.central_guidance.service_rag import ChunkRelevance
+from app.central_guidance.tools import SEARCH_CENTRAL_GUIDANCE
 from app.chat.schemas import CentralGuidanceSource, Sources
 from app.database.models import Chat, Message
+from app.smart_targets.tools import QUERY_CAMPAIGN_BENCHMARKS
 
 api = ENDPOINTS()
 logger = logging.getLogger(__name__)
@@ -83,16 +86,23 @@ def parse_streaming_response(response_data) -> tuple[list[dict], dict]:
     return json_objects, final_message_packet
 
 
+async def _all_chunks_relevant(retrieval_results, user_query, llm, recent_context="", context=None):
+    return ChunkRelevance(decisions=[True] * len(retrieval_results), llm_internal_response_id=None)
+
+
 @pytest.mark.asyncio
+@patch("app.central_guidance.service_rag.evaluate_chunks_relevance", side_effect=_all_chunks_relevant)
 @patch("app.chat.tools.CAMPAIGN_BENCHMARKS_SERVICE_DISABLED", False)
 @patch("app.chat.tools.SmartTargetsService")
 async def test_smart_targets_with_central_guidance_streaming(
     mock_smart_targets_service,
+    _mock_relevance,
     async_client,
     user_id,
     async_http_requester,
     db_session,
     sync_central_rag_index,
+    mock_chat_model,
 ):
     """
     End-to-end test for Smart Targets with Central Guidance using streaming response.
@@ -103,7 +113,8 @@ async def test_smart_targets_with_central_guidance_streaming(
     3. Validates the 'sources' field in the streamed response has expected structure
     4. Checks the database to ensure the 'sources' column is populated correctly
 
-    Note: SmartTargetsService is mocked because the Smart Targets API is not running in tests.
+    The chat model is scripted to call both tools. SmartTargetsService and the central guidance relevance
+    check are mocked; the central guidance search runs against the in-memory OpenSearch.
     """
     # Setup mock Smart Targets service response
     mock_instance = mock_smart_targets_service.return_value
@@ -125,6 +136,17 @@ async def test_smart_targets_with_central_guidance_streaming(
                 }
             ],
         )
+    )
+
+    mock_chat_model.script(
+        [
+            (
+                QUERY_CAMPAIGN_BENCHMARKS.name,
+                {"metrics": [{"metric_name": "campaign-recognition", "context_for_filters": "recent campaigns"}]},
+            ),
+            (SEARCH_CENTRAL_GUIDANCE.name, {"queries": ["OASIS"]}),
+        ],
+        "Recognition is typically around 48%. OASIS is the GCS campaign planning framework.",
     )
 
     logger.info(f"Creating Smart Targets + Central Guidance chat stream for user ID: {user_id}")
@@ -150,6 +172,7 @@ async def test_smart_targets_with_central_guidance_streaming(
 
     # Verify response is not None
     assert response_data is not None, "Streaming response should not be None"
+    mock_instance.query_metrics_for_tool.assert_awaited_once()
 
     # Parse the streaming response
     all_json_objects, final_message_packet = parse_streaming_response(response_data)

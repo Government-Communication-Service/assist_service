@@ -15,7 +15,9 @@ api = ENDPOINTS()
 
 
 @pytest.mark.asyncio
-async def test_list_document_chunks(async_client, async_http_requester, db_session, async_opensearch_client):
+async def test_list_document_chunks(
+    async_client, async_http_requester, db_session, async_opensearch_client, sync_central_rag_index
+):
     """
     Makes a get request to the endpoint that lists all chunks
     then checks that the number of chunks is the same as recorded in PostgreSQL and OpenSearch.
@@ -172,7 +174,7 @@ async def test_list_document_chunks_filtered_by_doc_title(async_client, async_ht
 
 @pytest.mark.asyncio
 async def test_upload_new_document_to_central_rag(
-    async_client, async_http_requester, db_session, async_opensearch_client
+    async_client, async_http_requester, db_session, async_opensearch_client, sync_central_rag_index
 ):
     """
     Uploads a new document with chunks to the API
@@ -297,7 +299,9 @@ async def test_upload_new_document_to_central_rag(
 
 
 @pytest.mark.asyncio
-async def test_delete_chunk_from_central_rag(async_http_requester, async_client, async_opensearch_client, db_session):
+async def test_delete_chunk_from_central_rag(
+    async_http_requester, async_client, async_opensearch_client, db_session, sync_central_rag_index
+):
     """
     Makes a get request to central-rag/document-chunks
     Then selects the first document chunks returned

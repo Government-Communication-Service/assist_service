@@ -629,42 +629,6 @@ class TestUserChatsV1:
         validate_chat_response(response)
         logger.debug("test_put_chat passed.")
 
-    @pytest.mark.asyncio
-    async def test_long_response(self, async_client, user_id, async_http_requester):
-        """
-        Checks that a long response can be generated and is at least 1800 characters long.
-        """
-        # Although the test is for 1800 characters, we request the LLM to produce
-        # an answer that is 2000 characters to give it room for error.
-
-        # Previously, the default LiteLLM settings resulted in answers that
-        # were about 1200 characters long and would stop mid-sentence.
-        # The LiteLLM max_token has been manually set to counteract this.
-        # On gpt-4-turbo-2024-04-09 the response to this prompt has 3914 characters (accessed on 2024-05-07).
-        prompt_for_long_response = """Give me 10 ideas for using Large Language Models in GCS.
-        For each idea identify a risk. Make sure the response is at least 2500 characters long."""
-        logger.debug("Testing that a long response can be generated in full.")
-        url = api.chats(user_uuid=user_id)
-        response_data = await async_http_requester(
-            "test_long_response",
-            async_client.post,
-            url,
-            json={"query": prompt_for_long_response, "use_rag": False},
-        )
-
-        message = response_data["message"]
-        if message["role"] == "assistant":
-            test_string = message["content"]
-
-            logger.debug(f"Long chat generated: '{test_string}'")
-            if len(test_string) < 1800:
-                fail_test(
-                    f"The response from the LLM was not long enough. Length: {len(test_string)}. "
-                    "Response: {test_string}"
-                )
-
-        logger.debug("test_long_response passed")
-
     # @pytest.mark.asyncio
     async def test_create_chat_title_does_not_interfere_with_previous_chats(
         self, async_client, chat, user_id, async_http_requester, caplog
@@ -742,20 +706,24 @@ class TestUserChatsV1:
         Checks Chat title has been updated with the generated title in the database.
         """
 
-        chat_content = chat.message.content
-        create_chat_title_url = api.create_chat_title(user_uuid=user_id, chat_uuid=chat.uuid)
-        title_success_response = await async_http_requester(
-            "test_create_title_success",
-            async_client.put,
-            create_chat_title_url,
-            json={"query": chat_content, "use_rag": False},
-        )
+        with patch.object(
+            BedrockHandler,
+            "invoke_async",
+            return_value=make_title_and_classification_response(title="Saying hi"),
+        ):
+            chat_content = chat.message.content
+            create_chat_title_url = api.create_chat_title(user_uuid=user_id, chat_uuid=chat.uuid)
+            title_success_response = await async_http_requester(
+                "test_create_title_success",
+                async_client.put,
+                create_chat_title_url,
+                json={"query": chat_content, "use_rag": False},
+            )
 
         chat_response = ItemTitleResponse(**title_success_response)
-        title = chat_response.title
-        assert len(title) < 255, f"Chat title is too long (max 255 characters), received: {title}"
+        assert chat_response.title == "Saying hi"
         chat_model = ChatTable().get_by_uuid(chat.uuid)
-        assert chat_model.title == title
+        assert chat_model.title == "Saying hi"
 
     @pytest.mark.asyncio
     async def test_create_chat_title_too_long_is_logged_and_trimmed(

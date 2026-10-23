@@ -1,4 +1,4 @@
-# ruff: noqa: E501
+# ruff: noqa: E501, E402
 
 import logging
 import os
@@ -9,11 +9,24 @@ from typing import Dict, Optional, TypeVar
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
+# The test suite never talks to OpenSearch or AWS. These must be set before `app.config` is imported:
+# OPENSEARCH_MOCKED stops the app connecting to a cluster (tests use the `fake_opensearch` fixture below),
+# and dummy AWS credentials stop any real ones on the machine being used (see `block_live_bedrock_calls`
+# and `mock_aws_services` below).
+os.environ["OPENSEARCH_MOCKED"] = "true"
+os.environ.setdefault("OPENSEARCH_PASSWORD", "unused-in-tests")
+os.environ.pop("AWS_SESSION_TOKEN", None)
+os.environ.pop("AWS_PROFILE", None)
+os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
+
 import anyio
+import httpx
 import pytest
 from anthropic.types import TextBlock
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
+from moto import mock_aws
 
 from app.api.endpoints import ENDPOINTS
 from app.auth.config import AUTH_TOKEN
@@ -28,15 +41,10 @@ from app.database.models import AuthSession, User
 from app.database.table import async_db_session
 from app.main import app as app_under_test
 from app.opensearch.schemas import OpenSearchRecord
-from app.opensearch.service import AsyncOpenSearchClient, create_client
+from app.opensearch.service import AsyncOpenSearchClient, OpenSearchClient, create_client
+from tests.fake_opensearch import InMemoryAsyncOpenSearch, InMemoryOpenSearch
 
 logger = logging.getLogger(__name__)
-
-# Add this line to ignore the specific test file
-collect_ignore = [
-    "gov_uk_search/test_gov_uk_search_evals.py",
-    "central_guidance/test_evals_central_guidance.py",
-]
 
 T = TypeVar("T")
 
@@ -150,9 +158,12 @@ class ScriptedChatModel:
         yield StreamDone(message)
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def mock_chat_model(mocker) -> ScriptedChatModel:
-    """Replace the chat agent loop's model calls with a scripted fake (see ScriptedChatModel)."""
+    """Replace the chat agent loop's model calls with a scripted fake (see ScriptedChatModel).
+
+    Used by every test, so no test calls the real model; request it by name to script its responses.
+    """
     model = ScriptedChatModel()
     mocker.patch("app.bedrock.bedrock.stream_message_events", model)
     return model
@@ -198,6 +209,61 @@ def clear_bedrock_provider_cache():
     # Clean up after the test as well
     AsyncAnthropicBedrockProvider._AsyncAnthropicBedrockProvider__clients.clear()
     AnthropicBedrockProvider._AnthropicBedrockProvider__clients.clear()
+
+
+class LiveBedrockCallError(AssertionError):
+    pass
+
+
+@pytest.fixture(autouse=True)
+def block_live_bedrock_calls(monkeypatch):
+    """
+    Fail any test that sends a request to AWS Bedrock.
+
+    Tests must mock the model (e.g. with `mock_chat_model` or `mock_llm_response`); this catches a
+    test that forgets to, rather than letting it fail later on missing credentials or call the real model.
+    """
+    original_send = httpx.Client.send
+    original_async_send = httpx.AsyncClient.send
+    attempted: list[str] = []
+
+    def _check(request: httpx.Request):
+        if "bedrock" in request.url.host:
+            attempted.append(f"{request.method} {request.url}")
+            raise LiveBedrockCallError(f"Tests must not call AWS Bedrock: {request.method} {request.url}")
+
+    def send(self, request, *args, **kwargs):
+        _check(request)
+        return original_send(self, request, *args, **kwargs)
+
+    async def async_send(self, request, *args, **kwargs):
+        _check(request)
+        return await original_async_send(self, request, *args, **kwargs)
+
+    monkeypatch.setattr(httpx.Client, "send", send)
+    monkeypatch.setattr(httpx.AsyncClient, "send", async_send)
+    yield
+    # The app's retry and error handling can swallow the error above, so check again here.
+    assert not attempted, f"Tests must not call AWS Bedrock, but this test tried: {attempted}"
+
+
+@pytest.fixture(autouse=True)
+def mock_aws_services():
+    """Serve every AWS call made through boto3 (e.g. the S3 upload of documents that fail to parse) from moto's in-memory AWS."""
+    with mock_aws():
+        yield
+
+
+@pytest.fixture(autouse=True)
+def fake_opensearch(monkeypatch) -> InMemoryOpenSearch:
+    """Give each test its own empty in-memory OpenSearch (see tests/fake_opensearch.py)."""
+    store = InMemoryOpenSearch()
+    monkeypatch.setattr(OpenSearchClient, "_instance", store)
+    monkeypatch.setattr(AsyncOpenSearchClient, "_instance", None)
+    monkeypatch.setattr("app.opensearch.service.create_async_client", lambda: InMemoryAsyncOpenSearch(store))
+    # OPENSEARCH_MOCKED makes the central index sync a no-op; against the fake it can run for real.
+    monkeypatch.setattr("app.config.OPENSEARCH_MOCKED", False)
+    return store
 
 
 @pytest.fixture(name="user_id")
@@ -481,11 +547,6 @@ def opensearch_record():
         chunk_name="Introduction",
         chunk_content="This is some test content.",
     )
-
-
-@pytest.fixture(scope="module")
-def opensearch_client():
-    return create_client()
 
 
 @pytest.fixture

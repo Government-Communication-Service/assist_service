@@ -1,4 +1,3 @@
-import asyncio
 import datetime
 import json
 import logging
@@ -53,8 +52,6 @@ async def test_use_personal_document_in_rag_process(
     response = await file_uploader(file_path, "test_delete_file")
     document_uuid = response["document_uuid"]
     logger.info(f"Uploaded document_uuid: {document_uuid}")
-    # allow time for document to be indexed before referencing in chat message (longer for large PDF)
-    await asyncio.sleep(20)
     async with async_db_session() as db_session1:
         execute = await db_session1.execute(select(User).filter_by(uuid=user_id))
         user = execute.scalar()
@@ -144,8 +141,6 @@ async def test_save_referenced_documents_in_chat(
     response = await file_uploader(file_path, "test_save_document_uuids_file1")
     url = api.chats(user_uuid=user_id)
     document_uuid1 = response["document_uuid"]
-
-    await asyncio.sleep(5)
 
     chat_response = await async_http_requester(
         "test_save_document_uuids_in_message",
@@ -246,8 +241,6 @@ async def test_deleted_docs_not_used_in_chat(
     file_path2 = "tests/resources/DNA_Topics_UK2.docx"
     response = await file_uploader(file_path2, "test_save_document_uuids_file2")
     document_uuid2 = response["document_uuid"]
-
-    await asyncio.sleep(10)
 
     chat_response = await async_http_requester(
         "test_save_document_uuids_in_message",

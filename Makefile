@@ -55,7 +55,6 @@ empty-central-rag:
 
 test:
 	$(MAKE) test-db
-	$(MAKE) sync-central-rag
 	$(docker-cmd) "${test-cmd} tests"
 
 os-indexes:
@@ -84,15 +83,12 @@ test-feedback:
 	$(docker-cmd) "${test-cmd} tests/feedback"
 
 test-opensearch:
-	$(MAKE) sync-central-rag
 	$(docker-cmd) "${test-cmd} tests/opensearch"
 
 test-central-guidance:
-	$(MAKE) sync-central-rag
 	$(docker-cmd) "${test-cmd} tests/central_guidance"
 
 test-central-guidance-rag:
-	$(MAKE) sync-central-rag
 	$(docker-cmd) "${test-cmd} tests/central_guidance/test_integration_central_guidance.py::test_search_central_guidance_with_mcom_query"
 
 test-document-upload:

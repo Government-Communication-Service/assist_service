@@ -22,23 +22,15 @@ jobs:
       POSTGRES_DB: test_db
       POSTGRES_HOST: localhost
       POSTGRES_PORT: 5432
-      OPENSEARCH_USER: ${{ secrets.OPENSEARCH_USER }}
-      OPENSEARCH_PASSWORD: ${{ secrets.OPENSEARCH_PASSWORD }}
-      OPENSEARCH_HOST: localhost
-      OPENSEARCH_PORT: ${{ secrets.OPENSEARCH_PORT }}
-      OPENSEARCH_DISABLE_SSL: "true"
-      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${{ secrets.OPENSEARCH_INITIAL_ADMIN_PASSWORD }}
       AUTH_SECRET_KEY: ${{ secrets.AUTH_SECRET_KEY }}
       AUTH_SECRET_KEY_2: ${{ secrets.AUTH_SECRET_KEY_2 }}
       BUGSNAG_API_KEY: ${{ secrets.BUGSNAG_API_KEY }}
       BUGSNAG_RELEASE_STAGE: copilot-dev-github-actions
-      AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'eu-west-2' }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION_NAME: ${{ secrets.AWS_REGION_NAME }}
-      CLOUDWATCH_LOG_GROUP: ${{ secrets.CLOUDWATCH_LOG_GROUP }}
-      CLOUDWATCH_LOG_STREAM: ${{ secrets.CLOUDWATCH_LOG_STREAM }}
       USE_RAG: ${{ secrets.USE_RAG }}
+      # The tests mock AWS and OpenSearch (see tests/conftest.py), so no AWS or OpenSearch secrets are needed.
+      # The app's config still requires an OpenSearch password to load.
+      OPENSEARCH_MOCKED: "true"
+      OPENSEARCH_PASSWORD: unused-in-tests
       LLM_USE_BEDROCK: "true"
       SHOW_DETAILED_ERROR_MESSAGES: "true"
 
@@ -52,23 +44,10 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      opensearch:
-        image: opensearchproject/opensearch:2.15.0
-        ports:
-          - 9200:9200
-          - 9600:9600
-        options: >-
-          --hostname=opensearch_1
-          --ulimit memlock=-1:-1
-          --ulimit nofile=65536:65536
-        env:
-          OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
-          DISABLE_SECURITY_PLUGIN: "true"
-          discovery.type: "single-node"
 
     steps:
       - name: Clone repository
@@ -91,7 +70,6 @@ jobs:
       - name: Install python dependencies
         run: |
           python -m pip install --upgrade pip
-          # added --no-cache-dir otherwise opensearch cluster index creation fails due to disk space issue
           pip install --no-cache-dir -r requirements.txt
           pip install pytest-cov
 
@@ -100,25 +78,18 @@ jobs:
           cd app/alembic
           alembic upgrade head
 
-      - name: Wait for OpenSearch to be ready
-        run: |
-          until curl -s http://localhost:9200/_cluster/health | grep -q '"status":"green"'; do
-            echo "Waiting for OpenSearch to be ready..."
-            sleep 10
-          done
-          echo "OpenSearch is ready."
-
-      - name: Synchronise central RAG index
-        run: |
-          echo 'Synchronising central RAG...'
-          python scripts/sync_opensearch/sync_central_rag.py
-          echo 'Synchronisation of central RAG completed'
-
+      # Output options are in pytest.ini. Coverage is summarised by the next step, with the full HTML report
+      # in the test-reports artifact.
       - name: Run tests
         run: |
-          pytest --ignore=scripts/api_tests -n logical --dist loadscope -q --tb=line --show-capture=no -o log_cli=false --cov --cov-report=term --junit-xml=test-output/test-output.xml --cov-report xml:test-output/coverage.xml
+          pytest -n logical --dist loadscope --tb=short --cov=app --cov-report= --cov-report=xml:test-output/coverage.xml --cov-report=html:test-output/coverage-html --junit-xml=test-output/test-output.xml
+
+      - name: Summarise test results
+        if: ${{ !cancelled() }}
+        run: python scripts/ci/test_summary.py test-output/test-output.xml test-output/coverage.xml
 
       - name: Persist test reports
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: test-reports

@@ -60,6 +60,5 @@ line-ending = "auto"
 "app/types/__init__.py" = ["A005"]
 "app/lib/datetime/*" = ["A005"]
 
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-norecursedirs = ["scripts/api_tests"]
+[tool.coverage.run]
+omit = ["app/alembic/*"]
