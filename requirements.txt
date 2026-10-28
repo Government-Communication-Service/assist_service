@@ -1,0 +1,85 @@
+# this is needed to install torch cpu flavor so that huge nvidia gpu libs are not installed
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1+cpu
+
+# API / General
+starlette==1.7.0
+fastapi==0.143.0
+uvicorn[standard]==0.54.0
+gunicorn~=26.0
+pydantic>=2.13.4
+pydantic-settings[aws-secrets-manager]>=2.14.2
+uuid~=1.30
+python-multipart~=0.0.32
+aiohttp==3.14.4
+aiofiles~=24.1
+httpx~=0.28.1
+
+# Logging
+bugsnag~=4.7.1
+boto3>=1.43.76 ### Used for CloudWatch logging and pydantic-settings AWS Secrets Manager
+python-json-logger~=4.1.0
+
+# Database
+alembic==1.20.0
+psycopg2-binary==2.9.13
+asyncpg==0.32.0
+# asyncio extra pulls in greenlet, which SQLAlchemy's async engine needs. 2.0 installed it
+# implicitly on most platforms; 2.1 does not, so it must be requested explicitly.
+SQLAlchemy[asyncio,asyncpg]==2.1.4
+
+
+# Document parsing
+pdfminer.six>=20260107
+# Pinned to 0.18.18: unstructured 0.22.x changed PDF auto-strategy so that files whose text
+# isn't cleanly extractable by pdfminer (e.g. slide decks / custom font encodings) fall back to
+# OCR_ONLY, which needs a Tesseract binary we don't ship -> TesseractNotFoundError / NoTextContentError
+# on PDFs that previously uploaded fine. 0.18.18 is the last version confirmed to parse them here.
+# Do NOT let Dependabot bump this without re-testing PDF uploads (it's how the regression landed).
+unstructured[pdf,docx,pptx,xlsx]==0.18.18
+# Pinned to the version in unstructured 0.18.18's tested lock; unstructured only requires >=1.0.5
+# (open upper bound), so without this the transitive dep floats and can drift out of API sync.
+unstructured-inference==1.0.5
+# Pinned <3.0: unstructured has no pandas version constraint, so pandas floats transitively.
+# It floated to 3.0.x, whose C parser rejects pd.read_csv(sep=None) with a bare TypeError
+# instead of falling back to the python engine - crashing partition_csv (and therefore any
+# single-column or ragged-row CSV upload) with an unhandled 500. 2.3.x still falls back cleanly.
+pandas~=2.3.3
+# spaCy model required by unstructured for document partitioning.
+# unstructured pulls in spaCy but not the model, so pin it here to install at
+# build time instead of lazily downloading at runtime (fails on read-only
+# site-packages, e.g. the non-root user on Elastic Beanstalk).
+# Version must track the installed spaCy minor line (currently 3.8.x ->
+# en_core_web_sm 3.8.x). After a spaCy bump, run `python -m spacy validate`
+# and update this URL to the version it reports as compatible.
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+#needed for odt file format processing.
+pypandoc~=1.17
+# File type detection
+python-magic~=0.4.27
+
+# American/British English detection
+breame~=0.1.2
+uwotm8~=0.1.6
+
+# LLM
+anthropic~=0.103
+
+
+# RAG
+opensearch-py~=2.7
+
+# HTML document processing
+beautifulsoup4~=4.15.0
+
+# Testing
+requests~=2.34
+pytest~=9.1.1
+pytest-asyncio~=1.4
+pytest-mock~=3.16
+pytest-xdist~=3.6
+pytest-cov~=7.1
+moto[s3]==5.2.3
+
+# Development
+ruff~=0.15

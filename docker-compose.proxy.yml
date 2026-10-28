@@ -1,0 +1,77 @@
+include:
+  - docker-compose.deps.yml
+
+networks:
+  copilot_api:
+    driver: bridge
+
+services:
+  api:
+    cap_add:
+      - SYS_PTRACE
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - DEBUG_MODE=${DEBUG_MODE:-false}
+    container_name: api
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    working_dir: /app
+    volumes:
+      - ./:/app
+    ports:
+      - 5313:5312
+      - 5678:5678
+    environment:
+      - DEBUG_MODE=${DEBUG_MODE:-false}
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - POSTGRES_DB=${POSTGRES_DB}
+      - TEST_POSTGRES_DB=${TEST_POSTGRES_DB}
+    command: >
+      sh -c "
+      cd app/alembic && alembic upgrade head && \
+      cd /app && \
+      echo 'Synchronising central RAG...' && \
+      python scripts/sync_opensearch/sync_central_rag.py && \
+      echo 'Synchronisation of central RAG completed' && \
+      echo 'DEBUG_MODE is set to: '${DEBUG_MODE:-false} && \
+      if [ "$${DEBUG_MODE:-false}" = "True" ]; then
+        echo 'Debug mode is enabled. Installing debugpy...' && \
+        pip install debugpy==1.6.7 && \
+        echo 'Starting debugpy server...' && \
+        python -Xfrozen_modules=off -m debugpy --wait-for-client --listen 0.0.0.0:5678 -m uvicorn app.main:app --host 0.0.0.0 --port 5312 --reload --log-config logging.dev.ini
+      else
+        uvicorn app.main:app --host 0.0.0.0 --port 5312 --reload --log-config logging.ini
+      fi
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch-node1:
+        condition: service_healthy
+      opensearch-node2:
+        condition: service_healthy
+    networks:
+      - copilot_api
+
+  mitmproxy:
+    image: mitmproxy/mitmproxy:latest
+    container_name: mitmproxy
+    ports:
+      - 5312:9312
+    volumes:
+      - ./scripts/mitmproxy:/mocks
+    command: >
+      mitmdump
+        --mode reverse:http://api:5312
+        --listen-host 0.0.0.0
+        --listen-port 9312
+        -s /mocks/intercept.py
+    depends_on:
+      - api
+    networks:
+      - copilot_api

@@ -1,0 +1,11 @@
+## Creating a migration file
+
+`alembic revision --autogenerate -m "migration message"`
+
+## Running migrations
+
+`alembic upgrade head`
+
+---
+
+Enjoy! 🚀

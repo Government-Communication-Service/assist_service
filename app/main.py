@@ -1,0 +1,105 @@
+# ruff: noqa: F401
+
+import asyncio
+from asyncio import exceptions
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from app.config import CAMPAIGN_BENCHMARKS_SERVICE_DISABLED, IS_DEV, REQUEST_TIMEOUT_SECONDS, URL_HOSTNAME
+from app.database.table import AsyncEngineProvider
+from app.exceptions.handlers import register_exception_handlers
+from app.logs import BUGSNAG_ENABLED, BugsnagLogger
+from app.logs.logs_handler import logger, session_id_var
+from app.opensearch.service import verify_connection_to_opensearch
+from app.routers import routers
+from app.smart_targets.service import SmartTargetsService
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    FastAPI lifespan function that runs code before startup and on shutdown.
+
+    Handles startup tasks like verifying OpenSearch connection and syncing indexes.
+    On shutdown, closes database connections.
+
+    Args:
+        app (FastAPI): The FastAPI application instance
+
+    Yields:
+        None: Yields control to the main API code
+    """
+    # Startup code is written here
+    verify_connection_to_opensearch()
+
+    # Verify connection with the GCS Data API
+    if CAMPAIGN_BENCHMARKS_SERVICE_DISABLED and IS_DEV:
+        logger.info("Skipping Smart Targets Service connection verification")
+    else:
+        await SmartTargetsService().verify_connection()
+
+    # Now yield to the main API code
+    yield
+
+    # Shutdown code can be written here
+    logger.info("Closing DB connections")
+    await AsyncEngineProvider.get().dispose()
+
+
+app = FastAPI(title="GCS Assist API", version="0.1.0", lifespan=lifespan)
+app.openapi_version = "3.0.2"
+
+# Configure CORS
+if IS_DEV:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # Allow all origins in development
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[URL_HOSTNAME],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+# Setup Bugsnag logger
+logger.info(f"BUGSNAG_ENABLED: {BUGSNAG_ENABLED}")
+if BUGSNAG_ENABLED:
+    bugsnag_logger = BugsnagLogger()
+    bugsnag_logger.setup_bugsnag(app)
+
+
+@app.middleware("http")
+async def request_middleware(request: Request, call_next):
+    # Set session ID from header
+    session_id = request.headers.get("Session-Auth")
+    if session_id:
+        session_id_var.set(session_id)
+
+    # Apply global timeout
+    try:
+        response = await asyncio.wait_for(call_next(request), timeout=REQUEST_TIMEOUT_SECONDS)
+        return response
+    except exceptions.TimeoutError:
+        logger.error("Request timed out after %ss: %s %s", REQUEST_TIMEOUT_SECONDS, request.method, request.url.path)
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "failed",
+                "error_code": "REQUEST_TIMED_OUT",
+                "status_message": "Server failed to process the request on time",
+            },
+        )
+
+
+for router in routers:
+    app.include_router(router.router, prefix=router.prefix, tags=list(router.tags))
+
+register_exception_handlers(app)

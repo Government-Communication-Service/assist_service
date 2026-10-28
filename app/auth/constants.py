@@ -1,0 +1,4 @@
+SESSION_AUTH_ALIAS = "Session-Auth"
+AUTH_TOKEN_ALIAS = "Auth-Token"
+USER_KEY_UUID_ALIAS = "User-Key-UUID"
+USER_GROUPS_ALIAS = "User-Groups"

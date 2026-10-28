@@ -1,0 +1,59 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.4
+    hooks:
+      # Run the linter.
+      - id: ruff
+        args: [--fix]
+      # Run the formatter.
+      - id: ruff-format
+
+  # Add pre-commit itself to check the configuration
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict  # Checks for merge conflict markers
+      - id: check-yaml  # Validates YAML files, including the pre-commit config
+      - id: check-added-large-files  # Warns about large files being added
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.23.3  # Use the latest stable version
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+        - id: detect-ip
+          name: Detect IP addresses
+          entry: '^(?!0\.0\.0\.0$)(?!127\.0\.0\.1$)\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'
+          language: pygrep
+          exclude: '^static/|\.lock'
+          files: .
+
+  - repo: local
+    hooks:
+      - id: detect-aws-account
+        name: Detect AWS account numbers
+        language: pygrep
+        entry: ':\d{12}:'
+
+  # - repo: https://github.com/mxab/pre-commit-trivy.git
+  #   rev: v0.3.0
+  #   hooks:
+  #     - id: trivyfs-docker
+  #       args:
+  #         - --security-checks
+  #         - vuln
+  #         - --skip-dirs
+  #         - ./.idea
+  #         - --skip-files
+  #         - ./.env
+  #         - --skip-dirs
+  #         - ./.vscode
+  #         - --skip-dirs
+  #         - ./data
+  #         - --skip-dirs
+  #         - ./.pre-commit-trivy-cache
+  #         - --ignore-unfixed
+  #         - . # last arg indicates the path/file to scan

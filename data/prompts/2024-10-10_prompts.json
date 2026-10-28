@@ -1,0 +1,488 @@
+[
+    {
+        "theme_title": "Planning campaigns and communication",
+        "theme_subtitle": "Create OASIS plans, design narratives, conduct COM-B analysis",
+        "theme_position": 1,
+        "use_case_position": 1,
+        "use_case_title": "I want to create an outline for an OASIS PLAN",
+        "use_case_instruction": "Build a detailed OASIS communications plan using the Government Communications Service OASIS framework. Use all of the information above to build the OASIS plan, filling in gaps yourself. Give several options where there isn't one obvious approach to recommend. For objectives, focus on behaviour change as primary objectives, including secondary sub-objectives where needed. For audience, provide some key insights about the relevant audiences and carry out a COM-B analysis of behaviour for each relevant audience. For strategy, develop options for an overarching communications narrative that will underpin the campaign. For implementation, explore the practicalities of delivering the campaign, including timing and channels. For scoring, use the GCS Evaluation Framework to suggest appropriate evaluation methods and KPIs. Introduce each section with a summary paragraph. At the end, review the plan and list any weaknesses, risks, gaps, or assumptions.",
+        "use_case_user_input_form": "Background information: [USER PROMPT]\nObjectives: [USER PROMPT]\nAudience: [USER PROMPT]\nStrategy: [USER PROMPT]\nImplementation: [USER PROMPT]\nScoring: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Planning campaigns and communication",
+        "theme_subtitle": "Create OASIS plans, design narratives, conduct COM-B analysis",
+        "theme_position": 1,
+        "use_case_position": 2,
+        "use_case_title": "I want feedback on my OASIS plan ",
+        "use_case_instruction": "Provide detailed feedback on this plan. Highlight any gaps, weaknesses, assumptions, or risks in the plan.",
+        "use_case_user_input_form": "Plan: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Planning campaigns and communication",
+        "theme_subtitle": "Create OASIS plans, design narratives, conduct COM-B analysis",
+        "theme_position": 1,
+        "use_case_position": 3,
+        "use_case_title": "I want to create some audience personas",
+        "use_case_instruction": "Develop a set of personas for the following audience insight. Identify the topic from the insight. Each persona should be representative of a different segment of the audience. They should include demographic and situational information about the person including factors relevant to the topic, their attitude towards the relevant topic, and a short vignette recounting a specific recent experience related to the topic. Review your answer and list any weaknesses, gaps, or assumptions in your personas.",
+        "use_case_user_input_form": "Audience insight: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Planning campaigns and communication",
+        "theme_subtitle": "Create OASIS plans, design narratives, conduct COM-B analysis",
+        "theme_position": 1,
+        "use_case_position": 4,
+        "use_case_title": "I want to conduct COM-B analysis",
+        "use_case_instruction": "Produce a COM-B analysis for this behaviour, using any background information provided. Write a very short introduction to COM-B, and give a list of 5 possible barriers for each of the three elements. Include barriers that might only be relevant to a subset of the audience, but specify where this is the case. At the end, make a list of any gaps, weaknesses, or assumptions in the analysis.",
+        "use_case_user_input_form": "Behaviour (WHO does WHAT?): [USER PROMPT]* Other information: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Planning campaigns and communication",
+        "theme_subtitle": "Create OASIS plans, design narratives, conduct COM-B analysis",
+        "theme_position": 1,
+        "use_case_position": 5,
+        "use_case_title": "I want to design a narrative for a campaign",
+        "use_case_instruction": "Develop 3 contrasting options for an overarching campaign narrative, taking into account all of the information above. Ensure at least 1 of the ideas is highly creative and unexpected. Write a short paragraph outlining each overarching narrative including the tone, approach, and strategy. For each option, label them, and provide 3 cohesive messaging ideas for each overarching narrative. For each option, set out any important considerations for communicators, and a list of benefits, risks, and unintended consequences for each option.",
+        "use_case_user_input_form": "Campaign background information: [USER PROMPT]\nTarget audience: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Campaign evaluation",
+        "theme_subtitle": "Build theories of change, define outcomes, produce KPIs",
+        "theme_position": 2,
+        "use_case_position": 1,
+        "use_case_title": "I want suggestions for some Key Performance Indicators (KPIs)",
+        "use_case_instruction": "Identify a wide range of options for key performance indicators (KPIs) for the following campaign. Use all the information provided below. KPIs should represent a combination of desired outcomes (Changes in behaviour, changes in attitude and contribution to policy objectives) and outtakes (Reception, Perception and reaction of stakeholders. Campaign efficiency metrics for communicators). Categorise them into outtakes and outcomes, with further subcategories as needed. Provide a suggestion for how each KPI could be measured (in brackets), and provide the unit. At the end, review your suggestions and identify any weaknesses or gaps, or likely challenges with measuring these KPIs.",
+        "use_case_user_input_form": "Background information: [USER PROMPT]\nCampaign objective: [USER PROMPT]\nTarget audience: [USER PROMPT]\nBudget and timeline: [USER PROMPT]\nChannels to be used: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Campaign evaluation",
+        "theme_subtitle": "Build theories of change, define outcomes, produce KPIs",
+        "theme_position": 2,
+        "use_case_position": 2,
+        "use_case_title": "I want to define outtakes and outcomes for a project",
+        "use_case_instruction": "Identify a wide range of options for key performance indicators (KPIs) for the following campaign. Use all the information provided below. KPIs should represent a combination of desired outcomes (Changes in behaviour, changes in attitude and contribution to policy objectives) and outtakes (Reception, Perception and reaction of stakeholders. Campaign efficiency metrics for communicators). Categorise them into outtakes and outcomes, with further subcategories as needed. Provide a suggestion for how each KPI could be measured (in brackets), and provide the unit. At the end, review your suggestions and identify any weaknesses or gaps, or likely challenges with measuring these KPIs.",
+        "use_case_user_input_form": "Background information: [USER PROMPT]\nCampaign objective: [USER PROMPT]\nTarget audience: [USER PROMPT]\nBudget and timeline: [USER PROMPT]\nChannels to be used: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Campaign evaluation",
+        "theme_subtitle": "Build theories of change, define outcomes, produce KPIs",
+        "theme_position": 2,
+        "use_case_position": 3,
+        "use_case_title": "I want to build a theory of change for a project",
+        "use_case_instruction": "You are aiming to build a theory of change for this campaign. If a list of activities, outputs, outtakes, outcomes, and impact is provided above then check through and improve this list. If it says \u201c[USER PROMPT]\u201d above then you must identify the information yourself based on background information about the campaign. Connect together the different activities, outputs, outtakes, and outcomes in a coherent logic model. Explain the assumptions that connect each step to the next. At the end, review your suggestions and identify any weaknesses or gaps, or likely challenges with measuring these KPIs.",
+        "use_case_user_input_form": "Background information: [USER PROMPT]\nDesired impact: [USER PROMPT]\nDesired outcomes: [USER PROMPT]\nDesired outtakes: [USER PROMPT]\nExpected outputs (campaign components, channels): [USER PROMPT]\nExpected activities (budget, assets, initiatives): [USER PROMPT] \nTarget audience: [USER PROMPT]\nBudget and timeline: [USER PROMPT]\nChannels to be used: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Developing marketing and communication content",
+        "theme_subtitle": "Design messaging, conduct message testing, summarise text",
+        "theme_position": 3,
+        "use_case_position": 1,
+        "use_case_title": "I want to conduct message testing with my target audience ",
+        "use_case_instruction": "The goal is to understand how target audiences might receive a message so that we can prevent unintended consequences and tailor the message appropriately. Analyse the messages, narrative, or communications assets above. Identify who the target audience(s) are and what their characteristics are. Analyse how the target audiences might perceive the communication, using the following steps: Analyse potential negative or unintended consequences Explain how you could optimise or tailor the message most effectively for each target audience. Identify subsets of target audiences who might respond or perceive the message differently from others, and explain how the message might be adapted or targeted.",
+        "use_case_user_input_form": "Communication message, narrative, or asset: [USER PROMPT]\nTarget audience: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Developing marketing and communication content",
+        "theme_subtitle": "Design messaging, conduct message testing, summarise text",
+        "theme_position": 3,
+        "use_case_position": 2,
+        "use_case_title": "I want to design some effective marketing messages",
+        "use_case_instruction": "The goal is to come up with a wide range of ideas for potential marketing messages based on the information above about a campaign.\n1) Develop 6 contrasting \u201ctop line\u201d messages, including ideas that are conventional, unconventional, action-oriented, authoritative, aspirational, and creative. \n2) For each message, explain how it could be adapted for press, social media, TV, radio, billboards.\n3) For each message, list strengths and weaknesses. \n4) After, check through the messages to make sure that there are 6 options, and that each option is distinct. ",
+        "use_case_user_input_form": "Campaign background information: [USER PROMPT]\nCampaign narrative or plan: [USER PROMPT]\nTarget audience:  [USER PROMPT]"
+    },
+    {
+        "theme_title": "Developing marketing and communication content",
+        "theme_subtitle": "Design messaging, conduct message testing, summarise text",
+        "theme_position": 3,
+        "use_case_position": 3,
+        "use_case_title": "I want to create some content for social media",
+        "use_case_instruction": "The goal is to draft the text for 5 posts that can be used. 1) Identify who the target audience(s) are and what their characteristics are. 2) Draft 5 social media posts that use the campaign narrative and campaign background information to appeal to the target audience. 3) For each post, explain how it could be adapted for different social media channels. 4) For each post, list strengths and weaknesses. 5) After, check through the messages to make sure that there are 5 options, and that each option is distinct.",
+        "use_case_user_input_form": "Campaign background information: [USER PROMPT] Campaign narrative: [USER PROMPT] Target audience: [USER PROMPT] Social media channel: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Developing marketing and communication content",
+        "theme_subtitle": "Design messaging, conduct message testing, summarise text",
+        "theme_position": 3,
+        "use_case_position": 4,
+        "use_case_title": "I want to adapt my messaging for different publications",
+        "use_case_instruction": "The goal is to adapt the campaign messaging to appeal to the target audience based on the target audiences' persona.\n1) Identify who the target audience(s) are and what their characteristics are.\n2) Analyse the campaign messaging to see whether it appeals to the target audience based on their persona.\n3) Adapt the messaging where it has been identified that it does not appeal to the target audience.\n4) Explain why changes made to the messaging have made it more appealing to the target audience. \n5) List the messages strengths, weaknesses and limitations. \n",
+        "use_case_user_input_form": "Campaign messaging: [USER PROMPT] Target audience persona: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Developing marketing and communication content",
+        "theme_subtitle": "Design messaging, conduct message testing, summarise text",
+        "theme_position": 3,
+        "use_case_position": 5,
+        "use_case_title": "I want a draft of a speech or talking points ",
+        "use_case_instruction": "Generate a speech, matching the tone based, taking into account specific information.\nGuidance for use:\nEnsure the press release is clear, factual and to the point.\nStructure it clearly and systematically.\nAvoid jargon and ensure the language is accessible and key terms are defined.",
+        "use_case_user_input_form": "Subject: [USER PROMPT Specify topic of the speech]\n\nBackground information: [USER PROMPT provide as much information about the topic of the speech, the key points that the speech needs to cover and the context in which the speech is being made]\n\nTone of voice: [USER PROMPT: specify the tone of voice]\n\nKey objectives: [Describe the broader context and relevance of the topic in current governmental policies or initiatives]"
+    },
+    {
+        "theme_title": "Developing marketing and communication content",
+        "theme_subtitle": "Design messaging, conduct message testing, summarise text",
+        "theme_position": 3,
+        "use_case_position": 6,
+        "use_case_title": "I want to simplify, paraphrase or summarise text ",
+        "use_case_instruction": "The goal is to summarise and simplify the text to correspond with the number of words. 1) Identify how many words long the summarisation of the text should be. 2) Analyse the text to identify key points. 3) Draft the summarisation to focus on the key points. 4) Check that the summarisation does not exceed the maximum number of words. ",
+        "use_case_user_input_form": "Text: [USER PROMPT] Number of words: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Developing marketing and communication content",
+        "theme_subtitle": "Design messaging, conduct message testing, summarise text",
+        "theme_position": 3,
+        "use_case_position": 7,
+        "use_case_title": "I want to draft a toolkit for a campaign",
+        "use_case_instruction": "The goal is to create a document with instructions for stakeholders on how to use campaign assets and messaging as part of OASIS campaign. 1) Analyse the OASIS plan and campaign narrative. Identify the campaign objectives, target audiences and key campaign milestones from the OASIS plan. 2) Create instructions on how to use messaging and campaign assets to reach the target audience. These instructions should include recommended channels, messaging and dates\\/times to put out communications content. 3) Check that the instructions take into account the stakeholders characteristics.",
+        "use_case_user_input_form": "OASIS plan: [USER PROMPT] Campaign narrative: [USER PROMPT] Messaging: [USER PROMPT] Campaign assets: [USER PROMPT] Stakeholder persona:"
+    },
+    {
+        "theme_title": "Developing marketing and communication content",
+        "theme_subtitle": "Design messaging, conduct message testing, summarise text",
+        "theme_position": 3,
+        "use_case_position": 8,
+        "use_case_title": "I want to adapt messaging for my different audiences",
+        "use_case_instruction": "Adapt the provided government message to suit different audience segments. Ensure that the core information remains consistent, but tailor the language, tone, and examples to resonate with each distinct group. Consider cultural, demographic, and psychographic factors that might influence how each audience receives and interprets the message.\n\nAdaptation Guidelines:\nLanguage and Tone: Adjust the language and tone to suit each audience. For example, use more formal language for older audiences and conversational tone for younger ones.\nExamples and Analogies: Tailor examples and analogies to be relevant and relatable to each audience segment.\n\nEvaluation:\nAfter adapting the message for each segment, evaluate the effectiveness of your adaptations. Consider feedback from representatives of each group, if available, and refine the message accordingly.\n\nFormat:\nPresent the adapted messages in a clear format, indicating the audience segment each version is intended for.",
+        "use_case_user_input_form": "Government Message:\n[USER PROMPT: Insert the primary message or information to be communicated]\n\nAudience details:\n[USER PROMPT: Describe the audience, including relevant demographic, cultural, or psychographic characteristics]"
+    },
+    {
+        "theme_title": "Developing marketing and communication content",
+        "theme_subtitle": "Design messaging, conduct message testing, summarise text",
+        "theme_position": 3,
+        "use_case_position": 9,
+        "use_case_title": "I want to adapt messaging for some different channels",
+        "use_case_instruction": "Develop a strategy to adapt the provided government message for different communication channels. The goal is to ensure the message is effectively conveyed across each platform, taking into account the unique characteristics and user expectations of each channel.\n\n\nAdaptation Guidelines:\nSocial Media: Focus on concise, engaging content with ideas for relevant visuals. Adapt the message to be shareable and interactive. Consider using hashtags to increase visibility.\nGOV.UK Website: Provide detailed and comprehensive information. Use plain English and ensure accessibility for a diverse audience.\nPress Release: Maintain a formal and informative tone. Include quotes from relevant officials and detailed background information.\n\nChannel-Specific Considerations:\nConsider the limitations and strengths of each channel (e.g., character limits on Twitter, visual capabilities on social media, format restrictions in emails).\nTailor the call-to-action for each channel based on user behavior and channel capabilities.\n\nFormat:\nPresent the adapted messages in a clear format, indicating the specific channel each version is intended for.",
+        "use_case_user_input_form": "Government Message:\n[USER PROMPT: Insert the primary message or information to be communicated]\n\nCommunication Channels:\nChannel 1: Social Media (e.g., Twitter, Facebook)\nChannel 2: Official GOV.UK Website\nChannel 3: Press Release\n[Add or delete channels as needed]"
+    },
+    {
+        "theme_title": "Media handling and press releases",
+        "theme_subtitle": "Brainstorm media questions, write press releases, draft briefings",
+        "theme_position": 4,
+        "use_case_position": 1,
+        "use_case_title": "I want to write a press release",
+        "use_case_instruction": "Generate a formal, impartial and plain English press release on the provided topic, taking into account specific information. \nGuidance for use:\nEnsure the press release is clear, factual and to the point.\nStructure it clearly and systematically.\nAvoid jargon and ensure the language is accessible and key terms are defined.",
+        "use_case_user_input_form": "Subject: [USER PROMPT Specify the topic of the press release]\n\nBackground information: [USER PROMPT provide as much information as possible about the topic of the briefing]\n\nKey objectives: [Describe the broader context and relevance of the topic in current governmental policies or initiatives]"
+    },
+    {
+        "theme_title": "Media handling and press releases",
+        "theme_subtitle": "Brainstorm media questions, write press releases, draft briefings",
+        "theme_position": 4,
+        "use_case_position": 2,
+        "use_case_title": "I want to brainstorm possible media questions or concerns",
+        "use_case_instruction": "The goal is to anticipate possible questions from journalists or the general public based on the information provided above. Identify 5 sincere questions and 5 hostile questions that might be asked.",
+        "use_case_user_input_form": "Press release, speech text, announcement, or campaign plan: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Media handling and press releases",
+        "theme_subtitle": "Brainstorm media questions, write press releases, draft briefings",
+        "theme_position": 4,
+        "use_case_position": 3,
+        "use_case_title": "I want to prepare some responses for media questions ",
+        "use_case_instruction": "The goal is to generate 3 different responses to the anticipated questions based on the organisational position and target audience. 1) Identify the target audience and their characteristics. 2) Analyse the question and the organisational position to see how the organisation should respond honestly. 3) Draft 3 answers to each anticipated question which is consistent with the organisations position and appeals to the target audience. 4) For each answer list its strengths, weaknesses and limitations.",
+        "use_case_user_input_form": "Anticipated questions: [USER PROMPT] Organisational position: [USER PROMPT] Target audiences: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Media handling and press releases",
+        "theme_subtitle": "Brainstorm media questions, write press releases, draft briefings",
+        "theme_position": 4,
+        "use_case_position": 4,
+        "use_case_title": "I want to draft a briefing for a minister",
+        "use_case_instruction": "Generate a formal, impartial, and plain English ministerial briefing on the provided topic, taking into account specific information provided.\nGuidance for Use:\nEnsure the briefing is clear, factual, and to the point.\nStructure it clearly and systematically.\nAvoid jargon and ensure the language is accessible and key terms are defined.\nAdapt the content to the minister\u2019s portfolio.",
+        "use_case_user_input_form": "Subject:\n[USER PROMPT: Specify the topic of the briefing].\n\nAudience:\n[USER PROMPT: Enter information about the minister].\n\nBackground information:\n[USER PROMPT: Provide as much information as possible about the topic and context of the briefing].\n\nKey Objectives:\n[USER PROMPT: Describe the broader context and relevance of the topic in current governmental policies or initiatives]."
+    },
+    {
+        "theme_title": "Exploring strategy risks",
+        "theme_subtitle": "Analyse risks, explore consequences, test adversarial strategies",
+        "theme_position": 5,
+        "use_case_position": 1,
+        "use_case_title": "I want to analyse possible risks and consequences",
+        "use_case_instruction": "The goal is to carry out a risk and unintended consequence analysis for the campaign detailed above. Identify several relevant audience(s) who might be affected, and for each audience, write a list of 3 risks and potential unintended consequences for the campaign, ordered from most to least likely.",
+        "use_case_user_input_form": "Campaign plan: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Exploring strategy risks",
+        "theme_subtitle": "Analyse risks, explore consequences, test adversarial strategies",
+        "theme_position": 5,
+        "use_case_position": 2,
+        "use_case_title": "I want to test strategies from an adversarial perspective ",
+        "use_case_instruction": "You are carrying out a red teaming exercise, to identify how a campaign could go wrong. \nAssume that the campaign above was a failure, resulting in wasted money and resources and a negative public response.\nProduce 6 contrasting hypothetical explanations for the campaign failure. Explain the causal chain of events that led to failure in each scenario, and identify the assumptions present.",
+        "use_case_user_input_form": "Campaign plan: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Crisis Communications",
+        "theme_subtitle": "Develop response strategies, draft crisis messages",
+        "theme_position": 6,
+        "use_case_position": 1,
+        "use_case_title": "I want to create a STOP crisis communications plan",
+        "use_case_instruction": "A STOP plan covers the key aspects of a crisis comms plan - that is strategy (objectives and audience), tactics (key actions in first hour, day and week), organisation structure (team) and people requirements (how many people and training). \n                    On the cover page: provide detail on the name of the crisis, lead government department, summary of reasonable worst-case scenario, details of any previous events in which a crisis has occurred and/or a plan has been implemented. \n                    In the strategy section: provide detail on policy objective, comms objective (short mission statement setting out the big picture of what successful communication looks like), key audiences (including those who are hard to reach or vulnerable, identification of who might be especially impacted by the crisis and what their needs are), message principles (the core principles guiding the response such as empathy, transparency and accuracy of information to impacted groups), risks and barriers to communications and specific guidance on how the public can meet their essential needs and protect themselves from harm. Their essential needs are for: shelter, hydration, food, warmth, light, hygiene, health, safety from hazards, news about the crisis, help from others, earn a living, contact loved ones, volunteer/help others, entertainment, get home from work and/or pick up children from school/childcare. \n                    There are four steps involved in providing this guidance: STEP 1: Identify the barriers that the crisis will cause for the public meeting each of the essential needs (e.g. a flood could cause a power outage that means people can't use their phones to check in on elderly/vulnerable relatives) STEP 2: Identify what actions the public might take to meet their needs, despite the crisis (e.g. someone might leave their home to visit a nearby family member or friend to use their phone to contact their relative) STEP 3: Identify what positive or negative consequences could arise as a result of the actions people may take to meet their needs (e.g. a person leaving their home during a flood could get swept away) STEP 4: Develop communications and messages to help remove the barriers and protect people from experiencing the harms identified (e.g. tell people not to leave their home as the flood waters could put them at risk of injury or death and issue messaging that lets people know that anyone on the Priority Services Register will be visited by a member of their local resilience team to check on them - and therefore that family members should not leave their homes to do this themselves). Please provide output for each step for each essential need, ensuring that messages are specific (e.g. they don't just tell people what not to do, they say what they should do instead). \n                    In tactics section: provide a quick reference handbook of key comms actions pre-crisis, over the first hour, day and week, key other departments to contact, draft holding line and messages in the Krebs format (outlining what is known, what is not known, what the public should do, what government is doing, and when more information will be made available). All information should aim to be risk specific. Include other government departments that may be linked to the risk. \n                    In organisation section: who will be the Comms Strategic level leader (GOLD), key comms team members & disciplines, and policy / operations / political colleagues / stakeholders Other contacts and teams, physical location and logistics (e.g. logistics, IT access for surge team, would in person access to buildings be required for those who don\u2019t normally access), business continuity plan in case of a cyber attack, how to escalate and cascade information outside of business hours In people section: outline an estimate how many people will be needed, and their location / clearance requirements. Success criteria: Performance and accuracy of information, up to date information, consideration of hard-to-reach audiences, audiences essential needs, anticipation of crisis behaviour from a behavioural science perspective, following the Krebs method.\n            ",
+        "use_case_user_input_form": "Please create a STOP crisis comms plan for [USER INPUT RISK NAME]. Assume that the lead government department is [USER INPUT LEAD GOVERNMENT DEPARTMENT]."
+    },
+    {
+        "theme_title": "Crisis Communications",
+        "theme_subtitle": "Develop response strategies, draft crisis messages",
+        "theme_position": 6,
+        "use_case_position": 2,
+        "use_case_title": "I want to draft messages for a crisis",
+        "use_case_instruction": "Design a crisis communications message about the information provided above, directed at the public. The information should be laid out clearly and directly, using plain English, without a salutation or sign off. It should be suitable for members of the public to read directly, and also for media organisations, industry, and NGOs. Use \"The Krebs method\" of crisis communication, giving each part a suitable label. If any key information is missing, leave placeholders. The Krebs method of crisis communications sets out that communicators need to get across 5 key messages during a crisis:\n1. What is known about the crisis\n2. What is currently unknown\n3. What the Government is doing about the crisis\n4. What the public should do\n5.  When and where the public can find out more information.\nAt the end, review your message and add any extra considerations or weaknesses.",
+        "use_case_user_input_form": "What is currently known about the crisis: [USER PROMPT]\nWhat actions the Government are taking: [USER PROMPT]\nWhat you are instructing the public to do: [USER PROMPT]\nWhen and where the public can access further information: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Crisis Communications",
+        "theme_subtitle": "Develop response strategies, draft crisis messages",
+        "theme_position": 6,
+        "use_case_position": 3,
+        "use_case_title": "I want to develop a response strategy in a crisis",
+        "use_case_instruction": " The goal is to create a crisis communications plan with the following sections: 1) Title 2) Background and aim 3) Objectives 4) Target audience 5) Key messages 6) Channel 7) Spokesperson 8) Managing co-ordination 9) Timescales 10) Practical applications 11) Resources and budget 12) Research 13) Review, evaluation and exercising 14) Gaps and risks 1) Analyse the background and aims, summarise this into a series of bullet points. 2) Suggest between 3-5 objectives based on the background and aims. The objectives should be specific, measurable, achievable, realistic and time-bound 3) Identify the target audience and summarise their capabilities, opportunities, motivations and behaviours 4) Using this understanding of the audience select relevant communications channels to reach that audience and identify spokespersons trusted by that audience. 5) Identify any research that may be relevant to the target audience. 6) Conduct a GAP analysis and risk assessment.",
+        "use_case_user_input_form": "Title: [USER INPUT] Background and aim: [USER INPUT] Target audience: [USER INPUT] Spokesperson: [USER INPUT] Key messages: [USER INPUT]"
+    },
+    {
+        "theme_title": "Stakeholder identification and management",
+        "theme_subtitle": "Identify stakeholders, understand key requirements",
+        "theme_position": 7,
+        "use_case_position": 1,
+        "use_case_title": "I want to identify and understand key stakeholders",
+        "use_case_instruction": "I want to identify a wide range of possible stakeholders for this project, including functions of UK Government departments, public interest groups, subsets of the general public, organisations, and businesses. Make a list of at least 10 possible stakeholders, grouped in categories, including some unconventional ideas.",
+        "use_case_user_input_form": "Background information: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Internal communications",
+        "theme_subtitle": "Brainstorm ideas, develop strategies, produce materials",
+        "theme_position": 8,
+        "use_case_position": 1,
+        "use_case_title": "I want to develop a strategy for internal communication",
+        "use_case_instruction": "Build a detailed OASIS internal communications plan using the Government Communications Service OASIS framework. Use all of the information above to build the OASIS plan, filling in gaps yourself. Give several options where there isn't one obvious approach to recommend. For objectives, focus on behaviour change as primary objectives, including secondary sub-objectives where needed. For audience, provide some key insights about the relevant audiences and carry out a COM-B analysis of behaviour for each relevant audience. For strategy, develop options for an overarching communications narrative that will underpin the campaign. For implementation, explore the practicalities of delivering the campaign, including timing and channels. For scoring, use the GCS Evaluation Framework to suggest appropriate evaluation methods and KPIs. Introduce each section with a summary paragraph. At the end, review the plan and list any weaknesses, risks, gaps, or assumptions.",
+        "use_case_user_input_form": "Background information: [USER PROMPT]\nObjectives: [USER PROMPT]\nAudience: [USER PROMPT]\nStrategy: [USER PROMPT]\nImplementation: [USER PROMPT]\nScoring: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Internal communications",
+        "theme_subtitle": "Brainstorm ideas, develop strategies, produce materials",
+        "theme_position": 8,
+        "use_case_position": 2,
+        "use_case_title": "I want to produce emails, posters or other internal materials ",
+        "use_case_instruction": "Build an internal communications product using the information above. It should be engaging, using a friendly yet professional tone, and suitable for a UK audience. Make sure that any \"calls to action\" are clear, and that the most important information is prominent.",
+        "use_case_user_input_form": "Objective: [USER PROMPT]\nInformation to include: [USER PROMPT]\nTone and style: [USER PROMPT]\nType of product: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Internal communications",
+        "theme_subtitle": "Brainstorm ideas, develop strategies, produce materials",
+        "theme_position": 8,
+        "use_case_position": 3,
+        "use_case_title": "I want to create some engaging headlines\\/event titles\\/articles",
+        "use_case_instruction": "Aim: Brainstorm Headlines\\/Titles.\nUsing the information provided, create 8-10 potential headlines or titles.\nEnsure they are concise, engaging, and relevant to the topic and audience.\nConsider using action verbs, thought-provoking questions, or relevant puns\\/phrases.\n\nFinal Recommendation:\nSuggest the 2-3 most compelling headline\\/titles that effectively represents the content and resonates with the target audience.\n\nGuidance for Use:\nStrive for clarity and impact while remaining true to the content's essence.\nKeep the language accessible and avoid technical jargon unless it's audience-appropriate.\nTest the effectiveness of the headline\\/title by considering its appeal and clarity. ",
+        "use_case_user_input_form": "Content Type & Topic:\n[USER PROMPT: Identify if it's for an event or an article, and provide a brief topic summary].\n\nTarget Audience:\n[USER PROMPT: Who is the intended audience? (e.g., public, professionals, policymakers)].\n\nCore Message:\n[USER PROMPT: What is the key message or main focus?]."
+    },
+    {
+        "theme_title": "Internal communications",
+        "theme_subtitle": "Brainstorm ideas, develop strategies, produce materials",
+        "theme_position": 8,
+        "use_case_position": 4,
+        "use_case_title": "I want to brainstorm some interview questions for Q&A",
+        "use_case_instruction": "Question Development:\nBased on the material overview and speaker profile, create a list of potential questions.\nFocus on questions that:\nDive deeper into the material's subject matter.\nExplore the speaker's unique perspective or expertise.\nEncourage discussion on practical implications, future outlooks, or challenges.\nQuestion Types:\n\nEnsure a mix of question types:\nOpen-ended questions for detailed responses.\nSpecific questions for clarification on particular points.\nHypothetical or scenario-based questions for perspective.\n\nQuestion Review:\nEvaluate the questions for relevance, clarity, and their ability to engage both the speaker and the audience.\n\nGuidance for Use:\nAim for questions that stimulate discussion, rather than simple yes\\/no answers.\nConsider the audience's interest and knowledge level when framing questions.\nBalance between topical relevance and exploring new insights or angles.\nBe mindful of the speaker's expertise; align questions to their area of knowledge.\nEnsure questions are respectful and in line with government communication standards. ",
+        "use_case_user_input_form": "Material Overview:\n[USER PROMPT: Summarize the key points or main themes of the material provided].\n\nSpeaker Profile:\n[USER PROMPT: Briefly describe the background of the speaker (e.g., expertise, role, previous contributions)]."
+    },
+    {
+        "theme_title": "Skills and training",
+        "theme_subtitle": "Develop training content, design workshops, optimise text",
+        "theme_position": 9,
+        "use_case_position": 1,
+        "use_case_title": "I want to develop training content for my staff",
+        "use_case_instruction": "Develop a training plan using information above. Provide a list of topics and principles that should be taught. Include detailed learning objectives. The training plan should be logically structured, and should build progressively from simple to more complex information that brings different elements together. Give ideas for exercises, case studies, and discussions to enhance learning. At the end, list any weaknesses, gaps, or limitations in the training plan.",
+        "use_case_user_input_form": "Learning objectives: [USER PROMPT]\nInformation about the audience for the training: [USER PROMPT]\nFormat of the training: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Skills and training",
+        "theme_subtitle": "Develop training content, design workshops, optimise text",
+        "theme_position": 9,
+        "use_case_position": 2,
+        "use_case_title": "I want to create a quiz for assessment",
+        "use_case_instruction": "Generate a quiz about a topic based on specific information provided. Each question should have four answer options of which only one is true. Highlight which are the correct and incorrect answers\n\nUser instruction:\nCheck that the correct answer options are accurate.\n\nReview and update the content of the quiz accordingly",
+        "use_case_user_input_form": "Subject: [USER PROMPT - provide the subject of the quiz]\nTopic: [USER PROMPT - provide as much information as possible about the topic including content that the participants of the quiz need to have learnt.\n\n"
+    },
+    {
+        "theme_title": "Skills and training",
+        "theme_subtitle": "Develop training content, design workshops, optimise text",
+        "theme_position": 9,
+        "use_case_position": 3,
+        "use_case_title": "I want to design workshop activities",
+        "use_case_instruction": "Suggest contrasting ideas for workshop exercises to aid in reaching the objective above. The exercises should all be different, and may aim to ideate, prioritise, analyse, or spark conversation, depending on the aims of the workshop. List the benefits and weaknesses of each idea, and provide a few variations of each idea.",
+        "use_case_user_input_form": "Objective of the workshop: [USER PROMPT]\nInformation about workshop participants: [USER PROMPT]\nWorkshop format: [ONLINE\\/IN PERSON]"
+    },
+    {
+        "theme_title": "Skills and training",
+        "theme_subtitle": "Develop training content, design workshops, optimise text",
+        "theme_position": 9,
+        "use_case_position": 4,
+        "use_case_title": "I want to simplify, paraphrase or summarise text ",
+        "use_case_instruction": " The goal is to summarise and simplify the text to correspond with the number of words. 1) Identify how many words long the summarisation of the text should be. 2) Analyse the text to identify key points. 3) Draft the summarisation to focus on the key points. 4) Check that the summarisation does not exceed the maximum number of words.",
+        "use_case_user_input_form": "Text: [USER PROMPT] Number of words: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Skills and training",
+        "theme_subtitle": "Develop training content, design workshops, optimise text",
+        "theme_position": 9,
+        "use_case_position": 5,
+        "use_case_title": "I want to present ideas in a way that is optimised for learning",
+        "use_case_instruction": "Create Learning Materials from Provided Information\n\nObjective:\nCondense and present information in a format that enhances learning and understanding for a specific audience.\n\nDevelopment of Learning Content:\nCreate content tailored to the chosen format, focusing on key points.\nUse visuals and examples to clarify complex ideas.\nIncorporate interactive or reflective elements if applicable.\n\nGuidance for Use:\nStrive for clear, accessible language and a logical flow of information.\nPrioritize the most important or impactful information to maintain engagement.\nEnsure all content is accurate, up-to-date, and relevant to the audience. ",
+        "use_case_user_input_form": "Content Overview:\n[USER PROMPT: Provide a brief summary of the content to be used for educational purposes].\n\nTarget Audience and Learning Objectives:\n[USER PROMPT: Identify the audience and state the primary learning objective]."
+    },
+    {
+        "theme_title": "Inclusive and accessible communications",
+        "theme_subtitle": "Considerations, test material for accessibility",
+        "theme_position": 10,
+        "use_case_position": 1,
+        "use_case_title": "I want to account for cultural considerations in my communication",
+        "use_case_instruction": "Generate 5 ways in which a communications campaign could be adapted to account for cultural considerations. This could be in terms of the messaging (i.e. tone of voice, messenger and themes) and implementation (i.e. communications channels, type of content, format of content).",
+        "use_case_user_input_form": "Subject: [USER PROMPT - provide the subject of the communications campaign]\nTarget audience: [USER PROMPT provide as much detail about the target audience and factual information about cultural preferences]"
+    },
+    {
+        "theme_title": "Inclusive and accessible communications",
+        "theme_subtitle": "Considerations, test material for accessibility",
+        "theme_position": 10,
+        "use_case_position": 2,
+        "use_case_title": "I want to test communications material for accessibility",
+        "use_case_instruction": "Review Materials for Accessibility\n\nObjective:\nEvaluate provided materials (such as articles, speeches, announcements) for accessibility, ensuring they are suitable for a diverse audience, including individuals with disabilities.\n\nAccessibility Checklist:\n\nLanguage Clarity: Check for clear, jargon-free language appropriate to a diverse UK audience.\nReadability: Assess sentence length and complexity, and review for potential misunderstandings.\nFormat: Ensure the material is available in multiple formats (e.g., text, audio).\nStructure: Evaluate the organization for a logical flow and ease of understanding.\n\nRecommendations:\nProvide suggestions for improving accessibility in areas where the material falls short.\n\nGuidance for Use:\nFocus on inclusivity to ensure the material is comprehensible and usable by people with various needs.\nBe mindful of cultural sensitivity and avoid potential biases.\nRegularly update guidelines and practices to align with the latest accessibility standards.",
+        "use_case_user_input_form": "Material Overview:\n[USER PROMPT: Identify the type of material to be reviewed (e.g., article, speech, announcement)].\n\nSpecific Areas of Focus:\n[USER PROMPT: Highlight any particular areas that require careful review based on the content or audience]."
+    },
+    {
+        "theme_title": "Inclusive and accessible communications",
+        "theme_subtitle": "Considerations, test material for accessibility",
+        "theme_position": 10,
+        "use_case_position": 3,
+        "use_case_title": "I want to apply alt-text in my digital communications",
+        "use_case_instruction": "Please outline how I would create alt-text for an image being used on social media, in line with the Government Communication Service digital accessibility standards?",
+        "use_case_user_input_form": ""
+    },
+    {
+        "theme_title": "Inclusive and accessible communications",
+        "theme_subtitle": "Considerations, test material for accessibility",
+        "theme_position": 10,
+        "use_case_position": 4,
+        "use_case_title": "I want to improve my provision for British Sign Language translations",
+        "use_case_instruction": "Please outline what the expectation is for the use of British Sign Language in UK Government communications, in line with the Government Communication Service accessibility standards.",
+        "use_case_user_input_form": ""
+    },
+    {
+        "theme_title": "Inclusive and accessible communications",
+        "theme_subtitle": "Considerations, test material for accessibility",
+        "theme_position": 10,
+        "use_case_position": 5,
+        "use_case_title": "I want to consider the colour contrast of my digital communications content",
+        "use_case_instruction": "Please outline why colour contrast is important in government communications in line with the Government Communication Service accessibility standards. Could you also recommend a free online tool which can help me check the contrast of my digital communications content.",
+        "use_case_user_input_form": ""
+    },
+    {
+        "theme_title": "Inclusive and accessible communications",
+        "theme_subtitle": "Considerations, test material for accessibility",
+        "theme_position": 10,
+        "use_case_position": 6,
+        "use_case_title": "I want to use emojis and hashtags on social media in an accessible way",
+        "use_case_instruction": "Please outline the best practices when using emojis and hashtags on social media communications. Please give me recommendations on how to best apply these features taking into consideration accessibility needs of users and the government communication service accessibility standards. Please ensure the response includes relation to the platforms: Twitter/X, LinkedIn, Instagram, Facebook.",
+        "use_case_user_input_form": ""
+    },
+    {
+        "theme_title": "Brainstorming and ideation",
+        "theme_subtitle": "Consider problems, brainstorm, understand communications impact",
+        "theme_position": 11,
+        "use_case_position": 1,
+        "use_case_title": "I want to explore a problem from different points of view",
+        "use_case_instruction": "I want to think about this problem from several different perspectives. Give perspectives from 8 different disciplines. Include the following disciplines: Economist, Service Designer, Behavioural Scientist, Social Researcher, Innovator\\/Entrepreneur. Choose the other disciplines yourself, depending on the problem. Include their view on the problem, questions to explore, and potential solutions.",
+        "use_case_user_input_form": "Problem: \"[USER PROMPT - description of problem]\""
+    },
+    {
+        "theme_title": "Brainstorming and ideation",
+        "theme_subtitle": "Consider problems, brainstorm, understand communications impact",
+        "theme_position": 11,
+        "use_case_position": 2,
+        "use_case_title": "I want to understand how communications can help solve a problem",
+        "use_case_instruction": "I am exploring a problem, and considering the role of Government communications and campaigns in addressing this problem. Set out a list of ways that communications and campaigns could help solve this problem, and set out a list of limitations of what communications and campaigns could achieve. Finally, set out any additional considerations for Government communicators when attempted to tackle this problem using communication.",
+        "use_case_user_input_form": "Problem: \"[USER PROMPT - description of problem]\""
+    },
+    {
+        "theme_title": "Brainstorming and ideation",
+        "theme_subtitle": "Consider problems, brainstorm, understand communications impact",
+        "theme_position": 11,
+        "use_case_position": 3,
+        "use_case_title": "I want to brainstorm ideas for communication content",
+        "use_case_instruction": "Brainstorm Creative Ideas for Communications Content\n\nObjective:\nGenerate diverse and engaging content ideas suitable for communication purposes, based on provided background information and understanding of the target audience.\n\nIdea Generation:\nDevelop a list of potential content ideas that align with the background information and appeal to the target audience.\nConsider various formats like articles, videos, infographics, podcasts, or social media posts.\nCreativity and Engagement:\nFocus on ideas that are informative, engaging, and likely to capture the attention of the specified audience.\nExplore innovative ways to present the information.\n\nIdea Evaluation:\nAssess the feasibility, potential impact, and alignment with communication goals for each idea, considering the target audience's preferences and needs.\n\nGuidance for Use:\nBalance creativity with the preferences and interests of the target audience.\nStay informed about current trends and successful communication strategies within the audience's domain.\nAim to create content that not only informs but also engages and resonates with the audience.",
+        "use_case_user_input_form": "Background Information:\n[USER PROMPT: Summarize the key information or themes that the content should address].\n\nTarget Audience:\n[USER PROMPT: Define the target audience for the content]."
+    },
+    {
+        "theme_title": "Brainstorming and ideation",
+        "theme_subtitle": "Consider problems, brainstorm, understand communications impact",
+        "theme_position": 11,
+        "use_case_position": 4,
+        "use_case_title": "I want to develop a presentation to engage an audience",
+        "use_case_instruction": "You have to give a presentation on a topic. The goal is to develop an agenda for the presentation. The presentation should emphasise several key takeaways. For each item on the agenda there should be one engaging activation.",
+        "use_case_user_input_form": "Topic: [USER INPUT]\n\nKey takeaways: [USER INPUT]\n\nFurther information: [USER INPUT]"
+    },
+    {
+        "theme_title": "Research",
+        "theme_subtitle": "Write surveys, create guides, design activities",
+        "theme_position": 12,
+        "use_case_position": 1,
+        "use_case_title": "I want to design workshop activities",
+        "use_case_instruction": "Suggest 5 contrasting ideas for workshop exercises to aid in reaching the objective above. The exercises should all be different, and may aim to ideate, prioritise, analyse, or spark conversation, depending on the aims of the workshop. List the benefits and weaknesses of each idea, and provide a few variations of each idea.",
+        "use_case_user_input_form": "Objective of the workshop: [USER PROMPT]\nInformation about workshop participants: [USER PROMPT]\nWorkshop format: [ONLINE\\/IN PERSON]"
+    },
+    {
+        "theme_title": "Research",
+        "theme_subtitle": "Write surveys, create guides, design activities",
+        "theme_position": 12,
+        "use_case_position": 2,
+        "use_case_title": "I want to conduct COM-B analysis",
+        "use_case_instruction": "Produce a COM-B analysis for this behaviour, using any background information provided. Write a very short introduction to COM-B, and give a list of 5 possible barriers for each of the three elements. Include barriers that might only be relevant to a subset of the audience, but specify where this is the case. At the end, make a list of any gaps, weaknesses, or assumptions in the analysis.",
+        "use_case_user_input_form": "Behaviour (WHO does WHAT?): [USER PROMPT]* Other information: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Research",
+        "theme_subtitle": "Write surveys, create guides, design activities",
+        "theme_position": 12,
+        "use_case_position": 3,
+        "use_case_title": "I want to create a discussion guide for a focus group",
+        "use_case_instruction": "Produce a focus group discussion guide for this topic and audience. Explore a range of relevant research questions. The guide should be divided into categories with clear headings. Each question should have 2-3 optional follow up topics. Include a template for a facilitator introduction, leaving gaps for them to explain the purpose and context of the research. At the end, review the guide and make a list of any missing topics or considerations for the facilitator.",
+        "use_case_user_input_form": "Topic and background: [USER PROMPT] \nAudience: [USER PROMPT]\nNumber of questions: [USER PROMPT]"
+    },
+    {
+        "theme_title": "Research",
+        "theme_subtitle": "Write surveys, create guides, design activities",
+        "theme_position": 12,
+        "use_case_position": 4,
+        "use_case_title": "I want to write a survey",
+        "use_case_instruction": "Produce a survey for this topic and audience. \n\nExplore a range of relevant research questions. The survey should be divided into categories with clear headings. Similar questions should be grouped together. At the end, review the survey and make a list of any missing topics or potential biases in the questions. Do not include questions about demographics.",
+        "use_case_user_input_form": "Topic and background: [USER PROMPT]\nAudience: [USER PROMPT]\nMaximum number of questions: [USER PROMPT]\nType of answers: [Multiple choice only\\/Open questions only\\/Mix of multiple choice and open questions]"
+    },
+    {
+        "theme_title": "Research",
+        "theme_subtitle": "Write surveys, create guides, design activities",
+        "theme_position": 12,
+        "use_case_position": 5,
+        "use_case_title": "I want to create a survey for staff feedback",
+        "use_case_instruction": " Objective:\nCreate an effective survey to gather staff feedback on a particular topic, ensuring the questions are relevant, engaging, and provide valuable insights.\n\n\nQuestion Formulation:\nBased on the topic and survey purpose, draft a series of questions.\nInclude a mix of question types:\nRating scale questions for quantifiable feedback.\nOpen-ended questions for qualitative insights.\nMultiple-choice questions for specific preferences or choices.\nKey Focus Areas:\n\nEnsure questions cover different aspects of the topic, such as:\nGeneral perceptions and attitudes.\nSpecific experiences or examples.\nSuggestions for improvements or changes.\nSurvey Length and Structure:\n\nKeep the survey concise; ideally no more than 10-15 questions.\nOrganize questions logically, starting from broad questions and moving to more specific ones.\n\nGuidance for Use:\n\nEnsure questions are unbiased and phrased clearly.\nMaintain confidentiality and anonymity to encourage honest responses.\nAvoid leading questions to get unbiased feedback.\nConsider including an option for open feedback or comments at the end.\nBe respectful of respondents' time; ensure the survey is not overly long. ",
+        "use_case_user_input_form": "Survey Topic:\n[USER PROMPT: Define the specific topic or area for which feedback is being sought].\n\nPurpose of the Survey:\n[USER PROMPT: Clarify the objectives of the survey and how the feedback will be used]."
+    },
+    {
+        "theme_title": "Recruitment",
+        "theme_subtitle": "Test, adapt job descriptions for audiences",
+        "theme_position": 13,
+        "use_case_position": 1,
+        "use_case_title": "I want to test a job description against an audience persona",
+        "use_case_instruction": "Please review the following job description and provide feedback on whether it effectively appeals to the target audience. Specifically assess whether the language, requirements and overall tone of the job description would be attractive and engaging to this target audience. Please present your response clearly using subheadings and bullet points. Thank you!",
+        "use_case_user_input_form": "Target audience: Age: [USER INPUT] Gender: [USER INPUT] Ethnicity: [USER INPUT] Location: [USER INPUT] Educational background: [USER INPUT] Level of professional experience: [USER INPUT] Further information: [USER INPUT]"
+    },
+    {
+        "theme_title": "Recruitment",
+        "theme_subtitle": "Test, adapt job descriptions for audiences",
+        "theme_position": 13,
+        "use_case_position": 2,
+        "use_case_title": "I want to adapt a job description for different audiences",
+        "use_case_instruction": "Please update the job description to better resonate with the Target Audience. Focus on using language that resonates with the audience and showcasing that might appeal to that target audience. Also can you please identify any changes you made and why.",
+        "use_case_user_input_form": "Target audience: \nAge: [USER INPUT]\nGender: [USER INPUT]\nEthnicity: [USER INPUT]\nLocation: [USER INPUT]\nEducational background: [USER INPUT]\nLevel of professional experience: [USER INPUT] \n\nFurther information:\n[USER INPUT]\n"
+    },
+    {
+        "theme_title": "Recruitment",
+        "theme_subtitle": "Test, adapt job descriptions for audiences",
+        "theme_position": 13,
+        "use_case_position": 3,
+        "use_case_title": "I want to identify stakeholders to help with recruitment",
+        "use_case_instruction": "I want to identify a wide range of possible stakeholders that could be used to help recruit people from the target audience. This could includefunctions of UK Government departments, public interest groups, subsets of the general public, organisations, and businesses. Make a list of and group in categories, including some unconventional ideas.",
+        "use_case_user_input_form": "Target audience: \nAge: [USER INPUT]\nGender: [USER INPUT]\nEthnicity: [USER INPUT]\nLocation: [USER INPUT]\nEducational background: [USER INPUT]\nLevel of professional experience: [USER INPUT] \n\nFurther information:\n[USER INPUT]\n"
+    }
+]
