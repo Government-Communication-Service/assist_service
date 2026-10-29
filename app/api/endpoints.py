@@ -45,6 +45,12 @@ class ENDPOINTS:
     USER_PROMPT = "/users/{user_uuid}/prompts/{user_prompt_uuid}"
 
     #
+    USER_PROJECTS = "/users/{user_uuid}/projects"
+    USER_PROJECT = "/users/{user_uuid}/projects/{project_uuid}"
+    USER_PROJECT_CHATS = "/users/{user_uuid}/projects/{project_uuid}/chats"
+    USER_PROJECT_CHAT = "/users/{user_uuid}/projects/{project_uuid}/chats/{chat_uuid}"
+
+    #
     USER = "/user/{user_uuid}"
     USERS = "/users"
 
@@ -82,6 +88,23 @@ class ENDPOINTS:
 
     def get_user_prompt(self, user_uuid: UUID, user_prompt_uuid: UUID) -> str:
         return self.build_url(self.USER_PROMPT, user_uuid=user_uuid, user_prompt_uuid=user_prompt_uuid)
+
+    def user_projects(self, user_uuid: UUID) -> str:
+        return self.build_url(self.USER_PROJECTS, user_uuid=user_uuid)
+
+    def user_project(self, user_uuid: UUID, project_uuid: UUID) -> str:
+        return self.build_url(self.USER_PROJECT, user_uuid=user_uuid, project_uuid=project_uuid)
+
+    def user_project_chats(self, user_uuid: UUID, project_uuid: UUID) -> str:
+        return self.build_url(self.USER_PROJECT_CHATS, user_uuid=user_uuid, project_uuid=project_uuid)
+
+    def user_project_chat(self, user_uuid: UUID, project_uuid: UUID, chat_uuid: UUID) -> str:
+        return self.build_url(
+            self.USER_PROJECT_CHAT,
+            user_uuid=user_uuid,
+            project_uuid=project_uuid,
+            chat_uuid=chat_uuid,
+        )
 
     def create_user(self) -> str:
         return self.build_url(self.USERS)

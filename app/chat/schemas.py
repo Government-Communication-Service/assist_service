@@ -220,6 +220,7 @@ class ChatBasicResponse(ItemTitleResponse):
     share: bool = False
     share_code: Optional[str] = None
     share_private: bool = False
+    project_uuid: Optional[UUID] = None
 
 
 class UserChatsResponse(SuccessResponse, ItemResponse):

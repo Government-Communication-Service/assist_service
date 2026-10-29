@@ -117,6 +117,9 @@ test-gov-uk-search-regression:
 test-personal-prompts:
 	$(docker-cmd) "${test-cmd} tests/personal_prompts"
 
+test-projects:
+	$(docker-cmd) "${test-cmd} tests/projects"
+
 
 test-bedrock:
 	$(docker-cmd) "${test-cmd} tests/bedrock"

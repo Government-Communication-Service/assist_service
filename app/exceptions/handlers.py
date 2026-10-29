@@ -18,6 +18,7 @@ from app.chat.schemas import DocumentAccessError
 from app.database.database_exception import DatabaseError, DatabaseExceptionErrorCode
 from app.logs.logs_handler import logger
 from app.personal_prompts.exceptions import UserPromptMissingError
+from app.projects.exceptions import ProjectChatNotFoundError, ProjectNameConflictError, ProjectNotFoundError
 
 
 def log_and_raise_http_exception(status_code: int, request: Request, exc: Exception, label: str) -> None:
@@ -65,6 +66,23 @@ def user_prompt_missing_handler(request: Request, exc: UserPromptMissingError) -
     log_and_raise_http_exception(status_code=404, request=request, exc=exc, label="User prompt not found")
 
 
+# Project 404s and 409s are expected API behaviour, so they are logged at info level rather than as errors,
+# with the same {"detail": ...} body shape as HTTPException.
+def project_not_found_handler(request: Request, exc: ProjectNotFoundError) -> Response:
+    logger.info(f"Project not found in endpoint {request.url.path}: {exc}")
+    return JSONResponse(status_code=404, content={"detail": "Project not found"})
+
+
+def project_chat_not_found_handler(request: Request, exc: ProjectChatNotFoundError) -> Response:
+    logger.info(f"Project chat not found in endpoint {request.url.path}: {exc}")
+    return JSONResponse(status_code=404, content={"detail": "Chat not found"})
+
+
+def project_name_conflict_handler(request: Request, exc: ProjectNameConflictError) -> Response:
+    logger.info(f"Project name conflict in endpoint {request.url.path}: {exc}")
+    return JSONResponse(status_code=409, content={"detail": "A project with this name already exists"})
+
+
 def handle_document_access_error(request: Request, ex: DocumentAccessError) -> Response:
     detail = {"error": "DOCUMENT_ACCESS_ERROR", "documents_uuids": ex.document_uuids}
     return JSONResponse(status_code=401, content=detail)
@@ -100,6 +118,9 @@ def register_exception_handlers(app):
     app.exception_handler(UserKeyUuidMalformedError)(user_key_uuid_malformed_handler)
     app.exception_handler(SessionUuidNotInDatabaseError)(session_uuid_not_in_database_handler)
     app.exception_handler(UserPromptMissingError)(user_prompt_missing_handler)
+    app.exception_handler(ProjectNotFoundError)(project_not_found_handler)
+    app.exception_handler(ProjectChatNotFoundError)(project_chat_not_found_handler)
+    app.exception_handler(ProjectNameConflictError)(project_name_conflict_handler)
     app.exception_handler(DocumentAccessError)(handle_document_access_error)
     app.exception_handler(DatabaseError)(database_exception_handler)
     app.exception_handler(BedrockError)(bedrock_exception_handler)

@@ -4,6 +4,7 @@ import bugsnag
 import bugsnag.handlers
 from bugsnag.asgi import BugsnagMiddleware
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -72,9 +73,11 @@ class BugsnagLogger:
 
     async def _validation_exception_handler(self, request: Request, exc: RequestValidationError) -> JSONResponse:
         bugsnag.notify(exc, user=self._get_user_data_from_request_header(request))
+        # jsonable_encoder, as FastAPI's default handler does: an error raised by a validator keeps the
+        # exception object in its ctx, which JSONResponse can't serialise.
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={"detail": exc.errors()},
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"detail": jsonable_encoder(exc.errors())},
         )
 
     def _send_error_level_logs_to_bugsnag(self):

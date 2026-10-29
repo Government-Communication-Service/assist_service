@@ -14,10 +14,12 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_engine,
+    func,
+    select,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base, declared_attr
-from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy.orm import column_property, relationship, sessionmaker
 from sqlalchemy.sql import text
 
 from .database_url import database_url
@@ -133,10 +135,20 @@ class AuthSession(Base):
         }
 
 
+class Project(Base):
+    """A user-owned folder that groups chats. A chat belongs to at most one project."""
+
+    __tablename__ = "project"
+    user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+
+
 class Chat(Base):
     __tablename__ = "chat"
     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
     use_case_id = Column(Integer, ForeignKey("use_case.id"))
+    project_id = Column(Integer, ForeignKey("project.id", name="fk_chat_project_id_project"), nullable=True)
     title = Column(String(255), nullable=False, default="Default title")
     from_open_chat = Column(Boolean, nullable=False)
     use_rag = Column(Boolean, nullable=True, server_default="true")
@@ -147,22 +159,36 @@ class Chat(Base):
     share_code = Column(String(10), nullable=True)
     share_private = Column(Boolean, nullable=False, server_default="false")
 
+    # Loaded with every Chat select (no lazy load), so responses can expose the project's public UUID.
+    # A deleted project reads as no project. Deleting one detaches its chats, so this is a backstop.
+    project_uuid = column_property(
+        select(Project.uuid)
+        .where(Project.id == project_id, Project.deleted_at.is_(None))
+        .correlate_except(Project)
+        .scalar_subquery()
+    )
+
     def client_response(self):
-        return {
-            **super().client_response(
-                {
-                    "from_open_chat": self.from_open_chat,
-                    "title": self.title,
-                    "use_rag": self.use_rag,
-                    "use_gov_uk_search_api": self.use_gov_uk_search_api,
-                    "use_smart_targets": self.use_smart_targets,
-                    "favourite": self.favourite,
-                    "share": self.share,
-                    "share_code": self.share_code,
-                    "share_private": self.share_private,
-                }
-            ),
-        }
+        response = super().client_response(
+            {
+                "from_open_chat": self.from_open_chat,
+                "title": self.title,
+                "use_rag": self.use_rag,
+                "use_gov_uk_search_api": self.use_gov_uk_search_api,
+                "use_smart_targets": self.use_smart_targets,
+                "favourite": self.favourite,
+                "share": self.share,
+                "share_code": self.share_code,
+                "share_private": self.share_private,
+            }
+        )
+        # Added after CommonMixin drops None values, so a chat outside any project sends "project_uuid": null.
+        # Only when loaded: UPDATE/INSERT ... RETURNING(Chat) doesn't populate it, and reading it then would
+        # trigger a lazy load, which fails on async or detached instances.
+        if "project_uuid" in self.__dict__:
+            project_uuid = self.__dict__["project_uuid"]
+            response["project_uuid"] = str(project_uuid) if project_uuid else None
+        return response
 
     chat_document_mapping = relationship("ChatDocumentMapping", back_populates="chat")
     messages = relationship("Message", back_populates="chat")
@@ -671,3 +697,14 @@ Index("ix_auth_session_uuid", AuthSession.uuid)
 Index("ix_feedback_message_id", Feedback.message_id)
 Index("ix_user_prompt_created_at", UserPrompt.created_at)
 Index("ix_chat_classification_mapping_chat_id", ChatClassificationMapping.chat_id)
+Index("ix_chat_project_id", Chat.project_id, postgresql_where=Chat.project_id.isnot(None))
+Index("ix_project_uuid", Project.uuid)
+Index("ix_project_user_id", Project.user_id)
+# Project names are unique per user, case-insensitively, among live projects only.
+Index(
+    "uq_project_user_id_lower_name",
+    Project.user_id,
+    func.lower(Project.name),
+    unique=True,
+    postgresql_where=Project.deleted_at.is_(None),
+)

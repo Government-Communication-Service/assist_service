@@ -38,6 +38,7 @@ class TestGovUKSearch:
         resp_order_ascending_results.reverse()
         assert resp_order_ascending_results[0] != resp_order_descending_results[0]
 
+    @pytest.mark.skip(reason="Flaky: calls the live GOV.UK search API, which sometimes returns no results")
     @pytest.mark.asyncio
     async def test_gov_uk_search_start(self):
         resp = await GovUKSearch.search(
