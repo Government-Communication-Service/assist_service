@@ -11,6 +11,7 @@ from aiohttp.test_utils import TestServer as LocalServer
 from pydantic import ValidationError
 
 from app.bedrock.call_log import LlmCallContext
+from app.gov_uk_search.exceptions import GovUKPageNotFoundError
 from app.gov_uk_search.service import (
     GOV_UK_COLLECTION_MAX_DOCUMENTS,
     GOV_UK_SEARCH_MAX_COUNT,
@@ -23,6 +24,7 @@ from app.gov_uk_search.service import (
     _download_pdf,
     _extract_pdf_pages,
     _search_filters,
+    extract_content_from_gov_uk,
     get_gov_uk_page_for_tool,
     get_gov_uk_pdf_for_tool,
     search_gov_uk_for_tool,
@@ -522,6 +524,18 @@ async def test_get_page_reports_a_page_it_could_not_fetch():
     assert "Couldn't get https://www.gov.uk/missing" in content
 
 
+async def test_get_page_tells_the_model_the_page_was_not_found():
+    with (
+        patch(f"{SERVICE}.extract_content_from_gov_uk", AsyncMock(side_effect=GovUKPageNotFoundError("x"))),
+        patch(f"{SERVICE}.logger") as logger,
+    ):
+        content, citations, failed = await get_gov_uk_page_for_tool("https://www.gov.uk/browse/gone")
+
+    assert failed and citations == []
+    assert "Page not found (404): https://www.gov.uk/browse/gone" in content
+    logger.error.assert_not_called()
+
+
 async def test_get_page_is_capped_by_its_own_limit_not_the_search_limit():
     body = "# Long page\n\n" + "x" * 5000
     with (
@@ -795,6 +809,18 @@ async def test_content_api_non_json_response_returns_nothing_so_the_html_fallbac
     async with _gov_uk_api(handler) as base:
         with patch(f"{SERVICE}.CONTENT_URL", base):
             assert await GovUKContent.get_content("some/page") == {}
+
+
+async def test_extract_content_raises_page_not_found_when_both_sources_404():
+    async def handler(request):
+        return web.Response(status=404, text="Not found")
+
+    async with _gov_uk_api(handler) as base:
+        with patch(f"{SERVICE}.CONTENT_URL", f"{base}/api/content"), patch(f"{SERVICE}.logger") as logger:
+            with pytest.raises(GovUKPageNotFoundError):
+                await extract_content_from_gov_uk(f"{base}/browse/gone")
+
+    logger.error.assert_not_called()
 
 
 async def test_content_api_timeout_returns_nothing():

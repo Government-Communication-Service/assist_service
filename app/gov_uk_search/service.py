@@ -36,6 +36,7 @@ from app.database.db_operations import DbOperations
 from app.database.models import GovUkSearchResult, Message
 from app.database.table import LLMTable, async_db_session
 from app.gov_uk_search.constants import CONTENT_URL
+from app.gov_uk_search.exceptions import GovUKPageNotFoundError
 from app.gov_uk_search.prompts import (
     SYSTEM_PROMPT_PAGE_RELEVANCE_EVALUATOR,
     TOOL_RESULT_NO_RELEVANT_PAGES,
@@ -211,10 +212,15 @@ async def extract_content_with_httpx(url: str) -> str:
 
     Returns:
         Extracted content as a string
+
+    Raises:
+        GovUKPageNotFoundError: The page returned 404.
     """
     try:
         async with httpx.AsyncClient(timeout=GOV_UK_HTTP_TIMEOUT_SECONDS) as client:
             response = await client.get(url)
+            if response.status_code == 404:
+                raise GovUKPageNotFoundError(url)
             response.raise_for_status()
 
             # Parse HTML
@@ -257,6 +263,8 @@ async def extract_content_with_httpx(url: str) -> str:
             full_content = "\n".join(result)
             return full_content
 
+    except GovUKPageNotFoundError:
+        raise
     except (httpx.HTTPError, Exception) as e:
         logger.warning(f"Error fetching content with httpx: {str(e)}")
         return ""
@@ -342,6 +350,9 @@ async def extract_content_from_gov_uk(url: str) -> str:
 
     Returns:
         Full content as a string
+
+    Raises:
+        GovUKPageNotFoundError: The page returned 404.
     """
     # Extract path from URL
     parsed_url = urlparse(url)
@@ -753,7 +764,12 @@ async def get_gov_uk_page_for_tool(url: str) -> tuple[str, list[dict], bool]:
         The tool result text, citations for the page (empty if it couldn't be fetched), and whether
         the fetch failed.
     """
-    content = await extract_content_from_gov_uk(url)
+    try:
+        content = await extract_content_from_gov_uk(url)
+    except GovUKPageNotFoundError:
+        logger.info(f"get_gov_uk_page: page not found: {url}")
+        message = f"Page not found (404): {url} doesn't exist on GOV.UK. Use search_gov_uk to find the current page."
+        return f"<{GOV_UK_PAGE_TOOL_TAG}>\n{message}\n</{GOV_UK_PAGE_TOOL_TAG}>", [], True
     if not content:
         message = f"Couldn't get {url}. Check that it is the address of a published GOV.UK page."
         return f"<{GOV_UK_PAGE_TOOL_TAG}>\n{message}\n</{GOV_UK_PAGE_TOOL_TAG}>", [], True
