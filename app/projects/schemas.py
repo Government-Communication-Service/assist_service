@@ -5,11 +5,12 @@ from uuid import UUID
 from pydantic import AfterValidator, BaseModel, ConfigDict, StringConstraints, model_validator
 
 from app.chat.schemas import ChatBasicResponse
+from app.schemas.text import CleanMultiline, CleanSingleLine
 
-ProjectName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
+ProjectName = Annotated[str, StringConstraints(min_length=1, max_length=255), CleanSingleLine]
 # A blank description is stored as no description.
 ProjectDescription = Annotated[
-    str, StringConstraints(strip_whitespace=True, max_length=1000), AfterValidator(lambda value: value or None)
+    str, StringConstraints(max_length=1000), CleanMultiline, AfterValidator(lambda value: value or None)
 ]
 
 

@@ -224,7 +224,7 @@ class PersonalDocumentParser:
 
             # check if there are document chunks to index, passing empty documents to opensearch causes error.
             if not documents:
-                logger.info("No text chunks extracted from document %s", file.filename)
+                logger.info("No text chunks extracted from document %s", new_document.uuid)
                 raise NoTextContentError(f"There is not usable text content in {file.filename} file")
 
             # save docs in opensearch in bulk.

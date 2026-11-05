@@ -2,9 +2,9 @@ import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.chat.schemas import FeedbackRequest, MessageFeedbackEnum, MessageFeedbackResponse
 from app.database.db_operations import DbOperations
 from app.database.models import Message
+from app.feedback.schemas import FeedbackRequest, MessageFeedbackEnum, MessageFeedbackResponse
 from app.logs.logs_handler import logger
 
 __FEEDBACK_SCORE_LOOKUP = {score.value: score for score in MessageFeedbackEnum}

@@ -141,6 +141,24 @@ class TestCreateProject:
     async def test_create_project_description_too_long(self, create_project):
         await create_project("Long description", description="x" * 1001, response_code=422)
 
+    @pytest.mark.parametrize(("name", "description"), [("Campaign\x00plan", None), ("Campaign plan", "Notes\x00here")])
+    async def test_create_project_nul_character_is_422(self, create_project, name, description):
+        response = await create_project(name, description=description, response_code=422)
+
+        assert response["detail"][0]["msg"] == "Text must not contain NUL characters"
+
+    @pytest.mark.parametrize("name", ["Campaign\nplan", "Campaign\u202eplan", "Camp\u200baign", "\u200b\u200b"])
+    async def test_create_project_rejects_invisible_or_control_characters_in_name(self, create_project, name):
+        await create_project(name, response_code=422)
+
+    async def test_create_project_cleans_name_and_description(self, create_project):
+        response = await create_project("\u200bCampaign plan\ufeff", description="Line one\r\nLine\u202e two")
+
+        assert_project_response(response, "Campaign plan", "Line one\nLine two")
+
+    async def test_create_project_zero_width_suffix_conflicts_with_existing_name(self, project_item, create_project):
+        await create_project(project_item["name"] + "\u200b", response_code=409)
+
     async def test_create_project_duplicate_name_ignoring_case(self, project_item, create_project):
         response = await create_project(project_item["name"].upper(), response_code=409)
 

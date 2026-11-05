@@ -186,6 +186,20 @@ async def test_uploading_documents(
         assert expected_error == response
 
 
+async def test_uploaded_filename_is_cleaned(async_client, user_id, async_http_requester, db_session):
+    api_endpoint = ENDPOINTS().user_documents(user_id)
+    async with await anyio.open_file("tests/resources/random-topics.pdf", "rb") as f:
+        response = await async_http_requester(
+            "uploading file with bidi override in its name",
+            async_client.post,
+            api_endpoint,
+            files={"file": ("report\u202etxt.exe.pdf", await f.read())},
+        )
+
+    document = (await db_session.execute(select(Document).filter_by(uuid=response["document_uuid"]))).scalar_one()
+    assert document.name == "reporttxt.exe.pdf"
+
+
 async def test_list_user_documents(async_client, user_id, async_http_requester):
     """
     Tests list user documents api. It should return a dictionary containing user_documents and central_documents

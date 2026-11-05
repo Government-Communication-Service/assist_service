@@ -43,20 +43,20 @@ async def list_user_projects(db_session: AsyncSession, user_id: int) -> Sequence
 async def create_project(db_session: AsyncSession, user_id: int, name: str, description: Optional[str]) -> Project:
     """Creates a project, raising ProjectNameConflictError if the user already has a live project with this name."""
     stmt = insert(Project).values(user_id=user_id, name=name, description=description).returning(Project)
-    return await _with_name_conflict(db_session, stmt, name)
+    return await _with_name_conflict(db_session, stmt)
 
 
 async def update_project(db_session: AsyncSession, project: Project, values: Mapping[str, Any]) -> Project:
     """Updates the given columns, raising ProjectNameConflictError if a rename clashes with another live project."""
     stmt = update(Project).where(Project.id == project.id).values(**values).returning(Project)
-    return await _with_name_conflict(db_session, stmt, values.get("name", project.name))
+    return await _with_name_conflict(db_session, stmt)
 
 
-async def _with_name_conflict(db_session: AsyncSession, stmt, name: str) -> Project:
+async def _with_name_conflict(db_session: AsyncSession, stmt) -> Project:
     try:
         return await db_session.scalar(stmt)
     except IntegrityError as e:
-        raise ProjectNameConflictError(f"A project named '{name}' already exists for this user") from e
+        raise ProjectNameConflictError("A live project with this name already exists for this user") from e
 
 
 async def delete_project(db_session: AsyncSession, project: Project) -> None:

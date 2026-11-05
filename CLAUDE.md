@@ -170,6 +170,11 @@ Be explicit and specific when importing from other packages:
 from app.auth.utils import verify_and_parse_uuid
 ```
 
+#### Free-text input and error messages
+- Clean free-text request fields with the validators in `app/schemas/text.py`: `CleanSingleLine` for names and titles, `CleanMultiline` for descriptions, prompts and messages. Add the validator after `StringConstraints` so length limits apply to the cleaned value: `Annotated[str, StringConstraints(max_length=255), CleanSingleLine]`. For text that can't be rejected, such as uploaded filenames, use `strip_to_single_line`.
+- JSON bodies containing a NUL character are rejected with 422 globally by `RejectNulBytesMiddleware` (`app/api/nul_bytes_middleware.py`).
+- Exception and log messages carry IDs, never user-supplied text such as names, descriptions or queries.
+
 #### LLM Prompts — `prompts.py` convention
 
 Every module that sends LLM calls keeps its prompt text in a file called `prompts.py` within that module. This makes all prompts easy to locate (`find app -name prompts.py`) and collectively review.

@@ -8,9 +8,8 @@ import pytest
 from anthropic.types import ToolUseBlock
 
 from app.bedrock.bedrock_types import BedrockError, BedrockErrorType
-from app.chat.schemas import ChatTitleRequest
 from app.classification_and_title.prompts import TOOL_NAME_TITLE_AND_CLASSIFICATION
-from app.classification_and_title.schemas import ClassificationInput
+from app.classification_and_title.schemas import ChatTitleRequest, ClassificationInput
 from app.classification_and_title.service import (
     TitleAndClassificationResult,
     _bulk_sync_classifications,

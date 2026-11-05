@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.nul_bytes_middleware import RejectNulBytesMiddleware
 from app.config import CAMPAIGN_BENCHMARKS_SERVICE_DISABLED, IS_DEV, REQUEST_TIMEOUT_SECONDS, URL_HOSTNAME
 from app.database.table import AsyncEngineProvider
 from app.exceptions.handlers import register_exception_handlers
@@ -51,6 +52,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="GCS Assist API", version="0.1.0", lifespan=lifespan)
 app.openapi_version = "3.0.2"
+
+app.add_middleware(RejectNulBytesMiddleware)
 
 # Configure CORS
 if IS_DEV:

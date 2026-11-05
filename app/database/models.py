@@ -687,7 +687,7 @@ class ChatClassificationMapping(Base):
     llm_internal_response_id = Column(Integer, ForeignKey("llm_internal_response.id"), nullable=True)
 
 
-engine = create_engine(database_url())
+engine = create_engine(database_url(), hide_parameters=True)
 Session = sessionmaker(bind=engine)
 
 Index("ix_user_uuid", User.uuid)

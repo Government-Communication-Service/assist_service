@@ -17,6 +17,18 @@ from app.document_upload.personal_document_rag import ScoredChunk
 logger = getLogger(__name__)
 
 
+def escape_document_name_for_prompt(name: str) -> str:
+    """Escapes `<`, `>` and `"` so a document name can't close or open a tag or attribute in a prompt.
+
+    Args:
+        name: The stored document name.
+
+    Returns:
+        The name with `<`, `>` and `"` replaced by `&lt;`, `&gt;` and `&quot;`.
+    """
+    return name.replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
 @dataclass(frozen=True)
 class PositionedChunk:
     """A stored chunk with its place in its document.

@@ -14,6 +14,7 @@ from app.bmdb.services import BmdbEditionService
 from app.chat.tools import ToolContext, build_available_tools
 from app.config import CAMPAIGN_BENCHMARKS_SERVICE_DISABLED, settings
 from app.database.models import Document, DocumentChunk
+from app.document_upload.utils import escape_document_name_for_prompt
 from app.smart_targets.exceptions import GetSmartTargetsMetricsError
 from app.smart_targets.service import SmartTargetsService
 
@@ -295,7 +296,7 @@ async def build_turn_context_block(
             lines.append(
                 "Documents attached to this chat:\n"
                 + "\n".join(
-                    f"- {d.name} [id: {d.uuid}] {d.chunks} chunk{'' if d.chunks == 1 else 's'}, "
+                    f"- {escape_document_name_for_prompt(d.name)} [id: {d.uuid}] {d.chunks} chunk{'' if d.chunks == 1 else 's'}, "
                     f"~{int(d.characters):,} characters"
                     for d in documents
                 )

@@ -3,7 +3,7 @@ from typing import List, Optional, Union
 
 from pydantic import UUID1, UUID4, BaseModel, Field
 
-from app.request_schemas import RequestStandard
+from app.schemas.request import RequestStandard
 
 
 class UserPromptRequestBody(BaseModel):

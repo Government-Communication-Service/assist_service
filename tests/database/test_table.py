@@ -40,3 +40,18 @@ class TestDatabaseException:
         assert exc_info.value.code, "No error code was given with the DataBase exception"
         assert exc_info.value.message, "No message was given with the DataBase exception"
         logger.info(f"DatabaseException was raised successfully: {exc_info.value.code=} {exc_info.value.message=}")
+
+
+class TestHideParameters:
+    async def test_db_error_message_omits_bound_parameters(self):
+        from sqlalchemy import text
+        from sqlalchemy.exc import DBAPIError
+
+        from app.database.table import async_db_session
+
+        async with async_db_session() as db_session:
+            with pytest.raises(DBAPIError) as exc_info:
+                await db_session.execute(text("SELECT CAST(:value AS TEXT), 1 / 0"), {"value": "secret-user-text"})
+
+        assert "secret-user-text" not in str(exc_info.value)
+        assert "SQL parameters hidden" in str(exc_info.value)

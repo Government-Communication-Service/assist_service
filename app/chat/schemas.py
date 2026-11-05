@@ -7,7 +7,7 @@ from fastapi import HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 
 from app.config import ThinkingLevel
-from app.request_schemas import RequestModel, RequestStandard
+from app.schemas.request import RequestModel, RequestStandard
 from app.themes_use_cases.schemas import BannerType, PrebuiltPrompt
 from app.user.schemas import DocumentSchema
 
@@ -110,30 +110,6 @@ class ChatPut(ChatPost):
         None,
         description="The UUID of the parent message to which the new message should be appended.",
     )
-
-
-class MessageFeedbackEnum(int, Enum):
-    positive = 1
-    negative = -1
-    removed = 0
-
-
-class FeedbackRequest(RequestModel):
-    score: int
-    freetext: Optional[str] = None
-    label: Optional[str] = None
-
-
-class FeedbackLabelResponse(BaseModel):
-    uuid: UUID
-    created_at: datetime
-    updated_at: Optional[datetime] = Field(default=None)
-    deleted_at: Optional[datetime] = Field(default=None)
-    label: str
-
-
-class FeedbackLabelListResponse(BaseModel):
-    feedback_labels: List[FeedbackLabelResponse]
 
 
 class ChatCreateMessageInput(ChatBaseRequest):
@@ -263,10 +239,6 @@ class ChatWithAllMessages(SuccessResponse, ChatBasicResponse):
     messages: List[MessageBasicResponse] = []
 
 
-class MessageFeedbackResponse(SuccessResponse, ItemResponse):
-    pass
-
-
 class ChatRequestData(ChatPost, RequestStandard):
     user_group_ids: List = []
     use_case_id: int = None
@@ -274,11 +246,6 @@ class ChatRequestData(ChatPost, RequestStandard):
 
 class ChatCreateInput(ChatBaseRequest):
     pass
-
-
-class ChatTitleRequest(RequestModel):
-    query: str = ""
-    system: str = ""
 
 
 class MessageCleanupResponse(SuccessResponse):

@@ -20,6 +20,7 @@ from app.document_upload.personal_document_rag import select_chunks_for_tool
 from app.document_upload.utils import (
     PositionedChunk,
     chunk_positions,
+    escape_document_name_for_prompt,
     get_document_chunk_mappings,
     get_previously_returned_opensearch_ids,
 )
@@ -142,12 +143,15 @@ async def _describe_scope(db_session: AsyncSession, searched: list[str], attache
         .scalars()
         .all()
     )
-    return f"Searched {len(searched)} of {len(attached)} attached documents: {', '.join(names)}."
+    return (
+        f"Searched {len(searched)} of {len(attached)} attached documents: "
+        f"{', '.join(escape_document_name_for_prompt(name) for name in names)}."
+    )
 
 
 def format_chunk_for_prompt(result: PositionedChunk) -> str:
     return (
-        f"<document-title>{result.document.name}</document-title>\n"
+        f"<document-title>{escape_document_name_for_prompt(result.document.name)}</document-title>\n"
         f"<document-id>{result.document.uuid}</document-id>\n"
         f"<position>chunk {result.position} of {result.total_chunks}</position>\n"
         f"<content>{result.document_chunk.content}</content>"
@@ -318,7 +322,7 @@ async def read_uploaded_document_for_tool(
         )
     else:
         where = f"Chunks {first}-{last} of {total}. End of document."
-    name = document.name.replace('"', "'")
+    name = escape_document_name_for_prompt(document.name)
     parts = [f'<{READ_DOCUMENT_TAG} id="{document.uuid}" name="{name}">', where]
     parts.extend(f'<chunk n="{row.position}">{row.DocumentChunk.content}</chunk>' for row in chosen)
     parts.append(f"</{READ_DOCUMENT_TAG}>")

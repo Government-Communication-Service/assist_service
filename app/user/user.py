@@ -1,6 +1,7 @@
 import asyncio
 import io
 import logging
+import os
 from datetime import datetime
 from typing import Annotated
 
@@ -29,6 +30,7 @@ from app.document_upload.personal_document_parser import (
     PersonalDocumentParser,
 )
 from app.opensearch.service import AsyncOpenSearchOperations
+from app.schemas.text import strip_to_single_line
 from app.user.schemas import (
     DocumentResponse,
     DocumentSchema,
@@ -305,7 +307,8 @@ async def upload_file(
     """
     # Read file content once to avoid stream consumption issues
     file_content = await file.read()
-    file_name = file.filename or "unknown"
+    file_name = strip_to_single_line(file.filename or "") or "unknown"
+    file_extension = os.path.splitext(file_name)[1].lower()
     try:
         file_info = FileInfo(filename=file_name, content=io.BytesIO(file_content))
         new_document = await document_parser.process_document(file=file_info, auth_session=auth_session, user=user)
@@ -317,7 +320,7 @@ async def upload_file(
         )
     except NoTextContentError as ex:
         await upload_failed_document(file_content, file_name, user, "no_text_content")
-        logger.info(f"User uploaded file with no text content: {file.filename}")
+        logger.info("User uploaded file with no text content, extension: %s", file_extension)
         content = {
             "error_code": "NO_TEXT_CONTENT_ERROR",
             "status": "failed",
@@ -327,7 +330,7 @@ async def upload_file(
 
     except FileFormatError as ex:
         await upload_failed_document(file_content, file_name, user, "unsupported_format")
-        logger.info(f"User uploaded file not supported: {file_name}")
+        logger.info("User uploaded file not supported, extension: %s", file_extension)
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
@@ -339,7 +342,7 @@ async def upload_file(
         )
     except DocumentParsingError as ex:
         await upload_failed_document(file_content, file_name, user, "malformed_file_content")
-        logger.info(f"User uploaded malformed file: {file.filename}, cause: {ex.cause}")
+        logger.info("User uploaded malformed file, extension: %s, cause: %s", file_extension, ex.cause)
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
@@ -351,7 +354,7 @@ async def upload_file(
         )
     except asyncio.TimeoutError as ex:
         await upload_failed_document(file_content, file_name, user, "timeout")
-        logger.info(f"Processing file timed out: {file.filename}, error: {ex}")
+        logger.info("Processing file timed out, extension: %s, error: %s", file_extension, ex)
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
@@ -362,7 +365,7 @@ async def upload_file(
         )
     except TesseractNotFoundError:
         await upload_failed_document(file_content, file_name, user, "ocr_required")
-        logger.warning(f"Uploaded document requires OCR tesseract tool, file: {file.filename}")
+        logger.warning("Uploaded document requires OCR tesseract tool, extension: %s", file_extension)
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
@@ -376,8 +379,8 @@ async def upload_file(
         )
     except UnsupportedFileFormatError as ex:
         await upload_failed_document(file_content, file_name, user, "unsupported_file_format")
-        logger.warning(f"UnsupportedFileFormatError: {ex},", extra={"file_name": f"{file.filename}"})
-        if file.filename and file.filename.lower().endswith(".docx"):
+        logger.warning("UnsupportedFileFormatError: %s, extension: %s", ex, file_extension)
+        if file_extension == ".docx":
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 content={
@@ -404,8 +407,8 @@ async def upload_file(
             "officeDocument/2006/relationships/officeDocument"
         )
 
-        if file.filename and file.filename.lower().endswith(".docx") and bad_word_error_string in str(e):
-            logger.warning("Error uploading file: %s, error: %s", file.filename, e)
+        if file_extension == ".docx" and bad_word_error_string in str(e):
+            logger.warning("Error uploading file, extension: %s, error: %s", file_extension, e)
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 content={
@@ -417,7 +420,7 @@ async def upload_file(
                 },
             )
 
-        logger.exception("Error uploading file: %s, error: %s", file.filename, e)
+        logger.exception("Error uploading file, extension: %s, error: %s", file_extension, e)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={

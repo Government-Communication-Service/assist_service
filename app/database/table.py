@@ -36,7 +36,7 @@ from .database_url import async_database_url, database_url
 
 logger = logging.getLogger(__name__)
 
-engine = create_engine(database_url())
+engine = create_engine(database_url(), hide_parameters=True)
 
 logger.debug(f"table.py using database URL {engine.url}")
 
@@ -66,6 +66,7 @@ class AsyncEngineProvider:
         if AsyncEngineProvider.__engine is None:
             AsyncEngineProvider.__engine = create_async_engine(
                 async_database_url(),
+                hide_parameters=True,
                 pool_size=settings.db_pool_size,
                 max_overflow=settings.db_max_overflow,
                 pool_timeout=settings.db_pool_timeout_seconds,

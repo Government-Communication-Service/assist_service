@@ -15,14 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bedrock import BedrockHandler, RunMode
 from app.bedrock.bedrock_types import BedrockError, BedrockErrorType
 from app.bedrock.call_log import LlmCallContext
-from app.chat.schemas import ChatRequest, ChatSuccessResponse, ChatTitleRequest
+from app.chat.schemas import ChatRequest, ChatSuccessResponse
 from app.chat.utils import truncate_query_for_helper_call
 from app.classification_and_title.prompts import (
     TOOL_NAME_TITLE_AND_CLASSIFICATION,
     build_title_and_classification_system_prompt,
     build_title_and_classification_tool,
 )
-from app.classification_and_title.schemas import ClassificationInput
+from app.classification_and_title.schemas import ChatTitleRequest, ClassificationInput
 from app.config import LLM_CHAT_TITLE_MODEL, settings
 from app.database.db_operations import DbOperations
 from app.database.models import Chat, ChatClassification, ChatClassificationMapping, User

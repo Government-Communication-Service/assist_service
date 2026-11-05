@@ -12,15 +12,13 @@ from app.auth.verify_service import (
     verify_and_parse_uuid,
     verify_auth_token,
 )
-from app.chat.schemas import FeedbackLabelResponse, MessageResponse
+from app.chat.schemas import MessageResponse
 from app.database.db_operations import DbOperations
 from app.database.table import (
     async_db_session,
 )
-from app.feedback.feedback_methods import (
-    FeedbackRequest,
-    process_message_feedback,
-)
+from app.feedback.feedback_methods import process_message_feedback
+from app.feedback.schemas import FeedbackLabelResponse, FeedbackRequest
 
 router = APIRouter()
 

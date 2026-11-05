@@ -2,6 +2,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.schemas.request import RequestModel
+
 
 class ClassificationInput(BaseModel):
     title: str
@@ -22,3 +24,8 @@ class BulkSyncResult(BaseModel):
     created: int
     updated: int
     deprecated: int
+
+
+class ChatTitleRequest(RequestModel):
+    query: str = ""
+    system: str = ""
