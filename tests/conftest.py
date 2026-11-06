@@ -22,6 +22,7 @@ os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
 
 import anyio
 import httpx
+import httpx2
 import pytest
 from anthropic.types import TextBlock
 from fastapi.testclient import TestClient
@@ -223,25 +224,31 @@ def block_live_bedrock_calls(monkeypatch):
     Tests must mock the model (e.g. with `mock_chat_model` or `mock_llm_response`); this catches a
     test that forgets to, rather than letting it fail later on missing credentials or call the real model.
     """
-    original_send = httpx.Client.send
-    original_async_send = httpx.AsyncClient.send
     attempted: list[str] = []
 
-    def _check(request: httpx.Request):
+    def _check(request):
         if "bedrock" in request.url.host:
             attempted.append(f"{request.method} {request.url}")
             raise LiveBedrockCallError(f"Tests must not call AWS Bedrock: {request.method} {request.url}")
 
-    def send(self, request, *args, **kwargs):
-        _check(request)
-        return original_send(self, request, *args, **kwargs)
+    def guard_sync(original_send):
+        def send(self, request, *args, **kwargs):
+            _check(request)
+            return original_send(self, request, *args, **kwargs)
 
-    async def async_send(self, request, *args, **kwargs):
-        _check(request)
-        return await original_async_send(self, request, *args, **kwargs)
+        return send
 
-    monkeypatch.setattr(httpx.Client, "send", send)
-    monkeypatch.setattr(httpx.AsyncClient, "send", async_send)
+    def guard_async(original_send):
+        async def send(self, request, *args, **kwargs):
+            _check(request)
+            return await original_send(self, request, *args, **kwargs)
+
+        return send
+
+    # The anthropic SDK sends over httpx2; other clients use httpx.
+    for module in (httpx, httpx2):
+        monkeypatch.setattr(module.Client, "send", guard_sync(module.Client.send))
+        monkeypatch.setattr(module.AsyncClient, "send", guard_async(module.AsyncClient.send))
     yield
     # The app's retry and error handling can swallow the error above, so check again here.
     assert not attempted, f"Tests must not call AWS Bedrock, but this test tried: {attempted}"

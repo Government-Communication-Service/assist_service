@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import anthropic
-import httpx
+import httpx2
 import pytest
 from anthropic._exceptions import ServiceUnavailableError
 from anthropic.types import Message
@@ -36,11 +36,11 @@ def no_backoff():
         yield
 
 
-_REQUEST = httpx.Request("POST", "https://bedrock-runtime.example/model/invoke")
+_REQUEST = httpx2.Request("POST", "https://bedrock-runtime.example/model/invoke")
 
 
 def _status_error(cls, status_code: int, message: str = "error"):
-    return cls(message, response=httpx.Response(status_code, request=_REQUEST), body=None)
+    return cls(message, response=httpx2.Response(status_code, request=_REQUEST), body=None)
 
 
 def _ok_message():
@@ -195,7 +195,7 @@ async def test_aws_region_failover_for_llm_invoke_async_success(mock_invoke, cap
         _status_error(ServiceUnavailableError, 503),
         anthropic.APIConnectionError(request=_REQUEST),
         anthropic.APITimeoutError(request=_REQUEST),
-        httpx.ConnectError("refused"),
+        httpx2.ConnectError("refused"),
     ],
 )
 @patch("app.bedrock.bedrock.BedrockHandler._invoke_async")
@@ -263,10 +263,18 @@ async def test_final_failure_is_logged_with_its_stack(mock_invoke, caplog):
     assert "after 3 attempt(s)" in record.getMessage()
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        anthropic.APITimeoutError(request=_REQUEST),
+        # Raised unwrapped by the SDK when a timeout happens while reading a stream.
+        httpx2.ReadTimeout("read timed out"),
+    ],
+)
 @patch("app.bedrock.retry.AWS_BEDROCK_REGIONS_MAX_RETRIES", 2)
 @patch("app.bedrock.bedrock.BedrockHandler._invoke_async")
-async def test_final_timeout_is_mapped_to_timeout(mock_invoke):
-    mock_invoke.side_effect = anthropic.APITimeoutError(request=_REQUEST)
+async def test_final_timeout_is_mapped_to_timeout(mock_invoke, error):
+    mock_invoke.side_effect = error
 
     with pytest.raises(BedrockError) as exc_info:
         await BedrockHandler(mode=RunMode.ASYNC).invoke_async([{"role": "user", "content": "hello"}])

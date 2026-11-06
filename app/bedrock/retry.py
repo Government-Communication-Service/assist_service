@@ -7,7 +7,7 @@ from functools import wraps
 from typing import TYPE_CHECKING
 
 import anthropic
-import httpx
+import httpx2
 
 from app.bedrock.bedrock_types import (
     AnthropicBedrockProvider,
@@ -58,7 +58,7 @@ def _is_retryable(ex: Exception) -> bool:
     if isinstance(ex, anthropic.APIStatusError):
         return ex.status_code == 429 or ex.status_code >= 500
     # APITimeoutError is an APIConnectionError
-    return isinstance(ex, (anthropic.APIConnectionError, httpx.TransportError, TimeoutError))
+    return isinstance(ex, (anthropic.APIConnectionError, httpx2.TransportError, TimeoutError))
 
 
 def _backoff_seconds(attempt: int) -> float:
@@ -88,7 +88,7 @@ def _final_error(ex: Exception, attempts: int, region: str) -> BedrockError:
     )
     if _is_input_too_long(ex):
         return BedrockError("Input is too long", BedrockErrorType.INPUT_TOO_LONG)
-    if isinstance(ex, (anthropic.APITimeoutError, httpx.TimeoutException, TimeoutError)):
+    if isinstance(ex, (anthropic.APITimeoutError, httpx2.TimeoutException, TimeoutError)):
         return BedrockError(f"AWS Bedrock call timed out, last exception: {ex!r}", BedrockErrorType.TIMEOUT)
     return BedrockError(f"AWS Bedrock call failed, last exception: {ex}")
 

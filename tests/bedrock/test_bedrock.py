@@ -5,7 +5,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import anthropic
-import httpx
+import httpx2
 import pytest
 from anthropic.types.message import Message as AnthropicMessage
 from anthropic.types.usage import Usage
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def _transient_error():
-    return anthropic.APIConnectionError(request=httpx.Request("POST", "https://bedrock-runtime.example"))
+    return anthropic.APIConnectionError(request=httpx2.Request("POST", "https://bedrock-runtime.example"))
 
 
 @asynccontextmanager
