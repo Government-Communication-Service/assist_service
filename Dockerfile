@@ -1,4 +1,4 @@
-FROM amazonlinux:2023
+FROM amazonlinux:2023.12.20261021.0
 
 # Set the desired version of pandoc
 ENV PANDOC_VERSION=3.1.1

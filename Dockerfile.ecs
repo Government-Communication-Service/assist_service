@@ -6,7 +6,7 @@
 #
 # Build context is the repo root:
 #   docker build --platform linux/amd64 -f Dockerfile.ecs -t copilot-api .
-FROM amazonlinux:2023
+FROM amazonlinux:2023.12.20261021.0
 
 ENV PANDOC_VERSION=3.1.1
 ENV PANDOC_SHA256=52b25f0115517e32047a06d821e63729108027bd06d9605fe8eac0fa83e0bf81
