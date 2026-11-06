@@ -12,7 +12,7 @@ dynamic = ["dependencies"]
 
 [project.optional-dependencies]
 dev = [
-    "pytest==9.1.1",
+    "pytest==9.2.0",
     "pytest-asyncio==1.4.*",
     "pytest-mock==3.16.*",
     "httpx==0.28.1",
@@ -21,7 +21,7 @@ dev = [
     "pytest-xdist==3.6.*",
     "streamlit==1.66.1",
     "plotly==7.1.0",
-    "moto[s3]==5.2.3"
+    "moto[s3]==5.2.5"
 ]
 
 [tool.setuptools]
