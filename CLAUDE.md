@@ -238,7 +238,6 @@ Key environment variables (defined in `.env`):
 2. Ensure Docker has at least 4GB memory allocated
 3. Run `make start` to build and start all services
 4. API available at `http://localhost:5312` (docs at `/docs`)
-5. Database admin at `http://localhost:4040`
 
 ## Pull Requests
 

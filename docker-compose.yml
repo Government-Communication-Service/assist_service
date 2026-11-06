@@ -54,7 +54,5 @@ services:
         condition: service_healthy
       opensearch-node1:
         condition: service_healthy
-      opensearch-node2:
-        condition: service_healthy
     networks:
       - copilot_api
