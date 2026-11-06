@@ -77,7 +77,7 @@ requests~=2.34
 pytest~=9.2.0
 pytest-asyncio~=1.4
 pytest-mock~=3.16
-pytest-xdist~=3.6
+pytest-xdist~=3.8
 pytest-cov~=7.1
 moto[s3]==5.2.5
 
