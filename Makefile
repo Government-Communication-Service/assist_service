@@ -205,10 +205,7 @@ migrate:
 	fi
 
 install:
-	pip install -r requirements.txt
-
-freeze:
-	pip freeze > requirements.txt
+	uv sync
 
 lint:
 	$(docker-cmd) "ruff check --fix --extend-ignore F403 --extend-ignore E402 --extend-ignore E712 --extend-ignore E711 && ruff format"

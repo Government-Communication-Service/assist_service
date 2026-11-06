@@ -1,3 +1,6 @@
+# Separate stage so Dependabot updates the uv version (it only reads FROM lines).
+FROM ghcr.io/astral-sh/uv:0.11.3 AS uv
+
 FROM amazonlinux:2023.12.20261021.0
 
 # Set the desired version of pandoc
@@ -26,28 +29,25 @@ RUN curl -L https://github.com/jgm/pandoc/releases/download/$PANDOC_VERSION/pand
 
 # configure python3.12 as the default python
 RUN ln -sf /usr/bin/python3.12 /usr/bin/python
-# Install pip using Python's ensurepip
-RUN python -m ensurepip --upgrade && \
-    python -m pip install --upgrade pip
-# Set pip3.12 as the default pip
-RUN ln -sf /usr/bin/pip3.12 /usr/bin/pip
 
-
-
+# uv installs into a venv outside /app so the docker-compose bind mount of the source doesn't hide it.
+COPY --from=uv /uv /usr/local/bin/uv
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_PYTHON=/usr/bin/python3.12 \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+ENV PATH="/opt/venv/bin:$PATH"
 
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy only the files needed for pip installation
-COPY requirements.txt requirements.local.txt ./
+# Copy only the files needed for dependency installation
+COPY pyproject.toml uv.lock ./
 COPY app/alembic ./app/alembic
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Conditional installation of development dependencies
-ARG DEBUG_MODE
-RUN if [ "$DEBUG_MODE" = "True" ] ; then pip install -r requirements.local.txt ; fi
+# Install Python dependencies, including the dev group (tests, debugpy)
+RUN uv sync --frozen --no-cache
 
 # Copy the rest of the application
 COPY . .

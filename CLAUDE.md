@@ -16,6 +16,12 @@ This is the Copilot API (now known as "Assist"), a GenAI-powered FastAPI service
 - **Stop containers**: `make down`
 - **Debug mode**: `make up-debug` (enables debugpy on port 5678)
 
+### Dependencies (uv)
+Dependencies are declared in `pyproject.toml` and locked in `uv.lock`. Test, lint and debug tools are in the `dev` dependency group, which isn't installed in production. torch and torchvision come from the PyTorch CPU index via `[tool.uv.sources]`.
+- **Add or change a dependency**: edit `pyproject.toml` (or `uv add <pkg>`), then `uv lock`
+- **Elastic Beanstalk**: installs with pip from `requirements.txt`, which isn't committed. `.platform/hooks/prebuild/01_generate_requirements.sh` generates it from `uv.lock` on each deploy.
+- **Local venv**: `uv sync` (the Docker images install into `/opt/venv`)
+
 ### Database Management
 - **Reset database**: `make db` (WARNING: deletes all data)
 - **Database migrations**: `make migrate` (with interactive message prompt)

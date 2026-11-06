@@ -38,4 +38,6 @@ scripts/style_guide/golden_dataset/output/
 scripts/style_guide/web_scraper/output/
 data/create_database.sql
 .envrc
+# Generated from uv.lock at deploy time by .platform/hooks/prebuild/01_generate_requirements.sh
+requirements.txt
 __marimo__/

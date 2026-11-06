@@ -151,7 +151,7 @@ def test_parse_csv_with_no_detectable_delimiter_does_not_raise(csv_bytes):
     whenever csv.Sniffer can't detect a delimiter (single-column/tab-delimited input).
     pandas 3.x's C parser raises a bare TypeError for sep=None instead of falling back
     to the python engine like pre-3.0 did, which used to escape this method as an
-    unhandled 500. requirements.txt now pins pandas<3.0 to fix this at the dependency
+    unhandled 500. pyproject.toml now pins pandas<3.0 to fix this at the dependency
     level - this test guards against a future bump reintroducing it.
     """
     parser = PersonalDocumentParser()
