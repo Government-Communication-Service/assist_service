@@ -90,6 +90,12 @@ from app.database.table import (
     async_db_session,
 )
 from app.logs.logs_handler import logger
+from app.user.chat_options import (
+    CHAT_OPTION_FIELDS,
+    record_chat_options,
+    resolve_chat_options,
+    update_chat_options,
+)
 
 
 async def get_all_user_chats(db_session: AsyncSession, user: User):
@@ -469,26 +475,27 @@ async def chat_create(input_data: ChatCreateInput) -> ChatWithLatestMessage:
     if input_data.use_case_id:
         from_open_chat = False
 
-    logger.debug("starting creating db item")
-    chat_repo = ChatTable()
-    chat_data = {
-        "user_id": input_data.user_id,
-        "from_open_chat": from_open_chat,
-        "use_case_id": input_data.use_case_id,
-        "title": title,
-        "use_rag": input_data.use_rag,
-        "use_gov_uk_search_api": input_data.use_gov_uk_search_api,
-        "use_smart_targets": input_data.use_smart_targets,
-    }
-    chat_obj = chat_repo.create(chat_data)
-
-    logger.debug("starting create message")
-    logger.debug(f"input_data.to_dict(): {input_data.to_dict()}")
-
     async with async_db_session() as db_session:
+        await resolve_chat_options(db_session, input_data.user_id, input_data)
+
+        logger.debug("starting creating db item")
+        chat_obj = Chat(
+            user_id=input_data.user_id,
+            from_open_chat=from_open_chat,
+            use_case_id=input_data.use_case_id,
+            title=title,
+            use_rag=input_data.use_rag,
+            use_gov_uk_search_api=input_data.use_gov_uk_search_api,
+            use_smart_targets=input_data.use_smart_targets,
+        )
         db_session.add(chat_obj)
         await db_session.flush()
         await db_session.refresh(chat_obj)
+
+    # The chat is committed before chat_create_message, which saves the user message in a separate sync session.
+    async with async_db_session() as db_session:
+        logger.debug("starting create message")
+        logger.debug(f"input_data.to_dict(): {input_data.to_dict()}")
 
         turn = await chat_create_message(
             chat=chat_obj,
@@ -555,6 +562,18 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
         )
 
     ai_message = MessageDefaults(**message_defaults)
+
+    chat_options_before = {field: getattr(chat, field) for field in CHAT_OPTION_FIELDS}
+    await resolve_chat_options(db_session, chat.user_id, input_data, chat_options=chat_options_before)
+    chat_options = {field: getattr(input_data, field) for field in CHAT_OPTION_FIELDS}
+    await record_chat_options(
+        db_session,
+        chat.user_id,
+        chat_options,
+        previous_chat_options=None if input_data.initial_call else chat_options_before,
+        message_id=m_user.id,
+    )
+    await update_chat_options(db_session, chat, chat_options)
 
     system = await build_chat_system_prompt(db_session)
 

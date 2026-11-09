@@ -83,6 +83,29 @@ class User(Base):
         }
 
 
+class UserChatOptions(Base):
+    """Append-only log of a user's chat option changes.
+
+    The latest live row holds the user's current options. A null option means the user has never set it,
+    so it follows the default in app/config.py.
+    """
+
+    __tablename__ = "user_chat_options"
+    __table_args__ = (
+        Index(
+            "ix_user_chat_options_user_id_created_at",
+            "user_id",
+            "created_at",
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
+    user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
+    message_id = Column(Integer, ForeignKey("message.id"), nullable=True)
+    use_rag = Column(Boolean, nullable=True)
+    use_gov_uk_search_api = Column(Boolean, nullable=True)
+    use_smart_targets = Column(Boolean, nullable=True)
+
+
 class UserGroup(Base):
     __tablename__ = "user_group"
     group = Column(String(255), nullable=False)

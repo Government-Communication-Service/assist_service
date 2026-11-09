@@ -37,6 +37,7 @@ class ENDPOINTS:
     USER_GET_CHATS = "/chats/users/{user_uuid}/chats"
     USER_DOCUMENTS = "/users/{user_uuid}/documents"
     USER_DOCUMENT = "/users/{user_uuid}/documents/{document_uuid}"
+    USER_CHAT_OPTIONS = "/users/{user_uuid}/chat-options"
     # Add new endpoint for cleaning up expired documents
     DOCUMENT_CLEANUP_EXPIRED = "/documents/expired"
 
@@ -79,6 +80,9 @@ class ENDPOINTS:
 
     def user_document(self, user_uuid: UUID, document_uuid: UUID) -> str:
         return self.build_url(self.USER_DOCUMENT, user_uuid=user_uuid, document_uuid=document_uuid)
+
+    def user_chat_options(self, user_uuid: UUID) -> str:
+        return self.build_url(self.USER_CHAT_OPTIONS, user_uuid=user_uuid)
 
     def get_user_prompts(self, user_uuid: UUID) -> str:
         return self.build_url(self.USER_PROMPTS, user_uuid=user_uuid)

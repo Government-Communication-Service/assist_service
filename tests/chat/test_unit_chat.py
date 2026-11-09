@@ -546,7 +546,7 @@ async def test_non_streaming_turn_runs_after_the_request_session_closes(entry_po
         nonlocal session_open
         session_open = True
         try:
-            yield AsyncMock()
+            yield AsyncMock(add=MagicMock())
         finally:
             session_open = False
 
@@ -560,7 +560,7 @@ async def test_non_streaming_turn_runs_after_the_request_session_closes(entry_po
         patch.object(service, "async_db_session", fake_async_db_session),
         patch.object(service, "chat_create_message", AsyncMock(return_value=turn)),
         patch.object(service, "_chat_message_with_documents", AsyncMock(side_effect=lambda c, s, data: data)),
-        patch.object(service, "ChatTable", return_value=MagicMock(create=MagicMock(return_value=chat))),
+        patch.object(service, "Chat", return_value=chat),
         patch.object(service, "ChatWithLatestMessage", MagicMock()),
         patch.object(service, "ChatCreateMessageInput", MagicMock()),
     ):

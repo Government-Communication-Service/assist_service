@@ -31,7 +31,9 @@ from app.document_upload.personal_document_parser import (
 )
 from app.opensearch.service import AsyncOpenSearchOperations
 from app.schemas.text import strip_to_single_line
+from app.user.chat_options import get_current_chat_options
 from app.user.schemas import (
+    ChatOptionsResponse,
     DocumentResponse,
     DocumentSchema,
     ListDocumentResponse,
@@ -103,6 +105,31 @@ async def update_user(
     if not result.success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.message)
     return result
+
+
+@router.get(
+    ENDPOINTS.USER_CHAT_OPTIONS,
+    response_model=ChatOptionsResponse,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+)
+async def get_chat_options(
+    db_session: DbSession,
+    user: User = Depends(verify_and_get_user_from_path_and_header),
+) -> ChatOptionsResponse:
+    """
+    Return the user's current chat options.
+
+    These are the options used when a chat request leaves a flag out. They change whenever the user sends a
+    message with different options.
+
+    Usage:
+        GET /users/{user_uuid}/chat-options
+    """
+    options = await get_current_chat_options(db_session, user.id)
+    return ChatOptionsResponse(**options)
 
 
 @router.post(

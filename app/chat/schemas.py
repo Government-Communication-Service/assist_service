@@ -61,18 +61,23 @@ class ChatLLMResponse(BaseModel):
     output_tokens: Optional[int]
 
 
-class ChatBaseRequest(RequestStandard):
+class ChatOptions(BaseModel):
+    """Chat option flags on a chat request. None means use the user's current option (see app/user/chat_options.py)."""
+
+    use_rag: bool | None = None
+    use_gov_uk_search_api: bool | None = None
+    use_smart_targets: bool | None = None
+
+
+class ChatBaseRequest(ChatOptions, RequestStandard):
     query: str = ""
     system: str = ""
     stream: bool = False
     parent_message_id: Optional[str] = None
     user_group_ids: Optional[List[int]] = []
     use_case_id: Optional[int]
-    use_rag: bool = True
-    use_gov_uk_search_api: bool = False
     enable_web_browsing: bool = False
     document_uuids: Optional[List[str]] = None
-    use_smart_targets: bool = False
     audience_segment_uuids: list[UUID] | None = None
     thinking_level: Optional[ThinkingLevel] = None
 
@@ -81,12 +86,9 @@ class ChatQueryRequest(RequestModel):
     query: str
 
 
-class ChatRequest(ChatQueryRequest):
+class ChatRequest(ChatOptions, ChatQueryRequest):
     use_case_id: Optional[str] = ""
-    use_rag: bool = True
-    use_gov_uk_search_api: bool = False
     document_uuids: Optional[List[str]] = None
-    use_smart_targets: bool = False
     audience_segment_uuids: list[UUID] | None = None
     thinking_level: Optional[ThinkingLevel] = None
 

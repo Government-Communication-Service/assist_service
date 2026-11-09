@@ -44,3 +44,9 @@ class UserCreationInput(UserInput):
 class UserCreationResponse(BaseModel):
     success: bool
     message: str
+
+
+class ChatOptionsResponse(BaseModel):
+    use_rag: bool
+    use_gov_uk_search_api: bool
+    use_smart_targets: bool

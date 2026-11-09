@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 from enum import Enum
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
@@ -127,6 +128,24 @@ class AppSettings(BaseSettings):
     )
     debug_mode: bool = False
     debug_logging: bool = False
+
+    # --- chat options ---
+    # Options for users who have never changed them (see app/user/chat_options.py).
+    default_use_rag: bool = True
+    default_use_gov_uk_search_api: bool = True
+    default_use_smart_targets: bool = True
+    # When False, chat requests don't add rows to user_chat_options, so every user keeps the defaults.
+    record_user_chat_options: bool = True
+    # user_chat_options rows created before this time (UTC) are ignored, so every user starts again from the defaults.
+    chat_options_reset_at: datetime | None = None
+
+    @field_validator("chat_options_reset_at")
+    @classmethod
+    def _chat_options_reset_at_as_naive_utc(cls, value: datetime | None) -> datetime | None:
+        # user_chat_options.created_at is a naive UTC timestamp.
+        if value is None or value.tzinfo is None:
+            return value
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
 
     # --- Probably unused ---
     use_jwt_token: bool = False
@@ -443,6 +462,15 @@ GCS_DATA_API_URL = settings.gcs_data_api_url
 # Feature flags
 USE_RAG = settings.use_rag
 CAMPAIGN_BENCHMARKS_SERVICE_DISABLED = settings.campaign_benchmarks_service_disabled
+
+# Chat options
+DEFAULT_CHAT_OPTIONS = {
+    "use_rag": settings.default_use_rag,
+    "use_gov_uk_search_api": settings.default_use_gov_uk_search_api,
+    "use_smart_targets": settings.default_use_smart_targets,
+}
+RECORD_USER_CHAT_OPTIONS = settings.record_user_chat_options
+CHAT_OPTIONS_RESET_AT = settings.chat_options_reset_at
 
 # OpenSearch (non-secret)
 OPENSEARCH_USER = settings.opensearch_user
