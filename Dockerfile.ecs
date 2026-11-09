@@ -9,7 +9,7 @@
 # Separate stage so Dependabot updates the uv version (it only reads FROM lines).
 FROM ghcr.io/astral-sh/uv:0.13.7 AS uv
 
-FROM amazonlinux:2023.12.20261021.0
+FROM amazonlinux:2023.12.20261102.0
 
 ENV PANDOC_VERSION=3.1.1
 ENV PANDOC_SHA256=52b25f0115517e32047a06d821e63729108027bd06d9605fe8eac0fa83e0bf81
