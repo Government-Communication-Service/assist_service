@@ -270,6 +270,17 @@ Key environment variables (defined in `.env`):
 
 Title pull requests `Type(scope): summary`, e.g. `Fix(chat): stop duplicate citations` or `Refactor(tests): mock Bedrock and OpenSearch`.
 
+Put everything you write in the description inside a collapsed block labelled with your model name, and leave the space above it for the human-written summary:
+```
+<details><summary>Claude Opus 5.5</summary>
+
+...
+
+</details>
+```
+
+If the PR adds a database migration, put 🗃️ after the type in the title (`Feat(chat): 🗃️ Remember chat options`) and end the description, which becomes the squash commit body, with `Migration: <revision ID>`, one line per revision, after the `</details>` so git reads it as a trailer. `git log --oneline -- app/alembic/versions` lists every commit that touched a migration.
+
 ## Deployment
 
 The project uses Git-based deployment to AWS:
