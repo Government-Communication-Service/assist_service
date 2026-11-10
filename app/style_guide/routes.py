@@ -129,5 +129,5 @@ async def check_style_guide(request: StyleGuideCheckRequest) -> StyleGuideCheckR
         )
 
     except Exception as e:
-        logger.error(f"Error checking style guide: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error checking style guide: {str(e)}") from e
+        logger.exception("Error checking style guide")
+        raise HTTPException(status_code=500, detail="Error checking style guide") from e

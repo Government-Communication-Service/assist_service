@@ -24,8 +24,16 @@ class BedrockError(AppError):
         super().__init__(msg)
         self.error_type = error_type
 
+    @property
+    def detail(self) -> str:
+        if self.error_type == BedrockErrorType.INPUT_TOO_LONG:
+            return "Input is too long"
+        if self.error_type == BedrockErrorType.TIMEOUT:
+            return "AWS Bedrock call timed out"
+        return "AWS Bedrock call failed"
+
     def content(self) -> dict:
-        return {"status": "failed", "error_code": "BEDROCK_SERVICE_ERROR", "status_message": str(self)}
+        return {"status": "failed", "error_code": "BEDROCK_SERVICE_ERROR", "status_message": self.detail}
 
 
 class AnthropicBedrockProvider:

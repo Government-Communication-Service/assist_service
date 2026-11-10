@@ -391,20 +391,18 @@ class Table(Generic[T]):
                         .filter(self.model.deleted_at.is_(None), self.model.uuid == uuid)
                         .first()
                     )
-
-                if db_obj:
-                    return db_obj
-                raise DatabaseError(
-                    code=DatabaseExceptionErrorCode.GET_BY_UUID_ERROR,
-                    message=f"An error occurred when retrieving a record from the {self.table_name} table"
-                    + f" using {uuid=}: no record was found with this UUID.",
-                )
         except Exception as e:
             raise DatabaseError(
-                code=DatabaseExceptionErrorCode.GET_BY_UUID_ERROR,
+                code=DatabaseExceptionErrorCode.GET_ERROR,
                 message=f"An error occurred when retrieving a record from the {self.table_name} table using {uuid=}: "
                 + f"Original error: {e}",
             ) from e
+        if db_obj:
+            return db_obj
+        raise DatabaseError(
+            code=DatabaseExceptionErrorCode.GET_BY_UUID_ERROR,
+            message=f"No record was found in the {self.table_name} table using {uuid=}.",
+        )
 
     def most_recent(self) -> T | None:
         try:

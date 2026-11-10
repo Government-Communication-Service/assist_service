@@ -4,6 +4,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from app.bedrock.bedrock_types import BedrockError, BedrockErrorType
 from app.database.database_exception import DatabaseError, DatabaseExceptionErrorCode
 from app.exceptions.app_error import AppError
 from app.exceptions.handlers import register_exception_handlers
@@ -118,3 +119,21 @@ def test_database_error_mapping_depends_on_code(code, status_code, content, expe
     exc = DatabaseError(code=code, message="db message")
 
     assert (exc.status_code, exc.content(), exc.expected) == (status_code, content, expected)
+
+
+@pytest.mark.parametrize(
+    ("error_type", "status_message"),
+    [
+        (BedrockErrorType.INPUT_TOO_LONG, "Input is too long"),
+        (BedrockErrorType.TIMEOUT, "AWS Bedrock call timed out"),
+        (None, "AWS Bedrock call failed"),
+    ],
+)
+def test_bedrock_error_body_omits_exception_text(error_type, status_message):
+    exc = BedrockError("AWS Bedrock call failed, last exception: secret internals", error_type)
+
+    assert exc.content() == {
+        "status": "failed",
+        "error_code": "BEDROCK_SERVICE_ERROR",
+        "status_message": status_message,
+    }
