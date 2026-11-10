@@ -603,6 +603,37 @@ class TestUserChatsV1:
         logger.debug(f"GET Response body: {post_response}")
 
     @pytest.mark.asyncio
+    async def test_post_chat_user_uuid_mismatch_logs_error(self, async_client, async_http_requester, caplog):
+        url = api.chats(user_uuid=uuid.uuid4())
+        with caplog.at_level(logging.INFO):
+            response = await async_http_requester(
+                "chat_endpoint", async_client.post, url, response_code=403, json={"query": "hello"}
+            )
+        assert response == {"detail": "User UUID mismatch"}
+        assert any(
+            record.levelno == logging.ERROR and "UserUuidNotMatchingError" in record.getMessage()
+            for record in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("use_case_id", "detail"),
+        [("not-a-uuid", "use_case_id malformed"), ("e7d260f0-c4ba-4c04-9a42-72a75e2e01c6", "Use case not found")],
+    )
+    async def test_post_chat_bad_use_case_id_returns_400(
+        self, async_client, user_id, async_http_requester, use_case_id, detail
+    ):
+        url = api.chats(user_uuid=user_id)
+        response = await async_http_requester(
+            "chat_endpoint",
+            async_client.post,
+            url,
+            response_code=400,
+            json={"query": "hello", "use_rag": False, "use_case_id": use_case_id},
+        )
+        assert response == {"detail": detail}
+
+    @pytest.mark.asyncio
     async def test_get_chat(self, async_client, chat_item, user_id, async_http_requester):
         url = api.get_chat_item(user_id, chat_item["uuid"])
         logger.debug(f"GET chat_endpoint: {url}")

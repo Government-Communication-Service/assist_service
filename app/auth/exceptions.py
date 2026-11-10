@@ -1,3 +1,6 @@
+from app.exceptions.app_error import AppError
+
+
 class UuidMissingError(Exception):
     """Triggered when a required UUID is missing from the header of a request."""
 
@@ -10,51 +13,69 @@ class UuidInvalidError(Exception):
     pass
 
 
-class AuthTokenMissingError(Exception):
+class AuthTokenMissingError(AppError):
     """Triggered when the Auth-Token header is missing from a request."""
 
-    pass
+    status_code = 401
+    detail = "Auth token missing"
 
 
-class AuthTokenInvalidError(Exception):
+class AuthTokenInvalidError(AppError):
     """Triggered when the Auth-Token header was provided but did not match any of the expected Auth-Tokens"""
 
-    pass
+    status_code = 401
+    detail = "Auth token invalid"
 
 
-class UserKeyUuidMissingError(Exception):
+class UserKeyUuidMissingError(AppError):
     """Triggered when the User-Key-UUID header is missing."""
 
-    pass
+    status_code = 400
+    detail = "User key UUID missing"
+    expected = True
 
 
-class UserKeyUuidMalformedError(Exception):
+class UserKeyUuidMalformedError(AppError):
     """Triggered when the User-Key-UUID header is provided but invalid."""
 
-    pass
+    status_code = 400
+    detail = "User key UUID malformed"
+    expected = True
 
 
-class UserUuidNotMatchingError(Exception):
+class UserUuidNotMatchingError(AppError):
     """Triggered when the User-Key-UUID in the header does not match the user_uuid provided as a path parameter."""
 
+    status_code = 403
+    detail = "User UUID mismatch"
 
-class AddNewUserError(Exception):
+
+class AddNewUserError(AppError):
     """Triggered when attempting to add a new user to the database."""
 
-    pass
+    status_code = 401
+    detail = "Unable to add user"
 
 
-class SessionUuidMissingError(Exception):
+class SessionUuidMissingError(AppError):
     """Triggered when the Session-Auth header is missing."""
 
-    pass
+    status_code = 400
+    detail = "Session UUID missing"
+    expected = True
 
 
-class SessionUuidMalformedError(Exception):
+class SessionUuidMalformedError(AppError):
     """Triggered when the Session-Auth header is provided but invalid."""
 
-    pass
+    status_code = 400
+    detail = "Session UUID malformed"
+    expected = True
 
 
-class SessionUuidNotInDatabaseError(Exception):
+class SessionUuidNotInDatabaseError(AppError):
     """Triggered when the Session-Auth provided was a valid UUID but could not be found in the database."""
+
+    status_code = 404
+    detail = "Session not found"
+    expected = True

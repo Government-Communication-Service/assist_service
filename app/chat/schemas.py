@@ -49,12 +49,6 @@ class MessageResponse(BaseModel):
     citation: str
 
 
-class DocumentAccessError(Exception):
-    def __init__(self, *args, document_uuids: List[str]):
-        super().__init__(*args)
-        self.document_uuids = document_uuids
-
-
 class ChatLLMResponse(BaseModel):
     content: str
     input_tokens: Optional[int]

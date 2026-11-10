@@ -7,12 +7,13 @@ from typing import Dict, Optional
 from uuid import UUID
 
 import sqlalchemy
-from fastapi import Body, Depends, Header, HTTPException
+from fastapi import Body, Depends, Header
 from fastapi.responses import StreamingResponse
 from sqlalchemy import cast, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.constants import USER_GROUPS_ALIAS
+from app.auth.exceptions import UuidInvalidError, UuidMissingError
 from app.auth.verify_service import (
     verify_and_get_auth_session_from_header,
     verify_and_get_user_from_path_and_header,
@@ -34,6 +35,7 @@ from app.chat.agent_loop import (
 )
 from app.chat.cache_control import apply_compaction_aware_cache_control
 from app.chat.constants import DELETION_NOTICE
+from app.chat.exceptions import DocumentAccessError, UseCaseIdMalformedError, UseCaseNotFoundError
 from app.chat.prompts import build_chat_system_prompt, build_turn_context_block
 from app.chat.schemas import (
     ChatBasicResponse,
@@ -45,7 +47,6 @@ from app.chat.schemas import (
     ChatSuccessResponse,
     ChatWithAllMessages,
     ChatWithLatestMessage,
-    DocumentAccessError,
     DocumentSchema,
     MessageBasicResponse,
     MessageDefaults,
@@ -69,6 +70,7 @@ from app.config import (
     LLM_CHAT_RESPONSE_MODEL,
     TEST_USER_GROUPS,
 )
+from app.database.database_exception import DatabaseError, DatabaseExceptionErrorCode
 from app.database.db_operations import DbOperations
 from app.database.models import (
     LLM,
@@ -128,6 +130,9 @@ def chat_stream_message(chat: Chat, message_uuid: str, content: str, citations: 
     return response
 
 
+STREAM_ERROR_MESSAGE = "An error occurred while generating the response."
+
+
 def chat_stream_error_message(chat: Chat, ex: Exception, has_documents: bool, is_initial_call: bool) -> str:
     if isinstance(ex, BedrockError) and ex.error_type == BedrockErrorType.INPUT_TOO_LONG:
         if has_documents:
@@ -144,7 +149,11 @@ def chat_stream_error_message(chat: Chat, ex: Exception, has_documents: bool, is
             "error_message": error_message,
         }
     else:
-        response = {**chat.client_response(), "error_code": "BEDROCK_SERVICE_ERROR", "error_message": str(ex)}
+        response = {
+            **chat.client_response(),
+            "error_code": "BEDROCK_SERVICE_ERROR",
+            "error_message": STREAM_ERROR_MESSAGE,
+        }
 
     logger.debug(f"API chat_stream_message: {json.dumps(response, indent=5)}")
 
@@ -181,17 +190,20 @@ def chat_request_data(
     del data.use_case_id
     data_dict = data.to_dict()
 
-    try:
-        if use_case_id:
-            use_case_id = verify_and_parse_uuid(use_case_id)
+    if use_case_id:
+        try:
+            use_case_uuid = verify_and_parse_uuid(use_case_id)
+        except (UuidMissingError, UuidInvalidError) as e:
+            raise UseCaseIdMalformedError(f"use_case_id was not a UUID for user {user.id}") from e
+        try:
+            use_case = UseCaseTable().get_by_uuid(use_case_uuid)
+        except DatabaseError as e:
+            if e.code != DatabaseExceptionErrorCode.GET_BY_UUID_ERROR:
+                raise
+            raise UseCaseNotFoundError(f"No use case {use_case_uuid}") from e
+        data_dict["use_case_id"] = use_case.id
 
-            data_dict["use_case_id"] = UseCaseTable().get_by_uuid(use_case_id).id
-
-        return ChatRequestData(
-            user_id=user.id, auth_session_id=auth_session.id, user_group_ids=user_group_ids, **data_dict
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+    return ChatRequestData(user_id=user.id, auth_session_id=auth_session.id, user_group_ids=user_group_ids, **data_dict)
 
 
 async def chat_create_stream(data: ChatCreateInput):

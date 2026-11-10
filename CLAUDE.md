@@ -79,7 +79,7 @@ Each domain module contains:
 - `routes.py` - FastAPI endpoints
 - `service.py` - Business logic
 - `schemas.py` - Pydantic models
-- `models.py` - Database models (SQLAlchemy)
+- `queries.py` - Database queries (models themselves are central in `app/database/models.py`)
 - `constants.py` - Module-specific constants
 - `config.py` - Module-specific configuration
 
@@ -108,7 +108,7 @@ from app.database.models import User, AuthSession
   ]
 )
 async def new_endpoint_1(
-  db_session: AsyncSession = Depends(get_db_session), # We want the database session in our business logic so we return it here
+  db_session: DbSession, # We want the database session in our business logic so we return it here
   user: User = Depends(verify_and_get_user_from_path_and_header), # We want the user object in our business logic so we return it here
   auth_session: AuthSession = Depends(verify_and_get_auth_session_from_header), # We want the auth session object in our business logic so we return it here
 ) -> ...:
@@ -133,14 +133,13 @@ Sometimes you will want to create additional validation logic. This validation s
 # app/new_module/utils.py
 # e.g. validating a message uuid
 from fastapi import Path
-from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated
 
 from app.auth.utils import verify_and_parse_uuid
-from app.database.db_session import get_db_session
+from app.database.db_session import DbSession
 from app.database.models import Message
 
-async def verify_and_get_message_from_path(message_uuid: Annotated[str, Path(...)], db_session: AsyncSession = Depends(get_db_session)) -> Message:
+async def verify_and_get_message_from_path(message_uuid: Annotated[str, Path(...)], db_session: DbSession) -> Message:
   # Logic to verify and get message
   message = ...
   return message
@@ -157,18 +156,25 @@ async def new_endpoint_3(
   ...
 ```
 
-#### Database Session Injection
-Use dependency injection for database sessions at the API level, then pass the same session through the service layer functions to maintain consistency.
-```python
-from app.database.db_session import get_db_session
-from fastapi import Depends
+#### Database sessions and queries
+Keep sessions short. As a default, avoid holding a session open across an LLM call, a stream or another slow external call, because it ties up a pooled connection and any row locks for the whole call. The usual shape is to commit what you need first, make the call, then open a new session for any writes that follow.
 
-@app.get(...)
-async def new_endpoint(
-  db_session=Depends(get_db_session)
-) -> ...:
-  ...
-```
+- **Routes** take the request's session with the `DbSession` alias (`app/database/db_session.py`). It commits when the endpoint function returns, before the response is sent or a stream starts. Always use the alias, never `Depends(get_db_session)`: mixing the two in one request gives two separate sessions.
+  ```python
+  from app.database.db_session import DbSession
+
+  @router.get(...)
+  async def new_endpoint(db_session: DbSession) -> ...:
+    ...
+  ```
+- **Queries live in the module that owns the use case**, in `queries.py` (see `app/projects/queries.py`). A cross-domain query belongs to the module whose use case needs it, not a shared file. `DbOperations` (`app/database/db_operations.py`) and `app/database/table.py` are legacy: don't add to them, and move a method into its module's `queries.py` when you change it.
+- **There are two kinds of database function.** Keep them visibly separate, by name or by file:
+  - *Component functions* take `db_session`, and never commit or open a session. Use `flush()` when you need generated IDs. They're building blocks that combine within one transaction.
+  - *Session functions* open their own `async with async_db_session()`, take no session parameter, and are a complete unit of work. `async_db_session` commits on exit and rolls back on an exception. They return plain data or IDs, not ORM objects (e.g. `acquire_compaction_lock` in `app/compaction/service.py`). Calling one never joins the caller's transaction.
+- **Group work by transaction, not by query.** Writes that must succeed or fail together share one session, and related reads share one session rather than opening one each.
+- **Don't pass ORM objects between sessions.** `expire_on_commit=False` keeps loaded columns readable after a session closes, but lazy-loading a relationship then raises under async. Pass IDs or plain data, or eager-load what you need.
+- **Models stay central** in `app/database/models.py`, which Alembic autogenerate and string-named relationships need.
+- New queries don't need an `Action` entry or `LogsHandler.with_logging`. Use `logger.exception` where extra context helps.
 
 #### Cross-Module Imports
 Be explicit and specific when importing from other packages:
@@ -180,6 +186,21 @@ from app.auth.utils import verify_and_parse_uuid
 - Clean free-text request fields with the validators in `app/schemas/text.py`: `CleanSingleLine` for names and titles, `CleanMultiline` for descriptions, prompts and messages. Add the validator after `StringConstraints` so length limits apply to the cleaned value: `Annotated[str, StringConstraints(max_length=255), CleanSingleLine]`. For text that can't be rejected, such as uploaded filenames, use `strip_to_single_line`.
 - JSON bodies containing a NUL character are rejected with 422 globally by `RejectNulBytesMiddleware` (`app/api/nul_bytes_middleware.py`).
 - Exception and log messages carry IDs, never user-supplied text such as names, descriptions or queries.
+
+#### Exceptions that become HTTP responses
+Subclass `AppError` (`app/exceptions/app_error.py`) in the module's `exceptions.py` and set the mapping as class attributes. One handler turns any subclass into a response, so don't add handlers to `app/exceptions/handlers.py`.
+
+```python
+class ProjectNotFoundError(AppError):
+    status_code = 404
+    detail = "Project not found"  # response body is {"detail": ...}
+    expected = True  # info log, no Bugsnag. False (default): error log, reported to Bugsnag
+```
+
+- Set `expected = True` for normal API outcomes: not found, conflicts, missing or malformed headers.
+- Use properties when the mapping depends on the instance (see `DatabaseError`), and override `content()` only to keep an existing body shape.
+- Don't change the status code of an existing error without checking Connect: it retries 401 and 403 responses and then logs the user out.
+- Exceptions that are always caught internally stay plain `Exception`.
 
 #### LLM Prompts — `prompts.py` convention
 
@@ -217,7 +238,7 @@ The RAG system operates through multiple components:
 - **Main DB**: PostgreSQL (`copilot` database)
 - **Test DB**: Separate `testcopilot` database, recreated for each test run
 - **Migrations**: Alembic-based, stored in `app/alembic/versions/`
-- **Models**: SQLAlchemy ORM models in domain-specific `models.py` files
+- **Models**: SQLAlchemy ORM models, all in `app/database/models.py`
 
 ## Environment Configuration
 

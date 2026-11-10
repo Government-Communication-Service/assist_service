@@ -389,6 +389,15 @@ class TestPPLUserPrompt:
         )
         logger.debug(f"GET Response body: {get_response}")
 
+    async def test_get_user_prompt_malformed_uuid_returns_400(self, async_client, user_id, async_http_requester):
+        get_url = api.get_user_prompt(user_uuid=user_id, user_prompt_uuid="not-a-uuid")
+
+        get_response = await async_http_requester(
+            "GET from user_prompt_endpoint", async_client.get, get_url, response_code=400
+        )
+
+        assert get_response == {"detail": "User prompt UUID malformed"}
+
     # Tests for PATCH requests to /user/{user_uuid}/prompts/{user_prompt_uuid}
     # Test the happy path
     async def test_patch_user_prompt_uuid_success(

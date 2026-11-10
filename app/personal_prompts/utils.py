@@ -27,7 +27,7 @@ async def verify_and_get_user_prompt_by_uuid(
     except UuidMissingError as e:
         raise PromptUuidMissingError("user_prompt_uuid is missing from the path") from e
     except UuidInvalidError as e:
-        raise PromptUuidInvalidError(f"user_prompt_uuid in the path was invalid: {user_prompt_uuid}") from e
+        raise PromptUuidInvalidError("user_prompt_uuid in the path was invalid") from e
 
     stmt = select(UserPrompt).where(
         UserPrompt.user_id == user.id,

@@ -279,7 +279,11 @@ async def test_chat_returns_bedrock_error(mock_bedrock, async_client, user_id, a
     )
     text_response = str(response)
     assert '"content": "partial answer"' in text_response
-    assert '"error_code": "BEDROCK_SERVICE_ERROR", "error_message": "Some Bedrock error"' in text_response
+    assert (
+        '"error_code": "BEDROCK_SERVICE_ERROR", "error_message": "An error occurred while generating the response."'
+        in text_response
+    )
+    assert "Some Bedrock error" not in text_response
 
     # check error is logged
     assert "Agent loop failed for chat" in caplog.text
@@ -314,7 +318,11 @@ async def test_chat_add_message_returns_bedrock_error(
 
     text_response = str(response)
     assert '"content": "partial answer"' in text_response
-    assert '"error_code": "BEDROCK_SERVICE_ERROR", "error_message": "Some Bedrock error"' in text_response
+    assert (
+        '"error_code": "BEDROCK_SERVICE_ERROR", "error_message": "An error occurred while generating the response."'
+        in text_response
+    )
+    assert "Some Bedrock error" not in text_response
 
     # check error is logged
     assert "Agent loop failed for chat" in caplog.text

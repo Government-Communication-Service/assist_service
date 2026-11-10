@@ -87,11 +87,11 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def async_db_session() -> AsyncSession:
     """
-    This function yields a new asynchronous SQLAlchemy session.
-    It should typically be called once per request and passed
-    to functions requiring database access. Each invocation will yield a new
-    session, and any unhandled exceptions will trigger a rollback to maintain
-    data integrity.
+    Yields a new asynchronous SQLAlchemy session inside a transaction.
+
+    Commits when the block exits and rolls back on an unhandled exception. Use it for short, self-contained units
+    of work; routes take the request's session through `DbSession` instead (see CLAUDE.md, "Database sessions and
+    queries").
 
     Yields:
         AsyncSession: An active SQLAlchemy asynchronous session object.

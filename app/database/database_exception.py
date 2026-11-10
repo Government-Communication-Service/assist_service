@@ -1,5 +1,7 @@
 from enum import Enum, auto
 
+from app.exceptions.app_error import AppError
+
 
 class DatabaseExceptionErrorCode(Enum):
     CREATE_ERROR = auto()
@@ -25,7 +27,29 @@ class DatabaseExceptionErrorCode(Enum):
     DEFAULT = auto()
 
 
-class DatabaseError(Exception):
-    def __init__(self, code: int, message: str):
+class DatabaseError(AppError):
+    """Database operation failure. Not-found codes map to 404; every other code is a 500."""
+
+    def __init__(self, code: DatabaseExceptionErrorCode, message: str):
+        super().__init__(message)
         self.code = code
         self.message = message
+
+    @property
+    def expected(self) -> bool:
+        return self.code in (
+            DatabaseExceptionErrorCode.GET_BY_UUID_ERROR,
+            DatabaseExceptionErrorCode.USE_CASE_NOT_UNDER_THIS_THEME_ERROR,
+        )
+
+    @property
+    def status_code(self) -> int:
+        return 404 if self.expected else 500
+
+    @property
+    def detail(self) -> str:
+        if self.code == DatabaseExceptionErrorCode.GET_BY_UUID_ERROR:
+            return "Record not found"
+        if self.code == DatabaseExceptionErrorCode.USE_CASE_NOT_UNDER_THIS_THEME_ERROR:
+            return self.message
+        return AppError.detail

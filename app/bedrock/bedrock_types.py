@@ -5,6 +5,7 @@ from typing import Optional
 from anthropic import AnthropicBedrock, AsyncAnthropicBedrock, Timeout
 
 from app.config import BEDROCK_API_CONNECT_TIMEOUT_SECONDS, BEDROCK_API_READ_TIMEOUT_SECONDS
+from app.exceptions.app_error import AppError
 
 
 class BedrockErrorType(str, Enum):
@@ -13,12 +14,18 @@ class BedrockErrorType(str, Enum):
     TIMEOUT = auto()
 
 
-class BedrockError(Exception):
-    """Base class for all Bedrock exceptions."""
+class BedrockError(AppError):
+    """Base class for all Bedrock exceptions. `app/bedrock/retry.py` logs the failure before raising."""
+
+    status_code = 503
+    expected = True
 
     def __init__(self, msg: str, error_type: Optional[BedrockErrorType] = None):
         super().__init__(msg)
         self.error_type = error_type
+
+    def content(self) -> dict:
+        return {"status": "failed", "error_code": "BEDROCK_SERVICE_ERROR", "status_message": str(self)}
 
 
 class AnthropicBedrockProvider:
