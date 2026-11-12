@@ -227,4 +227,4 @@ async def get_shared_chat_messages(
     Requires authentication but not ownership. For privately shared chats, the requesting
     user must be the chat owner or have been added to the share by the owner.
     """
-    return await chat_get_messages(chat)
+    return await chat_get_messages(chat, with_user_options=False)

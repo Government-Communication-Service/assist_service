@@ -47,6 +47,11 @@ def chat_api(async_client, async_http_requester, user_id):
         async def options(self) -> dict:
             return await async_http_requester("get chat options", async_client.get, api.user_chat_options(user_id))
 
+        async def set_options(self, **body) -> dict:
+            return await async_http_requester(
+                "set chat options", async_client.put, api.user_chat_options(user_id), json=body
+            )
+
     return ChatApi()
 
 
@@ -73,54 +78,40 @@ async def test_new_user_gets_default_options(chat_api, user):
     assert await _option_rows(user.id) == []
 
 
-async def test_creating_a_chat_with_changed_options_records_only_the_changes(chat_api, user):
+async def test_options_sent_with_a_new_chat_apply_to_that_chat_only(chat_api, user, mock_chat_model):
     response = await chat_api.create(use_rag=False, use_gov_uk_search_api=True)
 
-    assert await chat_api.options() == {"use_rag": False, "use_gov_uk_search_api": True, "use_smart_targets": False}
-    rows = await _option_rows(user.id)
-    assert _rows_as_tuples(rows) == [(False, True, None)]
-    assert rows[0].message_id is not None
+    assert "- search_gov_uk: available" in _last_turn_text(mock_chat_model)
     assert response["use_rag"] is False
     assert response["use_gov_uk_search_api"] is True
-
-
-async def test_sending_the_current_options_adds_no_row(chat_api, user):
-    await chat_api.create(**DEFAULT_CHAT_OPTIONS)
-
+    assert await chat_api.options() == DEFAULT_CHAT_OPTIONS
     assert await _option_rows(user.id) == []
 
 
-async def test_omitted_options_use_the_users_current_options(chat_api, user, mock_chat_model):
-    chat = await chat_api.create(use_gov_uk_search_api=True)
+async def test_omitted_options_use_the_users_current_options(chat_api, mock_chat_model):
+    await chat_api.set_options(use_gov_uk_search_api=True)
+
+    chat = await chat_api.create()
+
+    assert chat["use_gov_uk_search_api"] is True
+    assert "- search_gov_uk: available" in _last_turn_text(mock_chat_model)
 
     await chat_api.follow_up(chat["uuid"])
 
     assert "- search_gov_uk: available" in _last_turn_text(mock_chat_model)
-    assert len(await _option_rows(user.id)) == 1
-
-    new_chat = await chat_api.create()
-
-    assert new_chat["use_gov_uk_search_api"] is True
-    assert "- search_gov_uk: available" in _last_turn_text(mock_chat_model)
 
 
-async def test_changing_options_mid_chat(chat_api, user, mock_chat_model):
+async def test_changing_options_mid_chat_applies_to_that_message_only(chat_api, user, mock_chat_model):
     chat = await chat_api.create(use_gov_uk_search_api=True)
 
     await chat_api.follow_up(chat["uuid"], use_gov_uk_search_api=False, use_smart_targets=True)
 
     assert "- search_gov_uk: turned off." in _last_turn_text(mock_chat_model)
-    assert await chat_api.options() == {"use_rag": True, "use_gov_uk_search_api": False, "use_smart_targets": True}
-    # use_rag was never set, so it stays None in both rows.
-    assert _rows_as_tuples(await _option_rows(user.id)) == [(None, True, None), (None, False, True)]
-
-    # The chat row holds the chat's current options.
-    chat_details = await chat_api.get_chat(chat["uuid"])
-    assert chat_details["use_gov_uk_search_api"] is False
-    assert chat_details["use_smart_targets"] is True
+    assert await chat_api.options() == DEFAULT_CHAT_OPTIONS
+    assert await _option_rows(user.id) == []
 
 
-async def test_changing_options_in_one_chat_leaves_other_chats_alone(chat_api, user, mock_chat_model):
+async def test_options_sent_in_one_chat_dont_reach_other_chats(chat_api, mock_chat_model):
     chat_a = await chat_api.create()
     chat_b = await chat_api.create()
 
@@ -128,19 +119,51 @@ async def test_changing_options_in_one_chat_leaves_other_chats_alone(chat_api, u
     await chat_api.follow_up(chat_b["uuid"])
 
     assert "- search_gov_uk: available" not in _last_turn_text(mock_chat_model)
-    assert (await chat_api.get_chat(chat_b["uuid"]))["use_gov_uk_search_api"] is False
-    assert (await chat_api.options())["use_gov_uk_search_api"] is True
 
 
-async def test_sending_an_older_chats_options_keeps_choices_made_elsewhere(chat_api, user):
-    chat_a = await chat_api.create()
-    chat_b = await chat_api.create()
-    await chat_api.follow_up(chat_b["uuid"], use_gov_uk_search_api=True)
+async def test_an_existing_chat_shows_the_users_current_options(chat_api):
+    chat = await chat_api.create()
+    await chat_api.set_options(use_gov_uk_search_api=True, use_smart_targets=True)
 
-    await chat_api.follow_up(chat_a["uuid"], **DEFAULT_CHAT_OPTIONS)
+    chat_details = await chat_api.get_chat(chat["uuid"])
 
-    assert _rows_as_tuples(await _option_rows(user.id)) == [(None, True, None)]
-    assert (await chat_api.options())["use_gov_uk_search_api"] is True
+    assert chat_details["use_gov_uk_search_api"] is True
+    assert chat_details["use_smart_targets"] is True
+
+
+async def test_a_shared_chat_shows_the_options_its_latest_message_used(
+    async_client, async_http_requester, chat_api, user_id
+):
+    chat = await chat_api.create(use_gov_uk_search_api=True)
+    await chat_api.set_options(use_smart_targets=True)
+    share = await async_http_requester(
+        "share chat", async_client.patch, api.chat_share(user_id, chat["uuid"]), json={"share": True}
+    )
+
+    shared = await async_http_requester("get shared chat", async_client.get, api.shared_chat(share["share_code"]))
+
+    assert shared["use_gov_uk_search_api"] is True
+    assert shared["use_smart_targets"] is False
+
+
+async def test_setting_options_saves_only_the_ones_sent(chat_api, user, mock_chat_model):
+    response = await chat_api.set_options(use_gov_uk_search_api=True)
+
+    assert response == {"use_rag": True, "use_gov_uk_search_api": True, "use_smart_targets": False}
+    rows = await _option_rows(user.id)
+    assert _rows_as_tuples(rows) == [(None, True, None)]
+    assert rows[0].message_id is None
+
+    await chat_api.create()
+
+    assert "- search_gov_uk: available" in _last_turn_text(mock_chat_model)
+
+
+async def test_setting_the_current_options_adds_no_row(chat_api, user):
+    await chat_api.set_options(**DEFAULT_CHAT_OPTIONS)
+    await chat_api.set_options()
+
+    assert await _option_rows(user.id) == []
 
 
 async def test_nothing_is_recorded_while_recording_is_off(chat_api, user, mock_chat_model, monkeypatch):
@@ -149,12 +172,13 @@ async def test_nothing_is_recorded_while_recording_is_off(chat_api, user, mock_c
     await chat_api.create(use_gov_uk_search_api=True)
 
     assert "- search_gov_uk: available" in _last_turn_text(mock_chat_model)
+    assert await chat_api.set_options(use_smart_targets=True) == DEFAULT_CHAT_OPTIONS
     assert await _option_rows(user.id) == []
     assert await chat_api.options() == DEFAULT_CHAT_OPTIONS
 
 
 async def test_changed_default_reaches_users_who_never_set_that_option(chat_api, monkeypatch):
-    await chat_api.create(use_gov_uk_search_api=True)
+    await chat_api.set_options(use_gov_uk_search_api=True)
 
     monkeypatch.setitem(chat_options.DEFAULT_CHAT_OPTIONS, "use_rag", False)
 
@@ -162,8 +186,8 @@ async def test_changed_default_reaches_users_who_never_set_that_option(chat_api,
 
 
 async def test_explicit_choice_survives_a_changed_default(chat_api, monkeypatch):
-    chat = await chat_api.create(use_rag=False)
-    await chat_api.follow_up(chat["uuid"], use_rag=True)
+    await chat_api.set_options(use_rag=False)
+    await chat_api.set_options(use_rag=True)
 
     monkeypatch.setitem(chat_options.DEFAULT_CHAT_OPTIONS, "use_rag", False)
 
@@ -171,13 +195,13 @@ async def test_explicit_choice_survives_a_changed_default(chat_api, monkeypatch)
 
 
 async def test_reset_ignores_earlier_choices(chat_api, user, monkeypatch):
-    await chat_api.create(use_rag=False, use_gov_uk_search_api=True)
+    await chat_api.set_options(use_rag=False, use_gov_uk_search_api=True)
 
     monkeypatch.setattr(chat_options, "CHAT_OPTIONS_RESET_AT", datetime.now(timezone.utc).replace(tzinfo=None))
 
     assert await chat_api.options() == DEFAULT_CHAT_OPTIONS
 
-    await chat_api.create(use_smart_targets=True)
+    await chat_api.set_options(use_smart_targets=True)
 
     # The row after the reset doesn't carry forward the choices made before it.
     assert _rows_as_tuples(await _option_rows(user.id)) == [(False, True, None), (None, None, True)]
@@ -185,8 +209,8 @@ async def test_reset_ignores_earlier_choices(chat_api, user, monkeypatch):
 
 
 async def test_soft_deleted_rows_are_ignored(chat_api, user):
-    chat = await chat_api.create(use_gov_uk_search_api=True)
-    await chat_api.follow_up(chat["uuid"], use_smart_targets=True)
+    await chat_api.set_options(use_gov_uk_search_api=True)
+    await chat_api.set_options(use_smart_targets=True)
     latest = (await _option_rows(user.id))[-1]
 
     async with async_db_session() as session:
@@ -206,5 +230,12 @@ async def test_chat_options_require_matching_user(async_client, async_http_reque
         "get another user's chat options",
         async_client.get,
         api.user_chat_options(other_user_id),
+        response_code=403,
+    )
+    await async_http_requester(
+        "set another user's chat options",
+        async_client.put,
+        api.user_chat_options(other_user_id),
+        json={"use_rag": False},
         response_code=403,
     )

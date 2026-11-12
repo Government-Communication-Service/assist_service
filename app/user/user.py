@@ -17,6 +17,7 @@ from app.auth.verify_service import (
     verify_auth_token,
 )
 from app.aws_services.s3_service import S3Service
+from app.chat.schemas import ChatOptions
 from app.config import AWS_DEFAULT_REGION, IS_DEV, S3_ERRORDOCS_BUCKET
 from app.database.db_operations import DbOperations
 from app.database.db_session import DbSession
@@ -31,7 +32,7 @@ from app.document_upload.personal_document_parser import (
 )
 from app.opensearch.service import AsyncOpenSearchOperations
 from app.schemas.text import strip_to_single_line
-from app.user.chat_options import get_current_chat_options
+from app.user.chat_options import CHAT_OPTION_FIELDS, get_current_chat_options, set_chat_options
 from app.user.schemas import (
     ChatOptionsResponse,
     DocumentResponse,
@@ -122,14 +123,40 @@ async def get_chat_options(
     """
     Return the user's current chat options.
 
-    These are the options used when a chat request leaves a flag out. They change whenever the user sends a
-    message with different options.
+    Chat messages use these for any option they leave out. They change only when set with PUT.
 
     Usage:
         GET /users/{user_uuid}/chat-options
     """
     options = await get_current_chat_options(db_session, user.id)
     return ChatOptionsResponse(**options)
+
+
+@router.put(
+    ENDPOINTS.USER_CHAT_OPTIONS,
+    response_model=ChatOptionsResponse,
+    dependencies=[
+        Depends(verify_auth_token),
+        Depends(verify_and_get_auth_session_from_header),
+    ],
+)
+async def put_chat_options(
+    options: ChatOptions,
+    db_session: DbSession,
+    user: User = Depends(verify_and_get_user_from_path_and_header),
+) -> ChatOptionsResponse:
+    """
+    Set the user's chat options and return them.
+
+    Options left out or null keep their current value. Nothing is saved while user chat options aren't being
+    recorded, so the response then shows the options unchanged.
+
+    Usage:
+        PUT /users/{user_uuid}/chat-options
+    """
+    await set_chat_options(db_session, user.id, {field: getattr(options, field) for field in CHAT_OPTION_FIELDS})
+    current = await get_current_chat_options(db_session, user.id)
+    return ChatOptionsResponse(**current)
 
 
 @router.post(

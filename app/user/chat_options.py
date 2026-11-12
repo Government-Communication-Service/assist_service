@@ -2,7 +2,6 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 
-from app.chat.schemas import ChatOptions
 from app.config import CHAT_OPTIONS_RESET_AT, DEFAULT_CHAT_OPTIONS, RECORD_USER_CHAT_OPTIONS
 from app.database.models import Chat, UserChatOptions
 
@@ -52,79 +51,49 @@ async def get_current_chat_options(db_session: AsyncSession, user_id: int) -> di
 
 
 async def resolve_chat_options(
-    db_session: AsyncSession, user_id: int, input_data: ChatOptions, chat_options: dict[str, bool | None] | None = None
-) -> None:
-    """Fill any chat option left as None on `input_data`, in place.
-
-    Uses the chat's options for a message in an existing chat, and the user's current options for a new
-    chat or for any option the chat has no value for.
+    db_session: AsyncSession, user_id: int, options: dict[str, bool | None]
+) -> dict[str, bool]:
+    """Return the user's current chat options with `options` applied, without saving them.
 
     Args:
         db_session: Database session.
-        user_id: ID of the user sending the request.
-        input_data: Request data carrying the chat option flags.
-        chat_options: The existing chat's options, or None for a new chat.
+        user_id: ID of the user.
+        options: Chat option flags, with None for any that follow the user's current option.
+
+    Returns:
+        Each chat option field mapped to the value in `options`, or the user's current value if None.
     """
-    for field in CHAT_OPTION_FIELDS:
-        if getattr(input_data, field) is None and chat_options is not None:
-            setattr(input_data, field, chat_options[field])
-    if all(getattr(input_data, field) is not None for field in CHAT_OPTION_FIELDS):
-        return
     current = await get_current_chat_options(db_session, user_id)
-    for field in CHAT_OPTION_FIELDS:
-        if getattr(input_data, field) is None:
-            setattr(input_data, field, current[field])
+    return {field: current[field] if options[field] is None else options[field] for field in CHAT_OPTION_FIELDS}
 
 
-async def record_chat_options(
-    db_session: AsyncSession,
-    user_id: int,
-    options: dict[str, bool],
-    previous_chat_options: dict[str, bool | None] | None = None,
-    message_id: int | None = None,
-) -> bool:
-    """Append a `user_chat_options` row if the user changed an option.
+async def set_chat_options(db_session: AsyncSession, user_id: int, options: dict[str, bool | None]) -> None:
+    """Set the user's chat options.
 
-    For a new chat, an option counts as changed if it differs from the user's current options. For a
-    message in an existing chat, it counts only if it also differs from the chat's previous options, so
-    sending a message in an older chat doesn't overwrite a choice made in another chat.
-
-    The new row sets the changed options and carries forward the rest of the user's latest row, so
-    options the user has never set stay None and follow `DEFAULT_CHAT_OPTIONS`. Does nothing while
+    Options left as None keep their current value. A `user_chat_options` row is appended only if an option
+    changes. It sets the changed options and carries forward the rest of the user's latest row, so options the
+    user has never set stay None and follow `DEFAULT_CHAT_OPTIONS`. Does nothing while
     `RECORD_USER_CHAT_OPTIONS` is off.
 
     Args:
         db_session: Database session. The caller commits.
         user_id: ID of the user.
-        options: The three chat option flags sent with the message.
-        previous_chat_options: The existing chat's options before this message, or None for a new chat.
-        message_id: ID of the message sent with these options, if any.
-
-    Returns:
-        True if a row was added.
+        options: Chat option flags to set, with None for any to leave as they are.
     """
     if not RECORD_USER_CHAT_OPTIONS:
-        return False
-    toggled = [
-        field
-        for field in CHAT_OPTION_FIELDS
-        if previous_chat_options is None or options[field] != previous_chat_options[field]
-    ]
-    if not toggled:
-        return False
+        return
     chosen = await _get_chosen_chat_options(db_session, user_id)
     current = _with_defaults(chosen)
-    changed = {field for field in toggled if options[field] != current[field]}
+    changed = {field for field in CHAT_OPTION_FIELDS if options[field] is not None and options[field] != current[field]}
     if not changed:
-        return False
+        return
     new_row = {field: options[field] if field in changed else chosen[field] for field in CHAT_OPTION_FIELDS}
-    db_session.add(UserChatOptions(user_id=user_id, message_id=message_id, **new_row))
+    db_session.add(UserChatOptions(user_id=user_id, **new_row))
     await db_session.flush()
-    return True
 
 
 async def update_chat_options(db_session: AsyncSession, chat: Chat, options: dict[str, bool]) -> None:
-    """Save `options` as the chat's current options, if they differ.
+    """Save `options` on the chat as the options its latest message used, if they differ.
 
     Also updates the in-memory `chat`, which may belong to another session, without marking it changed.
 

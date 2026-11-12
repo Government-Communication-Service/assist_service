@@ -559,6 +559,7 @@ async def test_non_streaming_turn_runs_after_the_request_session_closes(entry_po
     with (
         patch.object(service, "async_db_session", fake_async_db_session),
         patch.object(service, "chat_create_message", AsyncMock(return_value=turn)),
+        patch.object(service, "resolve_chat_options", AsyncMock(return_value={})),
         patch.object(service, "_chat_message_with_documents", AsyncMock(side_effect=lambda c, s, data: data)),
         patch.object(service, "Chat", return_value=chat),
         patch.object(service, "ChatWithLatestMessage", MagicMock()),

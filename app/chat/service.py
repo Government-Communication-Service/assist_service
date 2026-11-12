@@ -94,7 +94,7 @@ from app.database.table import (
 from app.logs.logs_handler import logger
 from app.user.chat_options import (
     CHAT_OPTION_FIELDS,
-    record_chat_options,
+    get_current_chat_options,
     resolve_chat_options,
     update_chat_options,
 )
@@ -414,12 +414,14 @@ async def chat_archive(db_session: AsyncSession, chat: Chat) -> ChatSuccessRespo
     return ChatSuccessResponse(**chat_result.client_response())
 
 
-async def chat_get_messages(chat: Chat):
+async def chat_get_messages(chat: Chat, with_user_options: bool = True):
     """
     Retrieves all messages for a specific chat, including related documents.
     Args:
         chat (Chat): The Chat instance representing the chat for which messages
                       are to be retrieved.
+        with_user_options (bool): Return the owner's current chat options, which the chat's next message will
+                      use. False returns the options the chat's latest message used.
 
     Returns:
         ChatWithAllMessages: A response model containing the chat details and
@@ -428,6 +430,10 @@ async def chat_get_messages(chat: Chat):
     """
     async with async_db_session() as db_session:
         chat = await DbOperations.get_chat_with_messages(db_session, chat.id, chat.user_id)
+        if with_user_options:
+            chat_options = await get_current_chat_options(db_session, chat.user_id)
+        else:
+            chat_options = {option: getattr(chat, option) for option in CHAT_OPTION_FIELDS}
         chat_response = ChatWithAllMessages(
             uuid=chat.uuid,
             created_at=chat.created_at,
@@ -438,9 +444,7 @@ async def chat_get_messages(chat: Chat):
             share_code=chat.share_code,
             share_private=chat.share_private,
             from_open_chat=chat.from_open_chat,
-            use_rag=chat.use_rag,
-            use_gov_uk_search_api=chat.use_gov_uk_search_api,
-            use_smart_targets=chat.use_smart_targets,
+            **chat_options,
             project_uuid=chat.project_uuid,
             documents=[
                 DocumentSchema(
@@ -488,17 +492,15 @@ async def chat_create(input_data: ChatCreateInput) -> ChatWithLatestMessage:
         from_open_chat = False
 
     async with async_db_session() as db_session:
-        await resolve_chat_options(db_session, input_data.user_id, input_data)
-
         logger.debug("starting creating db item")
+        requested_options = {option: getattr(input_data, option) for option in CHAT_OPTION_FIELDS}
+        chat_options = await resolve_chat_options(db_session, input_data.user_id, requested_options)
         chat_obj = Chat(
             user_id=input_data.user_id,
             from_open_chat=from_open_chat,
             use_case_id=input_data.use_case_id,
             title=title,
-            use_rag=input_data.use_rag,
-            use_gov_uk_search_api=input_data.use_gov_uk_search_api,
-            use_smart_targets=input_data.use_smart_targets,
+            **chat_options,
         )
         db_session.add(chat_obj)
         await db_session.flush()
@@ -575,16 +577,11 @@ async def chat_create_message(chat: Chat, input_data: ChatCreateMessageInput, db
 
     ai_message = MessageDefaults(**message_defaults)
 
-    chat_options_before = {field: getattr(chat, field) for field in CHAT_OPTION_FIELDS}
-    await resolve_chat_options(db_session, chat.user_id, input_data, chat_options=chat_options_before)
-    chat_options = {field: getattr(input_data, field) for field in CHAT_OPTION_FIELDS}
-    await record_chat_options(
-        db_session,
-        chat.user_id,
-        chat_options,
-        previous_chat_options=None if input_data.initial_call else chat_options_before,
-        message_id=m_user.id,
-    )
+    # Options sent with a message apply to that message only. Others follow the user's options.
+    requested_options = {option: getattr(input_data, option) for option in CHAT_OPTION_FIELDS}
+    chat_options = await resolve_chat_options(db_session, chat.user_id, requested_options)
+    for option in CHAT_OPTION_FIELDS:
+        setattr(input_data, option, chat_options[option])
     await update_chat_options(db_session, chat, chat_options)
 
     system = await build_chat_system_prompt(db_session)

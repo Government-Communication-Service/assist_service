@@ -56,7 +56,7 @@ class ChatLLMResponse(BaseModel):
 
 
 class ChatOptions(BaseModel):
-    """Chat option flags on a chat request. None means use the user's current option (see app/user/chat_options.py)."""
+    """Chat option flags. None follows the user's current option (see app/user/chat_options.py)."""
 
     use_rag: bool | None = None
     use_gov_uk_search_api: bool | None = None

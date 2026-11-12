@@ -134,7 +134,7 @@ class AppSettings(BaseSettings):
     default_use_rag: bool = True
     default_use_gov_uk_search_api: bool = True
     default_use_smart_targets: bool = True
-    # When False, chat requests don't add rows to user_chat_options, so every user keeps the defaults.
+    # When False, PUT /chat-options saves nothing, so every user keeps the defaults.
     record_user_chat_options: bool = True
     # user_chat_options rows created before this time (UTC) are ignored, so every user starts again from the defaults.
     chat_options_reset_at: datetime | None = None
