@@ -4,9 +4,13 @@ POSTGRES_DB = copilot
 TEST_POSTGRES_DB = testcopilot
 
 container-name = api
-docker-cmd = docker exec -it ${container-name} sh -c
+# -t only when a terminal is attached, so agents and CI can run the targets
+exec-flags := -i$(shell [ -t 0 ] && echo t)
+docker-cmd = docker exec $(exec-flags) ${container-name} sh -c
 venv-cmd = source .venv/bin/activate
-test-cmd = pytest
+# One line per failure and no captured output. For full detail: make test-chat PYTEST_ARGS=
+PYTEST_ARGS ?= --tb=line --show-capture=no
+test-cmd = pytest $(PYTEST_ARGS)
 
 logs:
 	docker logs -f ${container-name}
@@ -142,17 +146,11 @@ test-user:
 test-chat-create-message:
 	$(docker-cmd) "${test-cmd} tests/chat/test_chat_create_message.py"
 
-test-gov-uk-search:
-	$(docker-cmd) "${test-cmd} tests/gov_uk_search/test_gov_uk_search_client.py::TestGovUKSearch tests/lib/test_gov_uk_document_search.py tests/streaming/test_stream_v1.py::test_stream_with_gov_uk_search_api_response"
-
 test-smart-targets:
 	$(docker-cmd) "${test-cmd} tests/smart_targets"
 
 test-smart-targets-services:
 	$(docker-cmd) "${test-cmd} tests/smart_targets/services"
-
-test-chat-create-message:
-	$(docker-cmd) "${test-cmd} tests/chat/test_chat_create_message.py"
 
 test-audience-segments:
 	$(docker-cmd) "${test-cmd} tests/audience_segments"
@@ -186,23 +184,16 @@ db-history:
 	$(docker-cmd) "cd app/alembic && alembic history"
 
 db-reset:
-	docker exec -it postgres psql -U postgres -c "DROP DATABASE IF EXISTS copilot;" && \
-	docker exec -it postgres psql -U postgres -c "CREATE DATABASE copilot;"
+	docker exec $(exec-flags) postgres psql -U postgres -c "DROP DATABASE IF EXISTS copilot;" && \
+	docker exec $(exec-flags) postgres psql -U postgres -c "CREATE DATABASE copilot;"
 
 test-db-reset:
-	docker exec -it postgres psql -U postgres -c "DROP DATABASE IF EXISTS ${TEST_POSTGRES_DB};" && \
-	docker exec -it postgres psql -U postgres -c "CREATE DATABASE ${TEST_POSTGRES_DB} TEMPLATE ${POSTGRES_DB};"
+	docker exec $(exec-flags) postgres psql -U postgres -c "DROP DATABASE IF EXISTS ${TEST_POSTGRES_DB};" && \
+	docker exec $(exec-flags) postgres psql -U postgres -c "CREATE DATABASE ${TEST_POSTGRES_DB} TEMPLATE ${POSTGRES_DB};"
 
 db: api-stop db-reset up
 
 test-db: api-stop test-db-reset test-up
-
-migrate:
-	@read -p "Enter migration message - what have you changed in the database? " user_message; \
-	$(docker-cmd) "cd app/alembic && alembic revision --autogenerate -m '$$user_message'"; \
-	if [ "$$(whoami)" = "ubuntu" ]; then \
-		$(docker-cmd) "chown -R $$(id -u):$$(id -g) app/alembic/versions/"; \
-	fi
 
 install:
 	uv sync
