@@ -84,7 +84,8 @@ answer was: anchor it in the source material ("And what about X?"), not in the p
   a few encode its behaviour or the data of the day (the Smart Targets figures come from the dev GCS Data API and can
   change; some answers say what a response must not do, such as invent a quote). Cases that both sides always pass can
   be skipped with `"skip"` to save time.
-- The test files the cases upload must be in `data/ignored/evaluation/documents/`.
+- The test files the cases upload must be in `data/ignored/evaluation/documents/`. The `style_guide` cases attach
+  `home_secretary_guidance.txt`, a copy of `scripts/style_guide/golden_dataset/home_secretary_guidance.txt`.
 
 ## Running
 

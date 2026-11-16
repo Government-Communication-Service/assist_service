@@ -53,6 +53,11 @@ SCENARIOS = [
     ),
     ("no_tool", "No retrieval needed", "Questions the model can answer without searching or reading a document."),
     ("smart_targets", "Smart Targets", "Questions that use the GCS Data API through Smart Targets."),
+    (
+        "style_guide",
+        "GOV.UK style guide checks",
+        "Requests to check pasted text or an uploaded document against the GOV.UK style guide.",
+    ),
 ]
 SCEN = [s[0] for s in SCENARIOS if Path(f"{CASES}{s[0]}.json").exists()]
 HEAD = {s[0]: (s[1], s[2]) for s in SCENARIOS}

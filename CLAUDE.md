@@ -95,15 +95,13 @@ The tools are central guidance (OpenSearch), uploaded documents, GOV.UK search a
 
 Long chats are compacted in the background (`app/compaction`): history is replaced with a summary, under a DB lock.
 
-Style guide (`app/style_guide/`): rules are in `rule_mapping.json`, deterministic checks in `style_guide_checker.py`, and tests in `tests/style_guide/`.
-
 ## Skills
 
 The project skills are in `.claude/skills/`: `alembic-migration` (use it for every migration), `api-test`, `local-postgres-db`, `bedrock-usage`, `write-intent-docs` and `run-evaluation` (user-invoked only).
 
 ## Style
 
-Always type hints. In new code, use 3.12 types: str | None not Optional[str]; list[str] not List[str]. Google style (public) or one-line (private) docstrings. Avoid narrative comments - comment only to warn about non-obvious risks. Keep non-runtime code (scripts and evals) out of app/ and in scripts/.
+Always use type hints. In new code, use 3.12 types: str | None not Optional[str]; list[str] not List[str]. Google style (public) or one-line (private) docstrings. Avoid narrative comments - comment only to warn about non-obvious risks. Keep non-runtime code (scripts and evals) out of app/ and in scripts/.
 
 ## Pull Requests
 

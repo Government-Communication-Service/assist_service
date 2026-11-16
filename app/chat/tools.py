@@ -335,12 +335,16 @@ async def _exec_check_style_guide(
         document_uuids=ctx.document_uuids,
         user_id=ctx.user_id,
         context=LlmCallContext(purpose="style_guide_validation", chat_id=ctx.chat.id, message_id=ctx.user_message.id),
+        thoroughness=args.thoroughness,
     )
     return ToolExecResult(
         content=content,
         sources=Sources(
             style_guide_sources=[
-                StyleGuideSource(pretty_name="GOV.UK style guide", url="https://www.gov.uk/guidance/style-guide/a-to-z")
+                StyleGuideSource(
+                    pretty_name="GOV.UK style guide",
+                    url="https://guidance.publishing.service.gov.uk/writing-to-gov-uk-standards/style-guides/a-to-z-style-guide/",
+                )
             ]
         ),
         is_error=failed,

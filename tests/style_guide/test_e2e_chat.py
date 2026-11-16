@@ -49,7 +49,7 @@ def mock_style_guide_check():
         yield check
 
 
-async def _stream_style_guide_chat(async_client, user_id, default_headers, use_case_id) -> dict:
+async def _stream_style_guide_chat(async_client, user_id, default_headers) -> dict:
     # Connect sends a pre-built prompt as "{instruction}\n\n{user input}"
     response = await async_client.post(
         api.create_chat_stream(user_uuid=user_id),
@@ -57,7 +57,6 @@ async def _stream_style_guide_chat(async_client, user_id, default_headers, use_c
             "query": f"Check the provided content against the GOV.UK Style Guide.\n\nContent: {CHECKED_TEXT}",
             "use_rag": False,
             "use_gov_uk_search_api": False,
-            "use_case_id": use_case_id,
             "use_smart_targets": False,
         },
         headers=default_headers,
@@ -70,11 +69,11 @@ async def _stream_style_guide_chat(async_client, user_id, default_headers, use_c
 
 @pytest.mark.asyncio
 async def test_style_guide_check_result_is_given_to_the_model_and_cited(
-    async_client, user_id, default_headers, style_guide_use_case_id, mock_chat_model, mock_style_guide_check
+    async_client, user_id, default_headers, mock_chat_model, mock_style_guide_check
 ):
     mock_chat_model.script([(CHECK_STYLE_GUIDE.name, {"text": CHECKED_TEXT})], "One issue: use 'meet'.")
 
-    message = await _stream_style_guide_chat(async_client, user_id, default_headers, style_guide_use_case_id)
+    message = await _stream_style_guide_chat(async_client, user_id, default_headers)
 
     assert mock_style_guide_check.await_args.kwargs["text"] == CHECKED_TEXT
     [tool_result] = _tool_results(mock_chat_model.requests[1])
@@ -88,12 +87,12 @@ async def test_style_guide_check_result_is_given_to_the_model_and_cited(
 
 @pytest.mark.asyncio
 async def test_failed_style_guide_check_is_reported_to_the_model_as_an_error(
-    async_client, user_id, default_headers, style_guide_use_case_id, mock_chat_model, mock_style_guide_check
+    async_client, user_id, default_headers, mock_chat_model, mock_style_guide_check
 ):
     mock_style_guide_check.return_value = ("The style guide check failed.", True)
     mock_chat_model.script([(CHECK_STYLE_GUIDE.name, {"text": CHECKED_TEXT})], "Sorry, the check failed.")
 
-    message = await _stream_style_guide_chat(async_client, user_id, default_headers, style_guide_use_case_id)
+    message = await _stream_style_guide_chat(async_client, user_id, default_headers)
 
     [tool_result] = _tool_results(mock_chat_model.requests[1])
     assert tool_result["is_error"] is True

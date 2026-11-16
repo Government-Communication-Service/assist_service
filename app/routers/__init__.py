@@ -15,7 +15,6 @@ import app.healthcheck.routes as healthcheck
 import app.personal_prompts.routes as personal_prompts
 import app.projects.routes as projects
 import app.routers.system as system
-import app.style_guide.routes as style_guide
 import app.themes_use_cases.themes_use_cases as themes_use_cases
 import app.user.user as user
 
@@ -42,5 +41,4 @@ routers = [
     RouterConfig(themes_use_cases.router, "/v1", ["Themes / Use Cases"]),
     RouterConfig(central_guidance.router, "/v1", ["Central RAG"]),
     RouterConfig(document_upload.router, "/v1", ["Document Management"]),
-    RouterConfig(style_guide.router, "/v1/style-guide", ["style guide"]),
 ]

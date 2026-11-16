@@ -29,6 +29,19 @@ class ThinkingLevel(str, Enum):
     max = "max"
 
 
+class StyleGuideThoroughness(str, Enum):
+    """Which style guide rules a check runs, by rule priority.
+
+    lite — priorities 0 and 100: clarity, accessibility, inclusive language and core formatting.
+    balanced — also 1000: specific terms, spellings and abbreviations.
+    thorough — also 2000: capitalisation of individual terms.
+    """
+
+    lite = "lite"
+    balanced = "balanced"
+    thorough = "thorough"
+
+
 class CacheTtl(str, Enum):
     """Time-to-live for the conversation prompt-cache breakpoint.
 
@@ -180,7 +193,7 @@ class AppSettings(BaseSettings):
         "anthropic.claude-sonnet-4-5-20250929-v1:0",
         validation_alias=AliasChoices("llm_campaign_benchmarks_model", "llm_smart_targets_model"),
     )
-    llm_style_guide_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    llm_style_guide_model: str = "anthropic.claude-haiku-5-5"
     chat_thinking_level: ThinkingLevel = ThinkingLevel.disabled
     # Total attempts (not retries) for the combined title+classification Haiku call; 1 = no retry.
     classification_title_max_attempts: int = 2
@@ -196,10 +209,25 @@ class AppSettings(BaseSettings):
     system_prompt_audience_seg: str = "https://www.communications.gov.uk/publication/government-audience-segmentation"
 
     # --- style guide ---
-    style_guide_llm_batch_size: int = 10
     style_guide_max_document_chars: int = 100_000
-    style_guide_max_chunk_chars: int = 50_000
-    style_guide_max_output_tokens: int = 4096
+    # Thinking for the checker calls. disabled sends thinking {"type": "disabled"}, which Haiku 5.5 accepts.
+    style_guide_thinking_level: ThinkingLevel = ThinkingLevel.disabled
+    # Rules run when the chat model doesn't choose a thoroughness for the check_style_guide tool.
+    style_guide_default_thoroughness: StyleGuideThoroughness = StyleGuideThoroughness.balanced
+    style_guide_checker_max_output_tokens: int = 8192
+    # Target size of the paragraph-aligned chunks read by the open-ended rules.
+    style_guide_chunk_chars: int = 8_000
+    # Pattern matches judged per call, and the most judged per rule; the rest are reported as not reviewed.
+    style_guide_match_batch_size: int = 40
+    style_guide_max_matches_per_rule: int = 30
+    style_guide_max_concurrent_calls: int = 8
+    style_guide_call_timeout_seconds: float = 45.0
+    # Wall-clock limit for all the checker calls of one check; calls still running are cancelled and reported.
+    style_guide_check_deadline_seconds: float = 75.0
+    # Size of the tool result: issues past it are listed by rule name and count only.
+    style_guide_max_result_chars: int = 24_000
+    style_guide_max_result_chars_thorough: int = 48_000
+    style_guide_max_guidance_chars: int = 600
 
     # --- timeouts / batch sizes ---
     stream_first_chunk_timeout: float = 20.0
@@ -359,8 +387,6 @@ class AppSettings(BaseSettings):
         "cache_read_cost_multiplier",
         "cache_write_cost_multiplier",
         "style_guide_max_document_chars",
-        "style_guide_max_chunk_chars",
-        "style_guide_llm_batch_size",
         "gov_uk_search_max_count",
         "gov_uk_search_max_document_chars",
         "gov_uk_page_max_chars",
@@ -396,7 +422,16 @@ class AppSettings(BaseSettings):
         "gov_uk_search_relevancy_excerpt_chars",
         "gov_uk_search_relevancy_batch_size",
         "gov_uk_http_timeout_seconds",
-        "style_guide_max_output_tokens",
+        "style_guide_checker_max_output_tokens",
+        "style_guide_chunk_chars",
+        "style_guide_match_batch_size",
+        "style_guide_max_matches_per_rule",
+        "style_guide_max_concurrent_calls",
+        "style_guide_call_timeout_seconds",
+        "style_guide_check_deadline_seconds",
+        "style_guide_max_result_chars",
+        "style_guide_max_result_chars_thorough",
+        "style_guide_max_guidance_chars",
         "request_timeout_seconds",
         "bedrock_api_read_timeout_seconds",
         "bedrock_api_connect_timeout_seconds",
@@ -528,11 +563,8 @@ AUDIENCE_SEGMENTS_API_TIMEOUT_SECONDS = settings.audience_segments_api_timeout_s
 TOOL_STATUS_LABEL_MAX_QUERY_CHARS = settings.tool_status_label_max_query_chars
 
 # Style guide
-STYLE_GUIDE_LLM_BATCH_SIZE = settings.style_guide_llm_batch_size
 STYLE_GUIDE_LLM_MODEL = settings.llm_style_guide_model
 STYLE_GUIDE_MAX_DOCUMENT_CHARS = settings.style_guide_max_document_chars
-STYLE_GUIDE_MAX_CHUNK_CHARS = settings.style_guide_max_chunk_chars
-STYLE_GUIDE_MAX_OUTPUT_TOKENS = settings.style_guide_max_output_tokens
 
 # Document cleanup
 OPENSEARCH_DELETE_BATCH_SIZE = settings.opensearch_delete_batch_size

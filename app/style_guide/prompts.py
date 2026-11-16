@@ -1,154 +1,140 @@
-"""Prompt text for the style guide checker's LLM calls."""
+"""Prompt text for the style guide checker's LLM calls (engine.py)."""
 
-from typing import Dict, List
+from app.style_guide.matching import Match, match_context
+from app.style_guide.rules import Rule
+
+SYSTEM_PROMPT = """You check UK government content against the GOV.UK style guide. You are given some of the guide's \
+rules and some or all of a piece of content, and you report where the content clearly breaks those rules.
+
+- Judge only against the rules given, as their guidance describes them. Don't add requirements the guidance doesn't \
+state, and don't report problems that belong to other rules.
+- Report only clear breaches. If a reasonable reading makes the text fine, leave it out. Proper nouns, the names of \
+organisations, schemes and documents, quoted text, and uses the guidance allows are not breaches.
+- The content was extracted from a document or pasted by a user, so links, italics and bold may have been lost. Don't \
+report anything that depends on formatting you can't see.
+- Context from the assistant, when given, says what the content is or what to focus on. Use it to judge scope; it is \
+not part of the content.
+- For each possible breach, give a reason in one short sentence saying what the guidance requires, then \
+breaks_rule: true if the text breaks the rule, false if on reflection it doesn't."""
+
+MATCHES_INSTRUCTIONS = """Each item below is text that a pattern found for one of these rules. Decide for each item \
+whether that use breaks its rule, given its context. Many items are correct uses: list only the ones that break their \
+rule, by item id.
+
+An item's occurrence is its place among all the matches for that rule in the whole content, with the text of the \
+first match. Use it for rules about first use and later mentions: for example, an abbreviation needs explaining at its \
+first occurrence, not afterwards."""
+
+CHUNK_INSTRUCTIONS = """Read the content below for breaches of these rules. Quote each breach exactly as it appears in \
+the content, character for character: the words that break the rule, with only enough around them to find them.
+
+Other checks already cover capitalisation, block capitals, punctuation, abbreviations, spelling, numbers, dates, \
+specific words to avoid and the A to Z of terms. Report only what these rules themselves are about."""
+
+DOCUMENT_INSTRUCTIONS = """These rules are about the content as a whole: its title, summary and headings. If the \
+content has no title or no summary, for example because it is a passage or a message rather than a page, report \
+nothing for the rule concerned. Quote each breach exactly as it appears in the content, character for character."""
+
+MATCH_VERDICTS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "violations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "item": {"type": "integer"},
+                    "reason": {"type": "string"},
+                    "breaks_rule": {"type": "boolean"},
+                },
+                "required": ["item", "reason", "breaks_rule"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["violations"],
+    "additionalProperties": False,
+}
 
 
-def format_checker_context(context: str | None) -> str:
-    """Format the assistant's optional context for the validation prompts.
+def findings_schema(rule_ids: list[str]) -> dict:
+    """The output schema for chunk and document calls, limited to the rules in the call."""
+    return {
+        "type": "object",
+        "properties": {
+            "violations": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "rule_id": {"type": "string", "enum": rule_ids},
+                        "quote": {"type": "string"},
+                        "reason": {"type": "string"},
+                        "breaks_rule": {"type": "boolean"},
+                    },
+                    "required": ["rule_id", "quote", "reason", "breaks_rule"],
+                    "additionalProperties": False,
+                },
+            }
+        },
+        "required": ["violations"],
+        "additionalProperties": False,
+    }
 
-    The assistant can say what the text is, who it is for, or what to focus on. It is guidance for the
-    checker, not text to check.
+
+def _rules_block(rules: list[Rule]) -> str:
+    lines = [f'<rule id="{rule.rule_id}" name="{rule.title}">{rule.details}</rule>' for rule in rules]
+    return "<rules>\n" + "\n".join(lines) + "\n</rules>"
+
+
+def _assistant_context(checker_context: str | None) -> str:
+    if not checker_context or not checker_context.strip():
+        return ""
+    return f"\n<assistant-context>\n{checker_context.strip()}\n</assistant-context>"
+
+
+def matches_prompt(text: str, rules: list[Rule], items: list[Match], checker_context: str | None) -> str:
+    """The user message for judging pattern matches in context.
 
     Args:
-        context: The context field from the check_style_guide call, or None.
-
-    Returns:
-        A <context> block, or "" when there is no context.
+        text: The whole content, for each match's context.
+        rules: The rules the items belong to.
+        items: The matches to judge; item ids are their 1-based positions in this list.
+        checker_context: Guidance from the chat model, or None.
     """
-    if not context or not context.strip():
-        return ""
+    parts = []
+    for item_id, match in enumerate(items, 1):
+        occurrence = f"{match.index} of {match.total}"
+        if match.index > 1:
+            occurrence += f", first: {match.first_text!r}"
+        lines = [
+            f'<item id="{item_id}" rule="{match.rule_id}" occurrence="{occurrence}">',
+            f"<match>{match.text}</match>",
+        ]
+        if match.suggestion:
+            lines.append(f"<expected-form>{match.suggestion}</expected-form>")
+        lines.append(f"<context>{match_context(text, match.start, match.end)}</context>")
+        lines.append("</item>")
+        parts.append("\n".join(lines))
     return (
-        "\n\nCONTEXT FROM THE ASSISTANT (about the document and how to check it; use it to judge scope, "
-        "do not check it):\n"
-        f"<context>\n{context.strip()}\n</context>\n"
+        f"{MATCHES_INSTRUCTIONS}\n\n{_rules_block(rules)}{_assistant_context(checker_context)}\n\n"
+        "<items>\n" + "\n".join(parts) + "\n</items>"
     )
 
 
-def create_llm_prompt_for_deterministic_false(document: str, rules: List[Dict], checker_context: str = "") -> str:
-    """Create a focused prompt for LLM validation of deterministic=false rules.
-
-    This prompt is designed to reduce false positives by:
-    1. Understanding the specific scope and purpose of each rule
-    2. Requiring violations to match the exact context described in Rule Details
-    3. Explicitly warning against over-generalization
-    4. Prioritizing precision over recall
-
-    Args:
-        document: The text to check.
-        rules: The deterministic=false rules to check it against.
-        checker_context: Context from the assistant (see format_checker_context), or "".
-    """
-    prompt = """You are an expert GOV.UK style guide auditor. Your job is NOT to find violations but to find CLEAR
-violations that unambiguously break the specific guidance in Rule Details.
-
-FUNDAMENTAL APPROACH:
-- Read each Rule Details carefully to understand its SPECIFIC PURPOSE and SCOPE
-- Only flag violations where the document's usage clearly contradicts what Rule Details prescribe
-- Rules often have narrow application domains - do NOT over-generalize the rule's scope
-- If there's any reasonable interpretation where the document is correct, do NOT flag it
-
-CRITICAL WARNINGS AGAINST FALSE POSITIVES:
-1. SCOPE MISMATCH - Understand WHAT the rule actually applies to:
-   - "Titles" rule applies to PAGE TITLES/HEADINGS, NOT every sentence with capital letters or dashes
-   - "Summaries" rule applies to META DESCRIPTIONS and page summaries, NOT regular body text sentences
-   - "Maths content" rule applies to mathematical notation, NOT to date ranges, account numbers, or ID numbers
-   - "Numbers" rule applies to how numbers are written in text, NOT formatting of phone/account numbers
-   - "Telephone numbers" rule applies to phone numbers ONLY, not account numbers or reference codes
-   - Do NOT assume a rule name applies to anything containing a related word
-2. DOCUMENT STRUCTURE - Recognize what parts of the document are what:
-   - PAGE TITLES are standalone headers at the start of sections (typically short, descriptive)
-   - SUMMARIES are meta descriptions (HTML meta tags) or explicit introductory summaries
-     * They are typically placed at the very beginning of a document
-     * They summarize the entire page content
-     * Regular sentences in body text are NOT summaries, even if they're descriptive
-     * A long sentence in the middle or end of a document is NOT a summary
-   - BODY TEXT is the main content - most rules about titles/summaries don't apply here
-   - Account numbers, sort codes, reference numbers are NOT telephone numbers
-   - Date ranges like "2024-2025" are body content, not titles or math expressions
-   - If text appears in the middle or end of a document, it's almost certainly NOT a title or summary
-   - If something is clearly NOT in the scope defined by Rule Details, don't flag it
-3. HALLUCINATING REQUIREMENTS: Do NOT add requirements not explicitly stated in Rule Details
-   - Rule Details are the COMPLETE specification - nothing more is required
-   - If Rule Details don't mention a constraint, that constraint does NOT exist
-   - Examples in Rule Details show WHAT APPLIES - use them to understand scope
-
-EVALUATION CHECKLIST FOR EACH RULE:
-□ What is this rule specifically about? (What's its purpose/domain?)
-□ What context must apply for the rule to be violated? (Where does it apply?)
-□ Does the document text actually appear in that specific context?
-□ Is this text clearly a case where the rule should apply?
-□ Does the text explicitly violate what Rule Details prescribe?
-If NO to questions 2-4, do NOT flag it.
-
-RULES TO CHECK:
-"""
-    for i, rule in enumerate(rules, 1):
-        prompt += f"\n{'-' * 70}\nRULE {i}: {rule.get('rule_id')}\n"
-        prompt += f"Name: {rule.get('rule')}\n"
-        prompt += f"Details: {rule.get('details')}\n"
-
-    prompt += checker_context
-    prompt += f"\n{'-' * 70}\nDOCUMENT TO CHECK:\n{'-' * 70}\n\n"
-    prompt += document
-    return prompt
+def chunk_prompt(chunk: str, part: int, parts: int, rules: list[Rule], checker_context: str | None) -> str:
+    """The user message for reading one chunk of the content for the open-ended rules."""
+    where = "the whole content" if parts == 1 else f"part {part} of {parts} of the content"
+    return (
+        f"{CHUNK_INSTRUCTIONS}\n\n{_rules_block(rules)}{_assistant_context(checker_context)}\n\n"
+        f'<content scope="{where}">\n{chunk}\n</content>'
+    )
 
 
-def create_llm_validation_prompt(document: str, rules_with_occurrences: List[Dict], checker_context: str = "") -> str:
-    """Create a dynamic prompt for LLM validation.
-
-    Args:
-        document: The full document text
-        rules_with_occurrences: List of rules with their found occurrences
-        checker_context: Context from the assistant (see format_checker_context), or "".
-
-    Returns:
-        Formatted prompt string
-    """
-    prompt = """You are an expert GOV.UK style guide checker. Your task is to validate whether specific occurrences of
-text in a document violate style guide rules.
-
-CRITICAL INSTRUCTIONS:
-1. The "Rule Details" field is your PRIMARY SOURCE OF TRUTH - read it carefully for each rule
-2. The "Matched text" shows what was actually found in the document (which may have different casing)
-3. For case-insensitive rules, the matched text can appear in ANY casing - this is NOT automatically a violation
-4. A match is ONLY a violation if it breaks the guidance in the Rule Details given its context
-5. Rule Details often contain contextual guidance (e.g., "uppercase when referring to X, lowercase otherwise")
-6. Use the provided context (current sentence and preceding sentence) to understand the meaning and intent
-7. If the Rule Details say "use X in context A, use Y in context B", determine which context applies
-8. Just because text was matched does NOT mean it's a violation - evaluate against Rule Details
-
-EXAMPLES OF CORRECT USAGE (NOT VIOLATIONS):
-- Rule: "Access to Work - Upper case when referring to the programme, otherwise use lower case"
-  - "access to work" in "people need access to work" = CORRECT (general meaning, lowercase is right)
-  - "Access to Work" in "Apply for Access to Work funding" = CORRECT (the programme, uppercase is right)
-  - "access to work" in "Apply for access to work funding" = VIOLATION (should be uppercase for programme)
-
-Only include violations where the text usage clearly breaks the Rule Details guidance. If the matched text is being
-used correctly according to the Rule Details, do NOT include it as a violation.
-
-RULES TO CHECK:\n\n"""
-
-    # Add each rule with its details
-    for i, rule_info in enumerate(rules_with_occurrences, 1):
-        prompt += f"\nRULE {i}:\n"
-        prompt += f"Rule ID: {rule_info['rule_id']}\n"
-        prompt += f"Rule Name: {rule_info['rule_title']}\n"
-        prompt += f"Rule Details: {rule_info['rule_details']}\n"
-        prompt += f"Case Sensitive: {rule_info['case_sensitive']}\n"
-        prompt += "\nOccurrences found in document:\n"
-
-        for j, occurrence in enumerate(rule_info["occurrences"], 1):
-            matched = occurrence["matched_text"]
-            british = occurrence.get("british_spelling")
-            suggestion = f" (British spelling: '{british}')".format() if british else ""
-            prompt += f"  {j}. Matched text: '{matched}'{suggestion}\n"
-            if occurrence.get("preceding_sentence"):
-                prompt += f"     Preceding sentence: {occurrence['preceding_sentence']}\n"
-            prompt += f"     Current sentence: {occurrence['sentence']}\n"
-
-        prompt += "\n"
-
-    prompt += checker_context
-    prompt += "\n\nFULL DOCUMENT FOR CONTEXT:\n\n"
-    prompt += document
-    return prompt
+def document_prompt(digest: str, is_whole: bool, rules: list[Rule], checker_context: str | None) -> str:
+    """The user message for the rules judged once from the whole content or its outline."""
+    scope = "the whole content" if is_whole else "the start of the content, then its other short lines"
+    return (
+        f"{DOCUMENT_INSTRUCTIONS}\n\n{_rules_block(rules)}{_assistant_context(checker_context)}\n\n"
+        f'<content scope="{scope}">\n{digest}\n</content>'
+    )
