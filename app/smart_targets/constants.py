@@ -5,3 +5,9 @@ URL_CAMPAIGN_BENCHMARKS_METRICS = f"{GCS_DATA_API_URL}/v1/metrics"
 URL_CAMPAIGN_BENCHMARKS_FILTERS = f"{URL_CAMPAIGN_BENCHMARKS_METRICS}/{{metric_uuid}}/filters"
 URL_CAMPAIGN_BENCHMARKS_MEASUREMENTS = f"{URL_CAMPAIGN_BENCHMARKS_METRICS}/{{metric_uuid}}/measurements"
 URL_CAMPAIGN_BENCHMARKS_SUMMARY = f"{URL_CAMPAIGN_BENCHMARKS_METRICS}/{{metric_uuid}}/summary"
+
+CAMPAIGN_START_DATE_FILTER = "campaign_start_date"
+CAMPAIGN_SPEND_FILTER = "campaign_spend"
+
+# After a failed fetch of the filter options, how long to wait before trying again
+FILTER_OPTIONS_RETRY_BACKOFF_SECONDS = 60

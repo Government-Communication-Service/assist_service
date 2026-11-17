@@ -142,7 +142,14 @@ async def test_smart_targets_with_central_guidance_streaming(
         [
             (
                 QUERY_CAMPAIGN_BENCHMARKS.name,
-                {"metrics": [{"metric_name": "campaign-recognition", "context_for_filters": "recent campaigns"}]},
+                {
+                    "metrics": [
+                        {
+                            "metric_name": "campaign-recognition",
+                            "campaign_start_date": {"from_date": "2023-01-01"},
+                        }
+                    ]
+                },
             ),
             (SEARCH_CENTRAL_GUIDANCE.name, {"queries": ["OASIS"]}),
         ],

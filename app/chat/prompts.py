@@ -16,7 +16,7 @@ from app.config import CAMPAIGN_BENCHMARKS_SERVICE_DISABLED, settings
 from app.database.models import Document, DocumentChunk
 from app.document_upload.utils import escape_document_name_for_prompt
 from app.smart_targets.exceptions import GetSmartTargetsMetricsError
-from app.smart_targets.service import SmartTargetsService
+from app.smart_targets.service import SmartTargetsService, format_filter_options
 
 logger = getLogger(__name__)
 
@@ -155,6 +155,15 @@ _LAST_GOOD_SEGMENTS: dict[str, str] = {}
 _last_dynamic_block_hash: str | None = None
 
 
+def _format_campaign_benchmarks_filters(filter_options: dict) -> str:
+    """The campaign benchmarks filter list for the system prompt, from SmartTargetsService.get_filter_options."""
+    lines = format_filter_options(filter_options)
+    return (
+        "\n\nThe filters available in the campaign benchmarks tool, with their values (not every metric has every "
+        "filter or value):\n\n" + "\n".join(f"- {line}" for line in lines)
+    )
+
+
 async def build_chat_system_prompt(db_session: AsyncSession) -> list[dict]:
     """Build the system prompt as a list of content blocks for the Bedrock API.
 
@@ -189,15 +198,27 @@ async def build_chat_system_prompt(db_session: AsyncSession) -> list[dict]:
 
     smart_targets_metrics_segment = _LAST_GOOD_SEGMENTS.get("smart_targets_metrics", "")
     smart_targets_edition_segment = _LAST_GOOD_SEGMENTS.get("smart_targets_edition", "")
+    smart_targets_filters_segment = _LAST_GOOD_SEGMENTS.get("smart_targets_filters", "")
 
     if not CAMPAIGN_BENCHMARKS_SERVICE_DISABLED:
+        smart_targets_service = SmartTargetsService()
         try:
-            metrics = sorted(await SmartTargetsService().get_available_metrics())
+            metrics = sorted(await smart_targets_service.get_available_metrics())
             smart_targets_metrics_segment = f" The metrics available in the campaign benchmarks tool are {metrics}"
             _LAST_GOOD_SEGMENTS["smart_targets_metrics"] = smart_targets_metrics_segment
         except GetSmartTargetsMetricsError as e:
             logger.error(
                 "Failed to get Smart Targets metrics when building the system prompt; "
+                f"using the last known value. Error: {e}"
+            )
+
+        try:
+            filter_options = await smart_targets_service.get_filter_options()
+            smart_targets_filters_segment = _format_campaign_benchmarks_filters(filter_options)
+            _LAST_GOOD_SEGMENTS["smart_targets_filters"] = smart_targets_filters_segment
+        except GetSmartTargetsMetricsError as e:
+            logger.error(
+                "Failed to get Smart Targets filters when building the system prompt; "
                 f"using the last known value. Error: {e}"
             )
 
@@ -236,6 +257,7 @@ async def build_chat_system_prompt(db_session: AsyncSession) -> list[dict]:
         f"The pre-built prompts are organised into broad themes and specific use cases. The themes are:\n\n{theme_list}\n\n"
         f"Assist can use the campaign benchmarks tool to retrieve summary statistics about past campaign performance.{smart_targets_metrics_segment}"
         f"{smart_targets_edition_segment}"
+        f"{smart_targets_filters_segment}"
         f"{audience_segments_segment}"
     )
 

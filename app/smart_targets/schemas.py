@@ -17,5 +17,4 @@ class SelectedFilter(BaseModel):
 
 
 class SelectedFilters(BaseModel):
-    reasoning: str
     filters: list[SelectedFilter]

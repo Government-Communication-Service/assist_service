@@ -1,49 +1,95 @@
 import asyncio
+import math
+import time
 from logging import getLogger
 from uuid import UUID
 
-from anthropic.types import ToolUseBlock
 from httpx import AsyncClient, HTTPError, HTTPStatusError
 
-from app.bedrock.bedrock import BedrockHandler, RunMode
-from app.bedrock.call_log import LlmCallContext
-from app.chat.utils import prepare_recent_turns_for_decision
-from app.config import (
-    CAMPAIGN_BENCHMARKS_MAX_TOOL_METRICS,
-    CAMPAIGN_BENCHMARKS_RECENT_TURNS,
-    LLM_CAMPAIGN_BENCHMARKS_MODEL,
-)
-from app.database.models import Message
-from app.database.table import LLMTable
+from app.config import CAMPAIGN_BENCHMARKS_FILTER_OPTIONS_CACHE_SECONDS
 from app.smart_targets.constants import (
+    FILTER_OPTIONS_RETRY_BACKOFF_SECONDS,
     URL_CAMPAIGN_BENCHMARKS_FILTERS,
     URL_CAMPAIGN_BENCHMARKS_HEALTHCHECK,
     URL_CAMPAIGN_BENCHMARKS_METRICS,
     URL_CAMPAIGN_BENCHMARKS_SUMMARY,
 )
 from app.smart_targets.exceptions import GetSmartTargetsMetricsError, SmartTargetsConnectionError
-from app.smart_targets.prompts import (
-    SYSTEM_PROMPT_SELECT_FILTERS_DYNAMIC,
-    USER_PROMPT_SELECT_FILTERS,
-    get_system_prompt_select_filters_with_context,
-)
-from app.smart_targets.schemas import (
-    SelectedFilter,
-    SelectedFilters,
-)
-from app.smart_targets.tools import (
-    SELECT_FILTERS_TOOL_NAME,
-    generate_select_filters_tool_schema,
-)
+from app.smart_targets.schemas import SelectedFilter, SelectedFilters
 
 logger = getLogger(__name__)
+
+# (fetched_at monotonic seconds, options) for get_filter_options, and its running background refresh
+_filter_options_cache: tuple[float, dict] | None = None
+_filter_options_refresh: asyncio.Task | None = None
+# Monotonic seconds of the last failed get_filter_options fetch, cleared by a successful one
+_filter_options_last_failure: float | None = None
+
+
+def _filter_options_in_backoff() -> bool:
+    return (
+        _filter_options_last_failure is not None
+        and time.monotonic() - _filter_options_last_failure < FILTER_OPTIONS_RETRY_BACKOFF_SECONDS
+    )
+
+
+def _sig_figs(value, figures: int = 3):
+    """A number rounded to significant figures without scientific notation; anything else unchanged."""
+    if isinstance(value, bool) or not isinstance(value, int | float) or value == 0 or not math.isfinite(value):
+        return value
+    rounded = round(value, figures - 1 - math.floor(math.log10(abs(value))))
+    return int(rounded) if rounded == int(rounded) else rounded
+
+
+def format_filter_options(filter_options: dict) -> list[str]:
+    """One "name: values" line per filter, from get_filter_options or _metric_filter_options."""
+    lines = []
+    for name, f in filter_options.items():
+        if f["type"] == "categorical":
+            lines.append(f"{name}: {', '.join(f['options'])}")
+        elif f["type"] == "continuous":
+            lines.append(f"{name}: {round(f['min']):,} to {round(f['max']):,}")
+        else:
+            lines.append(f"{name}: {f['min']} to {f['max']}")
+    return lines
+
+
+def _validated_metric_filter_options(raw_filters_data: dict) -> dict:
+    """_metric_filter_options, checked so that format_filter_options can render every entry.
+
+    Raises:
+        ValueError: A filter has the wrong shape, e.g. a missing range end or a non-numeric spend.
+    """
+    try:
+        options = _metric_filter_options(raw_filters_data)
+    except (AttributeError, KeyError, TypeError) as e:
+        raise ValueError(f"Malformed filters data: {e!r}") from e
+    for name, f in options.items():
+        if f["type"] == "categorical":
+            if not all(isinstance(o, str) for o in f["options"]):
+                raise ValueError(f"Filter {name} has a non-string option name")
+        elif f["type"] == "continuous":
+            if not all(isinstance(v, int | float) and not isinstance(v, bool) for v in (f["min"], f["max"])):
+                raise ValueError(f"Filter {name} has a non-numeric range")
+        elif not all(isinstance(v, str) for v in (f["min"], f["max"])):
+            raise ValueError(f"Filter {name} has a non-string range")
+    return options
+
+
+def _metric_filter_options(raw_filters_data: dict) -> dict:
+    """One metric's filters in the get_filter_options shape."""
+    options = {}
+    for f in sorted(raw_filters_data.get("filters", []), key=lambda f: f["name"]):
+        if f["type"] == "categorical":
+            options[f["name"]] = {"type": "categorical", "options": sorted(o["name"] for o in f.get("options", []))}
+        else:
+            options[f["name"]] = {"type": f["type"], "min": f["min"], "max": f["max"]}
+    return options
 
 
 class SmartTargetsService:
     def __init__(self):
         self.async_client: AsyncClient = AsyncClient()
-        llm = LLMTable().get_by_model(LLM_CAMPAIGN_BENCHMARKS_MODEL)
-        self.bedrock_handler: BedrockHandler = BedrockHandler(llm=llm, mode=RunMode.ASYNC)
 
     async def verify_connection(self):
         try:
@@ -56,20 +102,6 @@ class SmartTargetsService:
             logger.error(f"{m}: {e}")
             raise SmartTargetsConnectionError("Failed to verify connection with the GCS Data API") from e
 
-    def _wrap_chat_messages(self, messages: list[Message]) -> str:
-        messages_prep: list[dict] = prepare_recent_turns_for_decision(
-            messages, num_turns=CAMPAIGN_BENCHMARKS_RECENT_TURNS
-        )
-        all_but_final_messages = messages_prep[0:-1]
-        last_message = messages_prep[-1]
-
-        user_message = "<ChatMessages>\n"
-        for m in all_but_final_messages:
-            user_message += f"<{m['role']}>{m['content']}</{m['role']}>\n"
-        user_message += f"<MostRecentMessage>{last_message['content']}</MostRecentMessage>\n"
-        user_message += "</ChatMessages>"
-        return user_message
-
     async def get_available_metrics(self) -> dict:
         try:
             r = await self.async_client.get(URL_CAMPAIGN_BENCHMARKS_METRICS)
@@ -77,13 +109,7 @@ class SmartTargetsService:
         except HTTPError as e:
             raise GetSmartTargetsMetricsError("Failed to get metrics from the Smart Targets tool") from e
 
-        # Encode the result in a dict with name keys
-        # This is so we can give the LLM an English name to choose from when making a selection
-        # We think this will be helpful because LLMs are trained on English words and so
-        # are less likely to make mistakes when using English words
-        # After the LLM makes it's selection, we retrieve the UUID from this dict
-
-        # Make sure the LLM has the option to select none of the metrics
+        # Keyed by name so the model can request metrics by name; the UUID is looked up afterwards.
         metrics = {"no-metric-selected": {"id": "0", "name": "no-metric-selected", "uuid": None}}
         for i, m in enumerate(r.json()["metrics"]):
             shifted_index = i + 1
@@ -94,52 +120,134 @@ class SmartTargetsService:
     async def _get_filters_for_selected_metric(self, metric_uuid: UUID) -> dict:
         url = URL_CAMPAIGN_BENCHMARKS_FILTERS.format(metric_uuid=metric_uuid)
         r = await self.async_client.get(url)
+        r.raise_for_status()
         return r.json()
 
-    def _wrap_filters(self, available_filters: dict) -> str:
-        wrapped_filters = "<CampaignFilters>\n"
-        for name, f in available_filters.items():
-            filter_id = f["id"]
-            wrapped_filters += f"<filter {filter_id}>name={name}</filter {filter_id}\n>"
-        wrapped_filters += "</CampaignFilters>"
-        return wrapped_filters
+    async def get_filter_options(self) -> dict:
+        """Every filter across all metrics, from a process-wide cache.
 
-    async def _select_filters(
-        self,
-        messages: list[Message],
-        raw_filters_data: dict,
-        metric_name: str | None = None,
-        extracted_context: str | None = None,
-        context: LlmCallContext | None = None,
-    ) -> SelectedFilters:
-        user_message: str = f"{USER_PROMPT_SELECT_FILTERS}\n{self._wrap_chat_messages(messages)}"
-        tool = generate_select_filters_tool_schema(raw_filters_data)
+        Once the cache is older than CAMPAIGN_BENCHMARKS_FILTER_OPTIONS_CACHE_SECONDS it is still returned, and
+        a background refresh is started; only the first call in a process waits for the fetch. After a failed
+        fetch, none is tried again for FILTER_OPTIONS_RETRY_BACKOFF_SECONDS.
 
-        # Use context-aware system prompt if context is provided
-        if metric_name and extracted_context:
-            system_prompt = get_system_prompt_select_filters_with_context(metric_name, extracted_context)
-        else:
-            system_prompt = SYSTEM_PROMPT_SELECT_FILTERS_DYNAMIC
+        Returns:
+            Filter name -> {"type", "options"} for categorical filters (sorted option names) or
+            {"type", "min", "max"} for date and continuous filters (the widest range over all metrics).
 
-        r = await self.bedrock_handler.invoke_async(
-            context=context,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
-            tools=[tool],
-            tool_choice={"type": "tool", "name": SELECT_FILTERS_TOOL_NAME},
+        Raises:
+            GetSmartTargetsMetricsError: Nothing is cached and the filters couldn't be fetched, now or recently.
+        """
+        global _filter_options_refresh
+        if _filter_options_cache is None:
+            if _filter_options_in_backoff():
+                raise GetSmartTargetsMetricsError("Smart Targets filter options failed recently; not retrying yet")
+            return await self._refresh_filter_options()
+        fetched_at, options = _filter_options_cache
+        stale = time.monotonic() - fetched_at >= CAMPAIGN_BENCHMARKS_FILTER_OPTIONS_CACHE_SECONDS
+        idle = _filter_options_refresh is None or _filter_options_refresh.done()
+        if stale and idle and not _filter_options_in_backoff():
+            _filter_options_refresh = asyncio.create_task(self._refresh_filter_options_in_background())
+        return options
+
+    async def _refresh_filter_options_in_background(self) -> None:
+        try:
+            await self._refresh_filter_options()
+        except GetSmartTargetsMetricsError as e:
+            logger.error(f"Failed to refresh Smart Targets filter options; keeping the cached ones. Error: {e}")
+
+    async def _refresh_filter_options(self) -> dict:
+        """Fetch the filter options into the cache, recording a failure for the retry backoff.
+
+        Raises:
+            GetSmartTargetsMetricsError: The fetch failed, whatever the cause.
+        """
+        global _filter_options_cache, _filter_options_last_failure
+        try:
+            options = await self._fetch_filter_options()
+        except Exception as e:
+            _filter_options_last_failure = time.monotonic()
+            if isinstance(e, GetSmartTargetsMetricsError):
+                raise
+            raise GetSmartTargetsMetricsError("Failed to get filter options from the Smart Targets tool") from e
+        _filter_options_cache = (time.monotonic(), options)
+        _filter_options_last_failure = None
+        return options
+
+    async def _fetch_filter_options(self) -> dict:
+        """Every metric's filters combined, skipping any metric whose filters can't be fetched or read.
+
+        Raises:
+            GetSmartTargetsMetricsError: No metric's filters could be fetched.
+        """
+        metrics = await self.get_available_metrics()
+        uuids = [m["uuid"] for m in metrics.values() if m["uuid"]]
+        results = await asyncio.gather(
+            *(self._get_filters_for_selected_metric(u) for u in uuids), return_exceptions=True
         )
 
-        for content in r.content:
-            if isinstance(content, ToolUseBlock):
-                if isinstance(content.input, dict):
-                    return SelectedFilters(
-                        reasoning=content.input["reasoning"],
-                        filters=[
-                            SelectedFilter(name=k, values=v) for k, v in content.input.items() if k != "reasoning"
-                        ],
-                    )
+        metric_options: list[tuple[str, dict]] = []
+        for uuid, result in zip(uuids, results, strict=True):
+            if isinstance(result, BaseException):
+                if not isinstance(result, Exception):
+                    raise result
+                logger.warning(f"Skipping Smart Targets metric {uuid} in the filter options: {result!r}")
+                continue
+            try:
+                metric_options.append((uuid, _validated_metric_filter_options(result)))
+            except ValueError as e:
+                logger.warning(f"Skipping Smart Targets metric {uuid} in the filter options: {e!r}")
+        if uuids and not metric_options:
+            raise GetSmartTargetsMetricsError("Failed to get any metric's filters from the Smart Targets tool")
 
-        raise Exception("No tool use was detected.")
+        combined: dict[str, dict] = {}
+        for uuid, options in metric_options:
+            for name, f in options.items():
+                entry = combined.get(name)
+                if entry is None:
+                    combined[name] = {**f, "options": set(f["options"])} if f["type"] == "categorical" else {**f}
+                elif entry["type"] != f["type"]:
+                    logger.warning(f"Smart Targets metric {uuid}: filter {name} is {f['type']}, not {entry['type']}")
+                elif f["type"] == "categorical":
+                    entry["options"].update(f["options"])
+                else:
+                    entry["min"] = min(entry["min"], f["min"])
+                    entry["max"] = max(entry["max"], f["max"])
+        return {
+            name: {**entry, "options": sorted(entry["options"])} if entry["type"] == "categorical" else entry
+            for name, entry in sorted(combined.items())
+        }
+
+    def _check_filters(
+        self, selected_filters: SelectedFilters, raw_filters_data: dict, metric_name: str
+    ) -> tuple[SelectedFilters, list[str]]:
+        """Drop filters and option values this metric doesn't have.
+
+        Returns:
+            The filters to apply, and a note for each filter or value that was dropped.
+        """
+        available = {f["name"]: f for f in raw_filters_data.get("filters", [])}
+        kept: list[SelectedFilter] = []
+        notes: list[str] = []
+        for f in selected_filters.filters:
+            filter_info = available.get(f.name)
+            if filter_info is None:
+                notes.append(f"{f.name} is not a filter for {metric_name}")
+                continue
+            if filter_info["type"] != "categorical":
+                if isinstance(f.values, dict):
+                    kept.append(f)
+                continue
+            if not isinstance(f.values, list):
+                notes.append(f"{f.name} needs a list of values")
+                continue
+            option_names = {o["name"] for o in filter_info.get("options", [])}
+            values = [v for v in f.values if v in option_names]
+            missing = [v for v in f.values if v not in option_names]
+            if missing:
+                notes.append(f"{f.name} has no {', '.join(missing)} for {metric_name}")
+            if values:
+                kept.append(SelectedFilter(name=f.name, values=values))
+        return SelectedFilters(filters=kept), notes
 
     async def _prune_selected_filters(
         self, selected_filters: SelectedFilters, raw_filters_data: dict
@@ -214,7 +322,7 @@ class SmartTargetsService:
         if filter_to_remove:
             logger.info(f"Pruning filter: {filter_to_remove.name}")
             new_filters = [f for f in selected_filters.filters if f != filter_to_remove]
-            return SelectedFilters(reasoning=selected_filters.reasoning, filters=new_filters)
+            return SelectedFilters(filters=new_filters)
 
         return selected_filters
 
@@ -328,6 +436,9 @@ class SmartTargetsService:
         metric_info = summary_data.get("metric", {})
         stats = summary_data.get("summary_statistics", {})
         unit = metric_info.get("unit", "")
+        known_unit = unit if unit and unit != "unknown" else ""
+        unit_suffix = f" {known_unit}" if known_unit else ""
+        unit_display = f", unit={known_unit}" if known_unit else ""
         if selected_filters:
             filters_display = self._format_filters(selected_filters)
         else:
@@ -335,7 +446,7 @@ class SmartTargetsService:
 
         result = [
             (
-                f"Campaign Performance Statistics ({selected_metric_name}, unit={unit}), "
+                f"Campaign Performance Statistics ({selected_metric_name}{unit_display}), "
                 f"filters_applied={{{filters_display}}}:"
             )
         ]
@@ -347,62 +458,44 @@ class SmartTargetsService:
         result.append(f"- Number of data points: {n_measurements}")
 
         # Add quartiles
-        lower_q = stats.get("lower_quartile", "N/A")
-        median = stats.get("median", "N/A")
-        upper_q = stats.get("upper_quartile", "N/A")
+        lower_q = _sig_figs(stats.get("lower_quartile", "N/A"))
+        median = _sig_figs(stats.get("median", "N/A"))
+        upper_q = _sig_figs(stats.get("upper_quartile", "N/A"))
         if lower_q != "N/A":
-            result.append(f"- Lower quartile: {lower_q} {unit}")
+            result.append(f"- Lower quartile: {lower_q}{unit_suffix}")
         if median != "N/A":
-            result.append(f"- Median: {median}")
+            result.append(f"- Median: {median}{unit_suffix}")
         if upper_q != "N/A":
-            result.append(f"- Upper quartile: {upper_q} {unit}")
+            result.append(f"- Upper quartile: {upper_q}{unit_suffix}")
 
         # Add the spread of the data; the API returns the 2.5th and 97.5th percentiles (min and max below 40 points)
         spread = stats.get("confidence_interval_95", [])
         if spread and len(spread) >= 2:
-            spread_low = spread[0]
-            spread_high = spread[1]
+            spread_low = _sig_figs(spread[0])
+            spread_high = _sig_figs(spread[1])
             if isinstance(n_measurements, int) and n_measurements < 40:
                 label = "Minimum to maximum (too few data points for percentiles)"
             else:
                 label = "2.5th to 97.5th percentile range (middle 95% of data points)"
-            result.append(f"- {label}: {spread_low} to {spread_high} {unit}")
+            result.append(f"- {label}: {spread_low} to {spread_high}{unit_suffix}")
 
         return "\n".join(result)
 
-    async def _process_single_metric(
-        self, messages: list[Message], metric_info: dict, context: LlmCallContext | None = None
-    ) -> tuple[str, str, str, str] | str:
-        """Process a single metric and return formatted results"""
+    async def _process_single_metric(self, metric_info: dict) -> tuple[str, str, str, str] | str:
+        """Query one metric with the requested filters, loosening them if too few campaigns match.
+
+        Args:
+            metric_info: The metric's "uuid" and "name", and the requested "filters" (SelectedFilters).
+
+        Returns:
+            (formatted statistics, dashboard URL, metric name, filters applied), or an error string.
+        """
         metric_uuid = metric_info["uuid"]
         metric_name = metric_info["name"]
-        extracted_context = metric_info["context_for_filters"]
-
-        logger.debug(f"Processing metric: {metric_name}")
-        logger.debug(f"Extracted context for {metric_name}: {extracted_context}")
 
         try:
-            # Get filters for this specific metric
             raw_filters_data: dict = await self._get_filters_for_selected_metric(metric_uuid)
-
-            # Select filters with the extracted context
-            selected_filters = await self._select_filters(
-                messages,
-                raw_filters_data,
-                metric_name=metric_name,
-                extracted_context=extracted_context,
-                context=context,
-            )
-
-            # Drop filters the model invented: they aren't sent to the API and can't be pruned
-            known_filter_names = {f["name"] for f in raw_filters_data.get("filters", [])}
-            unknown_filter_names = [f.name for f in selected_filters.filters if f.name not in known_filter_names]
-            if unknown_filter_names:
-                logger.warning(f"Metric {metric_name}: dropping unknown filters {unknown_filter_names}")
-                selected_filters = SelectedFilters(
-                    reasoning=selected_filters.reasoning,
-                    filters=[f for f in selected_filters.filters if f.name in known_filter_names],
-                )
+            selected_filters, ignored = self._check_filters(metric_info["filters"], raw_filters_data, metric_name)
 
             # Iteratively prune filters if campaign count is too low.
             # Each pass removes at most one filter, so one query per filter plus the unfiltered one is enough.
@@ -451,6 +544,19 @@ class SmartTargetsService:
                 selected_metric_name=metric_name,
                 selected_filters=current_filters,
             )
+            applied_names = {f.name for f in current_filters.filters}
+            dropped = [f.name for f in selected_filters.filters if f.name not in applied_names]
+            if dropped:
+                formatted_response += (
+                    f"\n- Filters dropped because fewer than {min_campaigns_threshold} campaigns matched: "
+                    f"{', '.join(dropped)}"
+                )
+            if ignored:
+                available = format_filter_options(_metric_filter_options(raw_filters_data))
+                formatted_response += (
+                    f"\n- Requested filters ignored: {'; '.join(ignored)}"
+                    f"\n- Filters available for {metric_name}:" + "".join(f"\n  - {line}" for line in available)
+                )
 
             citation = summary_data["url"]
 
@@ -463,14 +569,12 @@ class SmartTargetsService:
             return f"ERROR processing metric '{metric_name}': {str(e)}"
 
     async def query_metrics_for_tool(
-        self, requests: list[tuple[str, str]], messages: list[Message], context: LlmCallContext | None = None
+        self, requests: list[tuple[str, SelectedFilters]]
     ) -> tuple[str, list[dict[str, str]]]:
-        """Look up the chat model's requested metrics, choosing filters for each.
+        """Look up the chat model's requested metrics with the filters it chose.
 
         Args:
-            requests: (metric name, context for filters) pairs, at most CAMPAIGN_BENCHMARKS_MAX_TOOL_METRICS used.
-            messages: The chat's messages including this turn's, for filter selection.
-            context: What the filter-selection calls are for, recorded on their llm_internal_response rows.
+            requests: (metric name, filters) pairs; the tool schema caps how many.
 
         Returns:
             The tool result text, and a source dict (docname, docurl) per metric returned.
@@ -478,16 +582,14 @@ class SmartTargetsService:
         available_metrics = await self.get_available_metrics()
         metric_infos = []
         unknown = []
-        for metric_name, context_for_filters in requests[:CAMPAIGN_BENCHMARKS_MAX_TOOL_METRICS]:
+        for metric_name, filters in requests:
             metric = available_metrics.get(metric_name)
             if metric is None or not metric["uuid"]:
                 unknown.append(metric_name)
                 continue
-            metric_infos.append(
-                {"uuid": UUID(metric["uuid"]), "name": metric_name, "context_for_filters": context_for_filters}
-            )
+            metric_infos.append({"uuid": UUID(metric["uuid"]), "name": metric_name, "filters": filters})
 
-        results = await asyncio.gather(*(self._process_single_metric(messages, info, context) for info in metric_infos))
+        results = await asyncio.gather(*(self._process_single_metric(info) for info in metric_infos))
 
         parts = []
         sources = []

@@ -16,6 +16,7 @@ from app.logs import BUGSNAG_ENABLED, BugsnagLogger
 from app.logs.logs_handler import logger, session_id_var
 from app.opensearch.service import verify_connection_to_opensearch
 from app.routers import routers
+from app.smart_targets.exceptions import GetSmartTargetsMetricsError
 from app.smart_targets.service import SmartTargetsService
 
 
@@ -41,6 +42,10 @@ async def lifespan(app: FastAPI):
         logger.info("Skipping Smart Targets Service connection verification")
     else:
         await SmartTargetsService().verify_connection()
+        try:
+            await SmartTargetsService().get_filter_options()
+        except GetSmartTargetsMetricsError as e:
+            logger.error(f"Failed to load Smart Targets filter options at startup. Error: {e}")
 
     # Now yield to the main API code
     yield

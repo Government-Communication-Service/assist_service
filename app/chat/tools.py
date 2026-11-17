@@ -287,11 +287,7 @@ async def _exec_query_smart_targets(
     ctx: ToolContext, args: QuerySmartTargetsArgs, call: ToolCall, db_session: AsyncSession
 ) -> ToolExecResult:
     content, _sources = await SmartTargetsService().query_metrics_for_tool(
-        requests=[(m.metric_name, m.context_for_filters) for m in args.metrics],
-        messages=[*ctx.history, ctx.user_message],
-        context=LlmCallContext(
-            purpose="smart_targets_select_filters", chat_id=ctx.chat.id, message_id=ctx.user_message.id
-        ),
+        requests=[(m.metric_name, m.to_selected_filters()) for m in args.metrics],
     )
     # Smart Targets currently attaches no sources; `_sources` holds them if they are added back.
     return ToolExecResult(content=content)

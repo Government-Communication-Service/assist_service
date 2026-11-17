@@ -255,6 +255,7 @@ async def test_smart_targets_disabled_skips_services():
     # Use context managers for clarity and to avoid pytest patch parameter issues in CI
     with patch("app.chat.prompts.CAMPAIGN_BENCHMARKS_SERVICE_DISABLED", True):
         with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
+            mock_smart.return_value.get_filter_options = AsyncMock(return_value=_FILTER_OPTIONS)
             with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
                 async with async_db_session() as db_session:
                     response = await build_chat_system_prompt(db_session)
@@ -270,6 +271,7 @@ async def test_smart_targets_enabled_calls_services():
     """Test that services are called when Smart Targets is enabled."""
     with patch("app.chat.prompts.CAMPAIGN_BENCHMARKS_SERVICE_DISABLED", False):
         with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
+            mock_smart.return_value.get_filter_options = AsyncMock(return_value=_FILTER_OPTIONS)
             with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
                 mock_smart.return_value.get_available_metrics = AsyncMock(return_value=["metric1", "metric2"])
 
@@ -300,6 +302,7 @@ async def test_smart_targets_error_continues_gracefully():
 
     with patch("app.chat.prompts.CAMPAIGN_BENCHMARKS_SERVICE_DISABLED", False):
         with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
+            mock_smart.return_value.get_filter_options = AsyncMock(return_value=_FILTER_OPTIONS)
             with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
                 mock_smart.return_value.get_available_metrics = AsyncMock(
                     side_effect=GetSmartTargetsMetricsError("Connection failed")
@@ -323,6 +326,7 @@ async def test_bmdb_error_continues_gracefully():
 
     with patch("app.chat.prompts.CAMPAIGN_BENCHMARKS_SERVICE_DISABLED", False):
         with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
+            mock_smart.return_value.get_filter_options = AsyncMock(return_value=_FILTER_OPTIONS)
             with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
                 mock_smart.return_value.get_available_metrics = AsyncMock(return_value=["metric1"])
                 mock_bmdb.get_latest_edition = AsyncMock(
@@ -336,7 +340,13 @@ async def test_bmdb_error_continues_gracefully():
     assert "metric1" in " ".join(block["text"] for block in response)
 
 
-@pytest.mark.asyncio
+_FILTER_OPTIONS = {
+    "campaign_spend": {"type": "continuous", "min": 1000.4, "max": 2500000.0},
+    "campaign_start_date": {"type": "date", "min": "2014-01-01", "max": "2025-04-01"},
+    "region": {"type": "categorical", "options": ["london-only", "wales"]},
+}
+
+
 def _mock_edition() -> AsyncMock:
     edition = AsyncMock()
     edition.version_number = "1.0"
@@ -354,6 +364,7 @@ async def test_smart_targets_metrics_are_sorted():
     """API order isn't deterministic; the prompt must not vary just because the API reordered."""
     with patch("app.chat.prompts.CAMPAIGN_BENCHMARKS_SERVICE_DISABLED", False):
         with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
+            mock_smart.return_value.get_filter_options = AsyncMock(return_value=_FILTER_OPTIONS)
             with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
                 mock_smart.return_value.get_available_metrics = AsyncMock(return_value=["zebra", "apple"])
                 mock_bmdb.get_latest_edition = AsyncMock(return_value=_mock_edition())
@@ -373,6 +384,7 @@ async def test_smart_targets_metrics_fall_back_to_last_known_good_on_transient_f
 
     with patch("app.chat.prompts.CAMPAIGN_BENCHMARKS_SERVICE_DISABLED", False):
         with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
+            mock_smart.return_value.get_filter_options = AsyncMock(return_value=_FILTER_OPTIONS)
             with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
                 mock_bmdb.get_latest_edition = AsyncMock(return_value=_mock_edition())
                 mock_smart.return_value.get_available_metrics = AsyncMock(return_value=["metric1"])
@@ -386,6 +398,43 @@ async def test_smart_targets_metrics_fall_back_to_last_known_good_on_transient_f
                     response = await build_chat_system_prompt(db_session)
 
     assert "metric1" in " ".join(block["text"] for block in response)
+
+
+@pytest.mark.asyncio
+async def test_smart_targets_filters_are_listed():
+    with patch("app.chat.prompts.CAMPAIGN_BENCHMARKS_SERVICE_DISABLED", False):
+        with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
+            mock_smart.return_value.get_filter_options = AsyncMock(return_value=_FILTER_OPTIONS)
+            with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
+                mock_smart.return_value.get_available_metrics = AsyncMock(return_value=["metric1"])
+                mock_bmdb.get_latest_edition = AsyncMock(return_value=_mock_edition())
+                async with async_db_session() as db_session:
+                    response = await build_chat_system_prompt(db_session)
+
+    full_text = " ".join(block["text"] for block in response)
+    assert "- region: london-only, wales" in full_text
+    assert "- campaign_spend: 1,000 to 2,500,000" in full_text
+    assert "- campaign_start_date: 2014-01-01 to 2025-04-01" in full_text
+
+
+@pytest.mark.asyncio
+async def test_smart_targets_filters_fall_back_to_last_known_good_on_failure():
+    from app.smart_targets.exceptions import GetSmartTargetsMetricsError
+
+    with patch("app.chat.prompts.CAMPAIGN_BENCHMARKS_SERVICE_DISABLED", False):
+        with patch("app.chat.prompts.SmartTargetsService") as mock_smart:
+            mock_smart.return_value.get_filter_options = AsyncMock(return_value=_FILTER_OPTIONS)
+            with patch("app.chat.prompts.BmdbEditionService") as mock_bmdb:
+                mock_bmdb.get_latest_edition = AsyncMock(return_value=_mock_edition())
+                mock_smart.return_value.get_available_metrics = AsyncMock(return_value=["metric1"])
+                async with async_db_session() as db_session:
+                    await build_chat_system_prompt(db_session)
+
+                mock_smart.return_value.get_filter_options = AsyncMock(side_effect=GetSmartTargetsMetricsError("down"))
+                async with async_db_session() as db_session:
+                    response = await build_chat_system_prompt(db_session)
+
+    assert "- region: london-only, wales" in " ".join(block["text"] for block in response)
 
 
 def _agent_turn(should_compact: bool = False, prefix_before_current_turn: list[dict] | None = None):

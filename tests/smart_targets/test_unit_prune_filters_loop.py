@@ -1,6 +1,6 @@
-"""Unit tests for the filter-pruning loop in SmartTargetsService._process_single_metric (API and LLM calls mocked)."""
+"""Unit tests for the filter-pruning loop in SmartTargetsService._process_single_metric (API calls mocked)."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from app.smart_targets.schemas import SelectedFilter, SelectedFilters
 from app.smart_targets.service import SmartTargetsService
@@ -9,44 +9,63 @@ RAW_FILTERS = {
     "filters": [
         {"name": "region", "type": "categorical", "options": [{"name": "London", "uuid": "r1"}]},
         {"name": "channel", "type": "categorical", "options": [{"name": "TV", "uuid": "c1"}]},
-        {"name": "campaign_start_date", "type": "date"},
-        {"name": "other_date", "type": "date"},
+        {"name": "campaign_start_date", "type": "date", "min": "2020-01-01", "max": "2025-01-01"},
+        {"name": "other_date", "type": "date", "min": "2021-01-01", "max": "2022-01-01"},
     ]
 }
-METRIC_INFO = {"uuid": "m1", "name": "Impressions", "context_for_filters": "x"}
 
 
 def _summary(n_campaigns):
     return {"summary_statistics": {"n_campaigns": n_campaigns}, "url": "https://st/1"}
 
 
-def _service(selected, summaries):
-    with patch("app.smart_targets.service.LLMTable", MagicMock()), patch("app.smart_targets.service.BedrockHandler"):
-        service = SmartTargetsService()
+def _service(summaries):
+    service = SmartTargetsService()
     service._get_filters_for_selected_metric = AsyncMock(return_value=RAW_FILTERS)
-    service._select_filters = AsyncMock(return_value=SelectedFilters(reasoning="r", filters=selected))
     service._get_summary_for_metric = AsyncMock(side_effect=summaries)
     return service
 
 
+def _metric_info(selected):
+    return {"uuid": "m1", "name": "Impressions", "filters": SelectedFilters(filters=selected)}
+
+
 async def test_unknown_filters_are_dropped_before_querying():
     selected = [SelectedFilter(name="made_up", values=["a"]), SelectedFilter(name="region", values=["London"])]
-    service = _service(selected, lambda *_: _summary(0))
+    service = _service(lambda *_: _summary(0))
 
-    result = await service._process_single_metric([], METRIC_INFO)
+    result = await service._process_single_metric(_metric_info(selected))
 
     # region, then no filters: made_up never gets a query of its own
     assert service._get_summary_for_metric.await_count == 2
     assert isinstance(result, tuple)
     assert "made_up" not in result[3]
+    assert "Requested filters ignored: made_up is not a filter for Impressions" in result[0]
+    assert "Filters dropped because fewer than 20 campaigns matched: region" in result[0]
+    assert (
+        "- Filters available for Impressions:\n"
+        "  - campaign_start_date: 2020-01-01 to 2025-01-01\n"
+        "  - channel: TV\n"
+        "  - other_date: 2021-01-01 to 2022-01-01\n"
+        "  - region: London"
+    ) in result[0]
+
+
+async def test_valid_filters_leave_out_the_available_list():
+    service = _service(lambda *_: _summary(50))
+
+    result = await service._process_single_metric(_metric_info([SelectedFilter(name="region", values=["London"])]))
+
+    assert "Filters available" not in result[0]
+    assert "Filters dropped" not in result[0]
 
 
 async def test_unprunable_filter_stops_the_loop():
     selected = [SelectedFilter(name="other_date", values={"min_date": "2024-01-01"})]
-    service = _service(selected, lambda *_: _summary(0))
+    service = _service(lambda *_: _summary(0))
 
     with patch("app.smart_targets.service.logger") as logger:
-        result = await service._process_single_metric([], METRIC_INFO)
+        result = await service._process_single_metric(_metric_info(selected))
 
     assert service._get_summary_for_metric.await_count == 1
     assert isinstance(result, tuple)
@@ -57,16 +76,17 @@ async def test_unprunable_filter_stops_the_loop():
 async def test_loop_is_bounded_when_pruning_never_empties_filters():
     region = SelectedFilter(name="region", values=["London"])
     channel = SelectedFilter(name="channel", values=["TV"])
-    service = _service([region, channel], lambda *_: _summary(0))
+    selected = [region, channel]
+    service = _service(lambda *_: _summary(0))
     # A broken prune that keeps swapping one filter for the other, so the list never empties or repeats
     service._prune_selected_filters = AsyncMock(
         side_effect=lambda filters, raw: SelectedFilters(
-            reasoning="r", filters=[channel] if filters.filters[0] == region else [region]
+            filters=[channel] if filters.filters[0] == region else [region]
         )
     )
 
     with patch("app.smart_targets.service.logger") as logger:
-        result = await service._process_single_metric([], METRIC_INFO)
+        result = await service._process_single_metric(_metric_info(selected))
 
     assert service._get_summary_for_metric.await_count == 3
     assert isinstance(result, tuple)
@@ -75,9 +95,9 @@ async def test_loop_is_bounded_when_pruning_never_empties_filters():
 
 async def test_stops_once_enough_campaigns():
     selected = [SelectedFilter(name="region", values=["London"]), SelectedFilter(name="channel", values=["TV"])]
-    service = _service(selected, [_summary(5), _summary(25)])
+    service = _service([_summary(5), _summary(25)])
 
-    result = await service._process_single_metric([], METRIC_INFO)
+    result = await service._process_single_metric(_metric_info(selected))
 
     assert service._get_summary_for_metric.await_count == 2
     # region is pruned before channel

@@ -180,19 +180,14 @@ class AppSettings(BaseSettings):
 
     # --- LLM / Bedrock ---
     llm_default_provider: str = "bedrock"
-    llm_default_model: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    llm_default_model: str = "anthropic.claude-sonnet-5-5"
     llm_chat_response_model: str = "anthropic.claude-sonnet-5-5"
     llm_chat_title_model: str = "anthropic.claude-haiku-5-5"
     llm_index_router: str = "anthropic.claude-haiku-5-5"
     llm_opensearch_query_generator: str = "anthropic.claude-haiku-5-5"
     llm_chunk_reviewer: str = "anthropic.claude-haiku-5-5"
-    llm_govuk_query_generator: str = "anthropic.claude-sonnet-4-5-20250929-v1:0"
     llm_document_relevancy_model: str = "anthropic.claude-haiku-5-5"
     llm_gov_uk_search_followup_assessment: str = "anthropic.claude-haiku-5-5"
-    llm_campaign_benchmarks_model: str = Field(
-        "anthropic.claude-sonnet-4-5-20250929-v1:0",
-        validation_alias=AliasChoices("llm_campaign_benchmarks_model", "llm_smart_targets_model"),
-    )
     llm_style_guide_model: str = "anthropic.claude-haiku-5-5"
     chat_thinking_level: ThinkingLevel = ThinkingLevel.disabled
     # Total attempts (not retries) for the combined title+classification Haiku call; 1 = no retry.
@@ -304,10 +299,8 @@ class AppSettings(BaseSettings):
     campaign_benchmarks_max_tool_metrics: int = Field(
         4, validation_alias=AliasChoices("campaign_benchmarks_max_tool_metrics", "smart_targets_max_tool_metrics")
     )
-    # Recent conversation turns shown to the filter selector.
-    campaign_benchmarks_recent_turns: int = Field(
-        6, validation_alias=AliasChoices("campaign_benchmarks_recent_turns", "smart_targets_recent_turns")
-    )
+    # How long the filter values listed in the chat system prompt are reused before being fetched again.
+    campaign_benchmarks_filter_options_cache_seconds: int = 86400
 
     # --- audience segments ---
     audience_segments_max_tool_segments: int = 4
@@ -411,7 +404,7 @@ class AppSettings(BaseSettings):
         "uploaded_documents_max_result_chars",
         "uploaded_documents_max_read_chars",
         "campaign_benchmarks_max_tool_metrics",
-        "campaign_benchmarks_recent_turns",
+        "campaign_benchmarks_filter_options_cache_seconds",
         "audience_segments_max_tool_segments",
         "audience_segments_library_cache_seconds",
         "audience_segments_library_retry_backoff_seconds",
@@ -532,10 +525,8 @@ LLM_CHAT_TITLE_MODEL = settings.llm_chat_title_model
 LLM_INDEX_ROUTER = settings.llm_index_router
 LLM_OPENSEARCH_QUERY_GENERATOR = settings.llm_opensearch_query_generator
 LLM_CHUNK_REVIEWER = settings.llm_chunk_reviewer
-LLM_GOVUK_QUERY_GENERATOR = settings.llm_govuk_query_generator
 LLM_DOCUMENT_RELEVANCY_MODEL = settings.llm_document_relevancy_model
 LLM_GOV_UK_SEARCH_FOLLOWUP_ASSESSMENT = settings.llm_gov_uk_search_followup_assessment
-LLM_CAMPAIGN_BENCHMARKS_MODEL = settings.llm_campaign_benchmarks_model
 CHAT_THINKING_LEVEL = settings.chat_thinking_level
 
 # Central guidance RAG
@@ -551,7 +542,7 @@ UPLOADED_DOCUMENTS_MAX_READ_CHARS = settings.uploaded_documents_max_read_chars
 
 # Campaign benchmarks
 CAMPAIGN_BENCHMARKS_MAX_TOOL_METRICS = settings.campaign_benchmarks_max_tool_metrics
-CAMPAIGN_BENCHMARKS_RECENT_TURNS = settings.campaign_benchmarks_recent_turns
+CAMPAIGN_BENCHMARKS_FILTER_OPTIONS_CACHE_SECONDS = settings.campaign_benchmarks_filter_options_cache_seconds
 
 # Audience segments
 AUDIENCE_SEGMENTS_MAX_TOOL_SEGMENTS = settings.audience_segments_max_tool_segments
