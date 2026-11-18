@@ -34,7 +34,7 @@ from app.chat.agent_loop import (
     run_agent_loop,
 )
 from app.chat.cache_control import apply_compaction_aware_cache_control
-from app.chat.constants import DELETION_NOTICE
+from app.chat.constants import DELETION_NOTICE, STREAM_HEADERS
 from app.chat.exceptions import DocumentAccessError, UseCaseIdMalformedError, UseCaseNotFoundError
 from app.chat.prompts import build_chat_system_prompt, build_turn_context_block
 from app.chat.schemas import (
@@ -210,7 +210,7 @@ async def chat_create_stream(data: ChatCreateInput):
     data.stream = True
     response = await chat_create(data)
 
-    return StreamingResponse(response, media_type="text/event-stream")
+    return StreamingResponse(response, media_type="text/event-stream", headers=STREAM_HEADERS)
 
 
 async def _chat_message_with_documents(chat: Chat, db_session: AsyncSession, request_input: Dict):
@@ -249,7 +249,7 @@ async def chat_add_message_stream(chat: Chat, data):
     async with async_db_session() as db_session:
         chat_message = await _chat_message_with_documents(chat, db_session, chat_message)
         turn = await chat_create_message(chat, ChatCreateMessageInput(**chat_message, stream=True), db_session)
-    return StreamingResponse(turn.stream(), media_type="text/event-stream")
+    return StreamingResponse(turn.stream(), media_type="text/event-stream", headers=STREAM_HEADERS)
 
 
 async def chat_add_message(chat: Chat, data):

@@ -7,3 +7,6 @@ PRIVATE_SHARE_ACCESS_DENIED = "private_share_access_denied"
 
 # Replaces the middle of a user message that was cut short for a helper LLM call.
 HELPER_CALL_TRUNCATION_MARKER = "\n\n[... {omitted:,} characters omitted ...]\n\n"
+
+# Stops the nginx in front of Elastic Beanstalk buffering the chat stream.
+STREAM_HEADERS = {"X-Accel-Buffering": "no"}
