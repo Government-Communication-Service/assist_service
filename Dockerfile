@@ -1,5 +1,5 @@
 # Separate stage so Dependabot updates the uv version (it only reads FROM lines).
-FROM ghcr.io/astral-sh/uv:0.13.7 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.9 AS uv
 
 FROM amazonlinux:2023.12.20261102.0
 
